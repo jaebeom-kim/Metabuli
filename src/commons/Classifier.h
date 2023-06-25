@@ -76,12 +76,13 @@ protected:
     };
 
     struct QueryKmerSplit {
-        QueryKmerSplit(size_t start, size_t end, size_t length, const DiffIdxSplit& diffIdxSplit)
-                : start(start), end(end), length(length), diffIdxSplit(diffIdxSplit) {}
+        QueryKmerSplit(size_t start, size_t end, size_t length, int diffIdxSplitIdx, const DiffIdxSplit& diffIdxSplit)
+                : start(start), end(end), length(length), diffIdxSplitIdx(diffIdxSplitIdx), diffIdxSplit(diffIdxSplit) {}
 
         size_t start; // start idx in query k-mer list
         size_t end; // end idx in query k-mer list
         size_t length;
+        int diffIdxSplitIdx; // index in diffIdxSplitList
         DiffIdxSplit diffIdxSplit; // index in target k-mer list from where the search begins.
     };
 
