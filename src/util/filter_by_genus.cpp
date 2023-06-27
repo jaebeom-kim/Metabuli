@@ -37,6 +37,15 @@ int filterByGenus(int argc, const char **argv, const Command &command) {
         genusList.push_back(stoi(line));
     }
 
+    vector<TaxID> observedSp;
+    for(size_t i = 0; i < genusList.size(); i++){
+        TaxID sp = ncbiTaxonomy.getTaxIdAtRank(genusList[i], "species");
+        if(find(observedSp.begin(), observedSp.end(), sp) == observedSp.end()){
+            observedSp.push_back(sp);
+        }
+    }
+    cout << "Observed species: " << observedSp.size() << endl;
+
     // Read each result line
     ifstream resultsFile(results);
     if (!resultsFile.is_open()) {
