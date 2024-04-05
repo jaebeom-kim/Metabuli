@@ -201,6 +201,13 @@ LocalParameters::LocalParameters() :
                         typeid(int),
                         (void *) &accessionLevel,
                         "[0-1]"),
+        CDS_INFO(CDS_INFO_ID,
+                 "--cds-info",
+                 "List of CDS files",
+                 "List of CDS files",
+                 typeid(std::string),
+                 (void *) &cdsInfo,
+                 "^.*$"),
         DB_NAME(DB_NAME_ID,
                 "--db-name",
                 "Name of the database (a random number as default)",
@@ -307,6 +314,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&ACCESSION_LEVEL);
     build.push_back(&DB_NAME);
     build.push_back(&DB_DATE);
+    build.push_back(&CDS_INFO);
 
     //classify
     classify.push_back(&PARAM_THREADS);

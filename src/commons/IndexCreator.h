@@ -2,6 +2,7 @@
 #define ADKMER4_INDEXCREATOR_H
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <algorithm>
 #include <ctime>
@@ -31,6 +32,16 @@ struct TaxId2Fasta{
     TaxID taxid;
     string fasta;
     TaxId2Fasta(TaxID sp, TaxID ssp, string fasta): species(sp), taxid(ssp), fasta(std::move(fasta)) {}
+};
+
+struct CDSinfo{
+    string proteinId;
+    bool isComplement;
+    vector<pair<size_t, size_t>> loc;
+    CDSinfo() = default;
+    CDSinfo(const string & proteinId) {
+        this->proteinId = proteinId;
+    }
 };
 
 using namespace std;
@@ -75,6 +86,7 @@ private:
     vector<FASTA> fastaList;
     vector<TaxID> taxIdList;
     vector<size_t> processedSeqCnt; // Index of this vector is the same as the index of fnaList
+    unordered_map<string, CDSinfo> cdsInfoMap;
 
 
     struct FnaSplit{
@@ -120,8 +132,6 @@ private:
     
     static bool compareForDiffIdx2(const TargetKmer & a, const TargetKmer & b);
 
-//    void maskLowComplexityRegions(char * seq, char * maskedSeq, ProbabilityMatrix & probMat,
-//                                  const LocalParameters & par);
     size_t fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
                                 bool *checker,
                                 size_t &processedSplitCnt,
@@ -139,6 +149,8 @@ private:
     }
 
     void load_assacc2taxid(const string & mappingFile, unordered_map<string, int> & assacc2taxid);
+
+    void loadCdsInfo(const string & cdsInfoFileList);
 
     static TaxID load_accession2taxid(const string & mappingFile, unordered_map<string, int> & assacc2taxid);
 

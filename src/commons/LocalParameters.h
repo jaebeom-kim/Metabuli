@@ -67,6 +67,7 @@ public:
     PARAMETER(ACCESSION_LEVEL)
     PARAMETER(DB_NAME)
     PARAMETER(DB_DATE)
+    PARAMETER(CDS_INFO)
 
     // Test parameters
     PARAMETER(TEST_RANK)
@@ -117,6 +118,7 @@ public:
     int splitNum;
     size_t bufferSize;
     int accessionLevel;
+    std::string cdsInfo;
 
     // Test parameters
     std::string testRank;
