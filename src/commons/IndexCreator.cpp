@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 #include "NcbiTaxonomy.cpp"
 #include "common.h"
 
@@ -69,7 +70,6 @@ IndexCreator::~IndexCreator() {
 void IndexCreator::createIndex(const LocalParameters &par) {
 
     loadCdsInfo(par.cdsInfo);
-    return;
 
     // Read through FASTA files and make blocks of sequences to be processed by each thread
     if (par.accessionLevel) {
@@ -102,7 +102,7 @@ void IndexCreator::createIndex(const LocalParameters &par) {
         memset(kmerBuffer.buffer, 0, kmerBuffer.bufferSize * sizeof(TargetKmer));
 
         // Extract Target k-mers
-        fillTargetKmerBuffer(kmerBuffer, splitChecker, processedSplitCnt, par);
+        fillTargetKmerBuffer2(kmerBuffer, splitChecker, processedSplitCnt, par);
 
         // Sort the k-mers
         time_t start = time(nullptr);
@@ -883,12 +883,13 @@ size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
                 for (size_t p = 0; p < fnaSplits[i].cnt; p++) {
                     totalLength += fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + p].length;
                 }
-                
+                size_t seqNum = fnaSplits[i].cnt;
                 size_t estimatedKmerCnt = (totalLength + totalLength / 10) / 3;
 
                 // Process current split if buffer has enough space.
                 posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
                 ProdigalWrapper * prodigal = new ProdigalWrapper();
+                bool trained = false;
                 if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
                     // MMap FASTA file of current split
                     struct MmapedData<char> fastaFile = mmapData<char>(fastaList[fnaSplits[i].file_idx].path.c_str());
@@ -898,7 +899,21 @@ size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
                     seq = kseq_init(&buffer);
                     kseq_read(seq);
                     lengthOfTrainingSeq = seq->seq.l;
-                    // cout << "T: " << seq->name.s << " " << lengthOfTrainingSeq << " " << estimatedKmerCnt << endl;
+                    
+
+
+                    // ** Use provided CDS information OR predict CDS using Prodigal **
+                    
+                    if (cdsInfoMap.find(string(seq->name.s)) != cdsInfoMap.end()) {
+                    
+                    } else {
+                        // Train prodigal
+                        if (!trained) {
+
+                        }
+                        // Predict CDS
+                    }
+                    
 
                     // Train prodigal
                     prodigal->is_meta = 0;
@@ -908,14 +923,6 @@ size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
                     } else {
                         prodigal->trainASpecies(seq->seq.s);
                     }
-
-//                    // Load training information
-//                    int read_check = read_training_file(const_cast<char *>((par.tinfoPath + to_string(fnaSplits[i].speciesID) + ".tinfo").c_str()),
-//                                                        prodigal.getTrainingInfo());
-//                    if (read_check != 0) {
-//                        cout << "Cannot read training information for species " << par.tinfoPath + to_string(fnaSplits[i].speciesID) + ".tinfo" << endl;
-//                        exit(1);
-//                    }
 
                     // Generate intergenic 23-mer list. It is used to determine extension direction of intergenic sequences.
                     prodigal->getPredictedGenes(seq->seq.s);
@@ -1035,6 +1042,248 @@ size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
     cout << "Before return: " << kmerBuffer.startIndexOfReserve << endl;
     return 0;
 }
+
+size_t IndexCreator::fillTargetKmerBuffer2(TargetKmerBuffer &kmerBuffer,
+                                           bool *checker,
+                                           size_t &processedSplitCnt,
+                                           const LocalParameters &par) {
+    int hasOverflow = 0;
+    cout << "0" << endl;
+#pragma omp parallel default(none), shared(kmerBuffer, checker, processedSplitCnt, hasOverflow, par, cout)
+    {
+        ProbabilityMatrix probMatrix(*subMat);
+        // ProdigalWrapper prodigal;
+        SeqIterator seqIterator(par);
+        size_t posToWrite;
+        size_t orfNum;
+        vector<PredictedBlock> extendedORFs;
+        priority_queue<uint64_t> standardList;
+        priority_queue<uint64_t> currentList;
+        size_t lengthOfTrainingSeq;
+        char *reverseCompliment;
+        vector<bool> strandness;
+        kseq_buffer_t buffer;
+        kseq_t *seq;
+        kseq_buffer_t bufferForTraining;
+        kseq_t *seqForTraining;
+        vector<uint64_t> intergenicKmers;
+#pragma omp for schedule(dynamic, 1)
+        for (size_t i = 0; i < fnaSplits.size(); i++) {
+            if (!checker[i] && !hasOverflow) {
+                checker[i] = true;
+                intergenicKmers.clear();
+                strandness.clear();
+                standardList = priority_queue<uint64_t>();
+
+                // Estimate the number of k-mers to be extracted from current split
+                size_t totalLength = 0;
+                for (size_t p = 0; p < fnaSplits[i].cnt; p++) {
+                    totalLength += fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + p].length;
+                }
+                size_t seqNum = fnaSplits[i].cnt;
+                size_t estimatedKmerCnt = (totalLength + totalLength / 10) / 3;
+
+                // Process current split if buffer has enough space.
+                posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
+                ProdigalWrapper * prodigal = new ProdigalWrapper();
+                bool trained = false;
+                if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
+                    // MMap FASTA file of current split
+                    struct MmapedData<char> fastaFile = mmapData<char>(fastaList[fnaSplits[i].file_idx].path.c_str());
+                    
+                    vector<string> cds;
+                    vector<string> nonCds;
+                    for (auto it = cdsInfoMap.begin(); it != cdsInfoMap.end(); it++) {
+                        cout << it->first << endl;
+                    }
+                    // ** Use provided CDS information OR predict CDS using Prodigal **
+                    for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
+                        buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
+                                  static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
+                        seq = kseq_init(&buffer);
+                        kseq_read(seq);
+                        cout << "Processing " << seq->name.s << "\t" << seq->seq.l << "\t" << posToWrite << endl;
+                        if (cdsInfoMap.find(string(seq->name.s)) != cdsInfoMap.end()) { // Provided CDS
+                            cout << "CDS found" << endl;
+                            cds.clear();
+                            nonCds.clear();
+                            devideToCdsAndNonCds(seq->seq.s,
+                                                 seq->seq.l, 
+                                                 cdsInfoMap[string(seq->name.s)], 
+                                                 cds,  
+                                                 nonCds);
+                            // Translate CDS and non-CDS
+
+                            // Extract metamers                      
+                        } else {
+                            // Train prodigal
+                            if (!trained) {
+                                trained = true;
+                                // Check if current sequence is for training
+                                if (fnaSplits[i].offset + s_cnt == fnaSplits[i].training) { // Use current sequence for training.
+                                    seqForTraining = seq;
+                                } else {
+                                    bufferForTraining = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].start]),
+                                    static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].length)};
+                                    seqForTraining = kseq_init(&bufferForTraining);
+                                    kseq_read(seqForTraining);
+                                }
+                                lengthOfTrainingSeq = seqForTraining->seq.l;
+
+                                // Train prodigal
+                                prodigal->is_meta = 0;
+                                if (lengthOfTrainingSeq < 100'000) {
+                                    prodigal->is_meta = 1;
+                                    prodigal->trainMeta(seq->seq.s);
+                                } else {
+                                    prodigal->trainASpecies(seq->seq.s);
+                                }
+ 
+                                // Generate intergenic 23-mer list. It is used to determine extension direction of intergenic sequences.
+                                prodigal->getPredictedGenes(seq->seq.s);
+                                seqIterator.generateIntergenicKmerList(prodigal->genes, prodigal->nodes,
+                                                                    prodigal->getNumberOfPredictedGenes(),
+                                                                    intergenicKmers,seq->seq.s);
+
+                                // Get min k-mer hash list for determining strandness
+                                seqIterator.getMinHashList(standardList, seq->seq.s);
+                                if (fnaSplits[i].offset + s_cnt != fnaSplits[i].training) {
+                                    kseq_destroy(seqForTraining);
+                                }
+                            }
+                            // Predict CDS
+                            currentList = priority_queue<uint64_t>();
+                            seqIterator.getMinHashList(currentList, seq->seq.s);
+                            if (seqIterator.compareMinHashList(standardList, currentList, lengthOfTrainingSeq, strlen(seq->seq.s))) {  // Forward
+                                prodigal->getPredictedGenes(seq->seq.s);
+                                // Devide to CDS and non-CDS
+
+                            } else { // Reverse complement
+                                reverseCompliment = seqIterator.reverseCompliment(seq->seq.s, seq->seq.l);
+                                prodigal->getPredictedGenes(reverseCompliment);
+                                // Devide to CDS and non-CDS
+
+                                free(reverseCompliment);
+                            }
+                        }
+                        kseq_destroy(seq);
+                    }
+                    
+
+                   
+                    
+
+                    
+
+                    // Extract k-mer from the sequences of current split
+                    for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
+                        buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
+                                  static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
+                        seq = kseq_init(&buffer);
+                        kseq_read(seq);
+
+                        cout << "Processing " << seq->name.s << "\t" << seq->seq.l << "\t" << posToWrite << endl;
+                        currentList = priority_queue<uint64_t>();
+                        seqIterator.getMinHashList(currentList, seq->seq.s);
+                        orfNum = 0;
+                        extendedORFs.clear();
+                        int tempCheck = 0;
+                        if (seqIterator.compareMinHashList(standardList, currentList, lengthOfTrainingSeq, // Forward
+                                                           strlen(seq->seq.s))) {
+                            // Get extended ORFs
+                            prodigal->getPredictedGenes(seq->seq.s);
+                            prodigal->removeCompletelyOverlappingGenes();
+                            seqIterator.getExtendedORFs(prodigal->finalGenes, prodigal->nodes, extendedORFs,
+                                                             prodigal->fng, strlen(seq->seq.s),
+                                                        orfNum, intergenicKmers, seq->seq.s);
+                            // Get masked sequence
+                            char *maskedSeq = nullptr;
+                            if (par.maskMode) {
+                                maskedSeq = new char[seq->seq.l + 1];
+                                SeqIterator::maskLowComplexityRegions(seq->seq.s, maskedSeq, probMatrix, par.maskProb, subMat);
+                            } else {
+                                maskedSeq = seq->seq.s;
+                            }
+
+                            // Get k-mers from extended ORFs
+                            for (size_t orfCnt = 0; orfCnt < orfNum; orfCnt++) {
+                                seqIterator.translateBlock(maskedSeq, extendedORFs[orfCnt]);
+                                tempCheck = seqIterator.fillBufferWithKmerFromBlock(
+                                        extendedORFs[orfCnt],
+                                        maskedSeq,
+                                        kmerBuffer,
+                                        posToWrite,
+                                        int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt),
+                                        fnaSplits[i].speciesID);
+                                if (tempCheck == -1) {
+                                    cout << "ERROR: Buffer overflow " << seq->name.s << seq->seq.l << endl;
+                                }
+                            }
+                            if (par.maskMode) {
+                                delete[] maskedSeq;
+                            }
+                        } else { // Reverse complement
+                            reverseCompliment = seqIterator.reverseCompliment(seq->seq.s, seq->seq.l);
+                            
+                            // Get extended ORFs
+                            prodigal->getPredictedGenes(reverseCompliment);
+                            prodigal->removeCompletelyOverlappingGenes();
+                            seqIterator.getExtendedORFs(prodigal->finalGenes, prodigal->nodes, extendedORFs,
+                                                             prodigal->fng, strlen(reverseCompliment),
+                                                        orfNum, intergenicKmers, reverseCompliment);
+
+                            // Get masked sequence
+                            char *maskedSeq = nullptr;
+                            if (par.maskMode) {
+                                maskedSeq = new char[seq->seq.l + 1];
+                                SeqIterator::maskLowComplexityRegions(reverseCompliment, maskedSeq, probMatrix, par.maskProb, subMat);
+                            } else {
+                                maskedSeq = reverseCompliment;
+                            }
+
+                            for (size_t orfCnt = 0; orfCnt < orfNum; orfCnt++) {
+                                seqIterator.translateBlock(maskedSeq, extendedORFs[orfCnt]);
+                                tempCheck = seqIterator.fillBufferWithKmerFromBlock(
+                                        extendedORFs[orfCnt],
+                                        maskedSeq,
+                                        kmerBuffer,
+                                        posToWrite,
+                                        int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt),
+                                        fnaSplits[i].speciesID);
+                                if (tempCheck == -1) {
+                                    cout << "ERROR: Buffer overflow " << seq->name.s << seq->seq.l << endl;
+                                }
+                            }
+                            free(reverseCompliment);
+                            if (par.maskMode) {
+                                delete[] maskedSeq;
+                            }
+                        }
+                        kseq_destroy(seq);
+                    }
+                    __sync_fetch_and_add(&processedSplitCnt, 1);
+#ifdef OPENMP
+                    cout << omp_get_thread_num() << " Processed " << i << "th splits (" << processedSplitCnt << ")" << endl;
+#endif
+                    munmap(fastaFile.data, fastaFile.fileSize + 1);
+                } else {
+                    // Withdraw the reservation if the buffer is full.
+                    // cout << "Buffer is full. Withdraw the reservation." << endl;
+                    checker[i] = false;
+                    __sync_fetch_and_add(&hasOverflow, 1);
+                    __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
+                }
+                // cout << totalLength << " " << prodigal->fng << endl;
+                delete prodigal;
+                
+            }
+        }
+    }
+
+    cout << "Before return: " << kmerBuffer.startIndexOfReserve << endl;
+    return 0;
+}
+
 
 void IndexCreator::writeTaxonomyDB() {
     std::pair<char *, size_t> serialized = NcbiTaxonomy::serialize(*taxonomy);
@@ -1198,16 +1447,16 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
                                 break;
                             } else if (feature == "protein_id") {
                                 cout << "Protein ID: " << value << endl;
-                                cdsInfoMap[accession] = CDSinfo(value);
+                                cdsInfoMap[accession].emplace_back(CDSinfo(value));
                             } else if (feature == "location") {
                                 cout << "Location: " << value << endl;
                                 // Check if the location is complement
                                 size_t complementPos = value.find('c');
                                 if (complementPos != string::npos) {
-                                    cdsInfoMap[accession].isComplement = true;
+                                    cdsInfoMap[accession].back().isComplement = true;
                                     value = value.substr(complementPos + 11, value.size() - complementPos - 12);
                                 } else {
-                                    cdsInfoMap[accession].isComplement = false;
+                                    cdsInfoMap[accession].back().isComplement = false;
                                 }
 
                                 // Check if spliced
@@ -1231,7 +1480,7 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
                                     if (locationEnd[0] == '>') {
                                         locationEnd = locationEnd.substr(1, locationEnd.size() - 1);
                                     }
-                                    cdsInfoMap[accession].loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
+                                    cdsInfoMap[accession].back().loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
                         
                                     // cout << locationBegin << " " << locationEnd << endl;
 
@@ -1248,7 +1497,7 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
                                 if (locationEnd[0] == '>') {
                                     locationEnd = locationEnd.substr(1, locationEnd.size() - 1);
                                 }
-                                cdsInfoMap[accession].loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
+                                cdsInfoMap[accession].back().loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
                                 break;
                             } 
                         }
@@ -1262,5 +1511,45 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
     } else {
         Debug(Debug::ERROR) << "Cannot open file " << cdsInfoFileList << "\n";
         EXIT(EXIT_FAILURE);
+    }
+}
+
+void IndexCreator::devideToCdsAndNonCds(const char * seq,
+                                        size_t seqLen,
+                                        const vector<CDSinfo> & cdsInfo,
+                                        vector<string> & cds, 
+                                        vector<string> & nonCds) {
+    string tmp;
+    for (size_t i = 0; i < cdsInfo.size(); i++) {
+        tmp.clear();
+        for (size_t j = 0; j < cdsInfo[i].loc.size(); j++) {
+            tmp += string(seq + cdsInfo[i].loc[j].first - 1, cdsInfo[i].loc[j].second - cdsInfo[i].loc[j].first + 1);    
+        }
+        cds.emplace_back(tmp);
+    }
+
+    // Get non-CDS that are not in the CDS list
+    bool * checker = new bool[seqLen];
+    memset(checker, true, seqLen * sizeof(bool));
+    for (size_t i = 0; i < cdsInfo.size(); i++) {
+        for (size_t j = 0; j < cdsInfo[i].loc.size(); j++) {
+            for (size_t k = cdsInfo[i].loc[j].first - 1; k < cdsInfo[i].loc[j].second; k++) {
+                checker[k] = false;
+            }
+        }
+    }
+
+    size_t len;
+    size_t i = 0;
+    while (i < seqLen) {
+        len = 0;
+        while (i < seqLen && checker[i]) {
+            i++;
+            len++;
+        }
+        if (len > 32) {
+            nonCds.emplace_back(string(seq + i - len, len));
+        }
+        i ++;
     }
 }

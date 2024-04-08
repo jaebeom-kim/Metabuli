@@ -86,8 +86,7 @@ private:
     vector<FASTA> fastaList;
     vector<TaxID> taxIdList;
     vector<size_t> processedSeqCnt; // Index of this vector is the same as the index of fnaList
-    unordered_map<string, CDSinfo> cdsInfoMap;
-
+    unordered_map<string, vector<CDSinfo>> cdsInfoMap;
 
     struct FnaSplit{
         // species, file_idx, training, offset, cnt
@@ -137,6 +136,18 @@ private:
                                 size_t &processedSplitCnt,
                                 const LocalParameters &par);
 
+    size_t fillTargetKmerBuffer2(TargetKmerBuffer &kmerBuffer,
+                                bool *checker,
+                                size_t &processedSplitCnt,
+                                const LocalParameters &par);
+
+    void devideToCdsAndNonCds(const char *seq,
+                              size_t seqLen,
+                              const vector<CDSinfo> & cdsInfo,
+                              vector<string> & cds,
+                              vector<string> & nonCds);
+
+    void addPredictedGenesToCdsInfo(_gene *genes, _node *nodes);
 
     void makeBlocksForParallelProcessing();
 
