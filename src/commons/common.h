@@ -4,10 +4,20 @@
 #include "LocalParameters.h"
 #include "NcbiTaxonomy.h"
 #include <iostream>
+#include <queue>
 
 #define likely(x) __builtin_expect((x),1)
 #define unlikely(x) __builtin_expect((x),0)
 #define kmerLength 8
+
+struct CDSinfo{
+    std::string proteinId;
+    int frame;
+    bool isComplement;
+    std::vector<std::pair<size_t, size_t>> loc;
+    CDSinfo() = default;
+    CDSinfo(const std::string & proteinId, int frame) : proteinId(proteinId), frame(frame) {}
+};
 
 struct SequenceBlock{
     SequenceBlock(size_t start, size_t end, size_t length, size_t seqLength = 0)
@@ -88,5 +98,7 @@ NcbiTaxonomy * loadTaxonomy(const std::string & dbDir, const std::string & taxon
 int loadDbParameters(LocalParameters & par);
 
 int searchAccession2TaxID(const std::string & name, const std::unordered_map<std::string, int> & acc2taxid);
+
+int countCommonMinHashes(std::priority_queue <uint64_t> ref, std::priority_queue <uint64_t> & query);
 
 #endif //ADCLASSIFIER2_COMMON_H

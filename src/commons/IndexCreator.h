@@ -34,16 +34,6 @@ struct TaxId2Fasta{
     TaxId2Fasta(TaxID sp, TaxID ssp, string fasta): species(sp), taxid(ssp), fasta(std::move(fasta)) {}
 };
 
-struct CDSinfo{
-    string proteinId;
-    bool isComplement;
-    vector<pair<size_t, size_t>> loc;
-    CDSinfo() = default;
-    CDSinfo(const string & proteinId) {
-        this->proteinId = proteinId;
-    }
-};
-
 using namespace std;
 
 class IndexCreator{
@@ -141,13 +131,7 @@ private:
                                 size_t &processedSplitCnt,
                                 const LocalParameters &par);
 
-    void devideToCdsAndNonCds(const char *seq,
-                              size_t seqLen,
-                              const vector<CDSinfo> & cdsInfo,
-                              vector<string> & cds,
-                              vector<string> & nonCds);
-
-    void addPredictedGenesToCdsInfo(_gene *genes, _node *nodes);
+    int selectReadingFrame(priority_queue<uint64_t> & observedKmers, const char * seq, const SeqIterator & seqIt);
 
     void makeBlocksForParallelProcessing();
 

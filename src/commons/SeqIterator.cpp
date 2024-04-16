@@ -405,7 +405,29 @@ bool SeqIterator::translateBlock(const char *seq, PredictedBlock block) {
     return true;
 }
 
-string SeqIterator::reverseCompliment(string &read) const {
+bool SeqIterator::translate(const string & seq, int frame) {
+    aaFrames[0].clear();
+    if(aaFrames->capacity() < seq.length() / 3 + 1) {
+        aaFrames->reserve(seq.length() / 3 + 1);
+    }
+    for (int i = 0 + frame; i + 2 < (int) seq.length(); i = i + 3) {
+        aaFrames[0].push_back(nuc2aa[nuc2int(atcg[seq[i]])][nuc2int(atcg[seq[i + 1]])][nuc2int(atcg[seq[i + 2]])]);
+    }
+    return true;
+}
+
+bool SeqIterator::translate(const char * seq, int frame) {
+    aaFrames[0].clear();
+    if(aaFrames->capacity() < strlen(seq) / 3 + 1) {
+        aaFrames->reserve(strlen(seq) / 3 + 1);
+    }
+    for (int i = 0 + frame; i + 2 < (int) strlen(seq); i = i + 3) {
+        aaFrames[0].push_back(nuc2aa[nuc2int(atcg[seq[i]])][nuc2int(atcg[seq[i + 1]])][nuc2int(atcg[seq[i + 2]])]);
+    }
+    return true;
+}
+
+string SeqIterator::reverseComplement(string &read) const {
     int len = read.length();
     string out;
     for (int i = 0; i < len; i++) {
@@ -415,7 +437,7 @@ string SeqIterator::reverseCompliment(string &read) const {
     return out;
 }
 
-char *SeqIterator::reverseCompliment(char *read, size_t length) const {
+char *SeqIterator::reverseComplement(const char *read, size_t length) const {
     char *revCom = (char *) malloc(sizeof(char) * (length + 1));
     for (size_t i = 0; i < length; i++) {
         revCom[length - i - 1] = iRCT[read[i]];
@@ -453,6 +475,39 @@ SeqIterator::fillBufferWithKmerFromBlock(const PredictedBlock &block, const char
     return 0;
 }
 
+int SeqIterator::computeMetamers(const char * seq, // Reference sequence
+                                 int frame, // 0-2
+                                 TargetKmerBuffer & kmerBuffer,
+                                 size_t & posToWrite,
+                                 int seqID,
+                                 int taxIdAtRank) {
+    uint64_t tempKmer = 0;
+    int aaLen = aaFrames[0].size();
+    int checkN;
+    for (int kmerCnt = 0; kmerCnt < aaLen - kmerLength - spaceNum_int + 1; kmerCnt ++) {
+        tempKmer = 0;
+        checkN = 0;
+        for (uint32_t i = 0, j = 0; i < kmerLength + spaceNum; i++, j += mask[i]) {
+            if (-1 == aaFrames[0][kmerCnt + i]) {
+                checkN = 1;
+                break;
+            }
+            tempKmer += aaFrames[0][kmerCnt + i] * powers[j] * mask[i];
+        }
+        if (checkN == 1) {
+            kmerBuffer.buffer[posToWrite] = {UINT64_MAX, -1, 0, false};
+        } else {
+            // Add DNA info
+            addDNAInfo_TargetKmer(tempKmer, seq, kmerCnt, frame);
+            kmerBuffer.buffer[posToWrite] = {tempKmer, taxIdAtRank, seqID, false};
+            printKmerInDNAsequence(tempKmer); cout << endl;
+        }
+        posToWrite ++;
+    }
+    return 0;
+}
+
+
 // It adds DNA information to kmers referring the original DNA sequence.
 void
 SeqIterator::addDNAInfo_TargetKmer(uint64_t &kmer, const char *seq, const PredictedBlock &block, const int &kmerCnt) {
@@ -470,6 +525,18 @@ SeqIterator::addDNAInfo_TargetKmer(uint64_t &kmer, const char *seq, const Predic
                     nuc2int(iRCT[atcg[seq[start - i*3 - 2]]])] * mask[i]) << (j * bitsForCodon);
         }
     }
+}
+
+void SeqIterator::addDNAInfo_TargetKmer(uint64_t &kmer,
+                                        const char *seq,
+                                        int kmerCnt,
+                                        int frame) { // 0-2
+    kmer <<= bitsFor8Codons;
+    int start = (kmerCnt * 3) + frame;
+    for (int i = 0, j = 0; i < kmerLength + spaceNum_int; i ++, j += mask_int[i]) {
+        kmer |= (nuc2num[nuc2int(atcg[seq[start + i*3]])][nuc2int(atcg[seq[start + i*3 + 1]])][
+                nuc2int(atcg[seq[start + i*3 + 2]])] * mask[i]) << (j * bitsForCodon);
+    } 
 }
 
 size_t SeqIterator::kmerNumOfSixFrameTranslation(const char *seq) {
@@ -727,18 +794,34 @@ bool SeqIterator::compareMinHashList(priority_queue <uint64_t> list1, priority_q
     }
 }
 
-void SeqIterator::getMinHashList(priority_queue <uint64_t> &sortedHashQue, const char *seq) {
+void SeqIterator::getMinHashList(priority_queue<uint64_t> &sortedHashQue, const char *seq, size_t listSize) {
     size_t seqLength = strlen(seq);
     size_t kmerLegnth = 24;
     char *kmer = (char *) malloc(sizeof(char) * (kmerLegnth + 1));
     kmer[kmerLegnth] = '\0';
     size_t queLength = 0;
-    size_t maxLength = 3000;
+    size_t maxLength = listSize;
     size_t currHash;
-    sortedHashQue.push(UINT64_MAX);
-
+    if (sortedHashQue.empty()) {
+        sortedHashQue.push(UINT64_MAX);
+    }
+    
     for (size_t i = 0; i + kmerLegnth - 1 < seqLength; i++) {
         strncpy(kmer, seq + i, kmerLegnth);
+        
+        // Check if the kmer contains 'N' for masked region
+        size_t nIdx = 0;
+        for (size_t j = 23; j >= 0; j--) {
+            if (kmer[j] == 'N') {
+                nIdx = j;
+                break;
+            }
+        }
+        if (nIdx != 0) {
+            i += nIdx;
+            continue;
+        }
+
         currHash = XXH64(kmer, kmerLegnth, 0);
         if (currHash < sortedHashQue.top()) {
             if (queLength < maxLength) {
@@ -813,6 +896,70 @@ void SeqIterator::maskLowComplexityRegions(const char *seq, char *maskedSeq, Pro
     for (unsigned int pos = 0; pos < seqLen; pos++) {
         char nt = seq[pos];
         maskedSeq[pos] = (maskedSeq[pos] == probMat.hardMaskTable[0]) ? 'N' : nt;
+    }
+}
+
+void SeqIterator::devideToCdsAndNonCds(const char * seq,
+                                       size_t seqLen,
+                                       const vector<CDSinfo> & cdsInfo,
+                                       vector<string> & cds, 
+                                       vector<string> & nonCds) {
+    string tmp;
+    for (size_t i = 0; i < cdsInfo.size(); i++) {
+        tmp.clear();
+        size_t locNum = cdsInfo[i].loc.size();
+        for (size_t j = 0; j < locNum; j++) {
+            // Extend 21 bases to both sides for k-mer from CDS boudaries
+            size_t begin = cdsInfo[i].loc[j].first - 1;
+            size_t end = cdsInfo[i].loc[j].second - 1;
+            if (j == 0) {
+                int k = 0;
+                while (k < 7 && begin - 3 >= 0) {
+                    begin -= 3;
+                    k++;
+                }
+            }
+            if (j == locNum - 1) {
+                int k = 0;
+                while (k < 7 && end + 3 < seqLen) {
+                    end += 3;
+                    k++;
+                }
+            }    
+            tmp += string(seq + begin, end - begin + 1);    
+        }
+
+        // Reverse complement if needed
+        if (cdsInfo[i].isComplement) {
+            cds.emplace_back(reverseComplement(tmp));
+        } else {
+            cds.emplace_back(tmp);   
+        }
+    }
+
+    // Get non-CDS that are not in the CDS list
+    bool * checker = new bool[seqLen];
+    memset(checker, true, seqLen * sizeof(bool));
+    for (size_t i = 0; i < cdsInfo.size(); i++) {
+        for (size_t j = 0; j < cdsInfo[i].loc.size(); j++) {
+            for (size_t k = cdsInfo[i].loc[j].first - 1; k < cdsInfo[i].loc[j].second; k++) {
+                checker[k] = false;
+            }
+        }
+    }
+
+    size_t len;
+    size_t i = 0;
+    while (i < seqLen) {
+        len = 0;
+        while (i < seqLen && checker[i]) {
+            i++;
+            len++;
+        }
+        if (len > 32) {
+            nonCds.emplace_back(string(seq + i - len, len));
+        }
+        i ++;
     }
 }
 

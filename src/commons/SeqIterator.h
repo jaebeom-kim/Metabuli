@@ -65,44 +65,65 @@ private:
                               int readLength);
 
     void addDNAInfo_TargetKmer(uint64_t &kmer, const char *seq, const PredictedBlock &block, const int &kmerCnt);
+    void addDNAInfo_TargetKmer(uint64_t &kmer, const char *seq, int kmerCnt, int frame);
 
 public:
-    void fillQueryKmerBuffer(const char *seq, int seqLen, QueryKmerBuffer &kmerBuffer, size_t &posToWrite,
-                             uint32_t seqID, uint32_t offset = 0);
+  void devideToCdsAndNonCds(const char *seq, size_t seqLen,
+                            const vector<CDSinfo> &cdsInfo, vector<string> &cds,
+                            vector<string> &nonCds);
+                            
+  void fillQueryKmerBuffer(const char *seq, int seqLen,
+                           QueryKmerBuffer &kmerBuffer, size_t &posToWrite,
+                           uint32_t seqID, uint32_t offset = 0);
 
-    string reverseCompliment(string &read) const;
+  string reverseComplement(string &read) const;
 
-    char *reverseCompliment(char *read, size_t length) const;
+  char *reverseComplement(const char *read, size_t length) const;
 
-    void sixFrameTranslation(const char *seq, int seqLen);
+  void sixFrameTranslation(const char *seq, int seqLen);
 
-    bool translateBlock(const char *seq, PredictedBlock block);
+  bool translateBlock(const char *seq, PredictedBlock block);
 
-    void generateIntergenicKmerList(struct _gene *genes, struct _node *nodes, int numberOfGenes,
-                                    vector<uint64_t> &intergenicKmerList, const char *seq);
+  bool translate(const string & cds, int frame = 0);
 
-    void getExtendedORFs(struct _gene *genes, struct _node *nodes, vector<PredictedBlock> &blocks, size_t numOfGene,
-            size_t length, size_t &numOfBlocks, vector<uint64_t> &intergenicKmerList, const char *seq);
+  bool translate(const char * cds, int frame = 0);
 
-    void getMinHashList(priority_queue<uint64_t> &sortedHashQue, const char *seq);
+  void generateIntergenicKmerList(struct _gene *genes, struct _node *nodes,
+                                  int numberOfGenes,
+                                  vector<uint64_t> &intergenicKmerList,
+                                  const char *seq);
 
-    bool
-    compareMinHashList(priority_queue<uint64_t> list1, priority_queue<uint64_t> &list2, size_t length1, size_t length2);
+  void getExtendedORFs(struct _gene *genes, struct _node *nodes,
+                       vector<PredictedBlock> &blocks, size_t numOfGene,
+                       size_t length, size_t &numOfBlocks,
+                       vector<uint64_t> &intergenicKmerList, const char *seq);
 
-    static size_t kmerNumOfSixFrameTranslation(const char *seq);
+  static void getMinHashList(priority_queue<uint64_t> &sortedHashQue, const char *seq, size_t listSize = 3000);
 
-    size_t getNumOfKmerForBlock(const PredictedBlock &block);
+  bool compareMinHashList(priority_queue<uint64_t> list1,
+                          priority_queue<uint64_t> &list2, size_t length1,
+                          size_t length2);
 
-    int fillBufferWithKmerFromBlock(const PredictedBlock &block, const char *seq, TargetKmerBuffer &kmerBuffer,
-                                     size_t &posToWrite, int seqID, int taxIdAtRank);
+  static size_t kmerNumOfSixFrameTranslation(const char *seq);
 
-    static void maskLowComplexityRegions(const char * seq, char * maskedSeq, ProbabilityMatrix & probMat,
-                                         float maskProb, const BaseMatrix * subMat);
+  size_t getNumOfKmerForBlock(const PredictedBlock &block);
 
-    void printKmerInDNAsequence(uint64_t kmer);
+  int fillBufferWithKmerFromBlock(const PredictedBlock &block, const char *seq,
+                                  TargetKmerBuffer &kmerBuffer,
+                                  size_t &posToWrite, int seqID,
+                                  int taxIdAtRank);
 
-    explicit SeqIterator(const LocalParameters &par);
-    ~SeqIterator();
+  int computeMetamers(const char * seq, int frame, TargetKmerBuffer & kmerBuffer, size_t & posToWrite, int seqID, int taxIdAtRank);
+
+  static void maskLowComplexityRegions(const char *seq, char *maskedSeq,
+                                       ProbabilityMatrix &probMat,
+                                       float maskProb,
+                                       const BaseMatrix *subMat);
+
+  void printKmerInDNAsequence(uint64_t kmer);
+
+  explicit SeqIterator(const LocalParameters &par);
+  ~SeqIterator();
 };
 
 #endif //ADKMER4_KMEREXTRACTOR_H

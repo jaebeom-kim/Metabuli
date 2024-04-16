@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include "NcbiTaxonomy.cpp"
+#include "SeqIterator.h"
 #include "common.h"
 
 extern const char *version;
@@ -865,7 +866,7 @@ size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
         priority_queue<uint64_t> standardList;
         priority_queue<uint64_t> currentList;
         size_t lengthOfTrainingSeq;
-        char *reverseCompliment;
+        char *reverseComplement;
         vector<bool> strandness;
         kseq_buffer_t buffer;
         kseq_t *seq;
@@ -900,21 +901,6 @@ size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
                     kseq_read(seq);
                     lengthOfTrainingSeq = seq->seq.l;
                     
-
-
-                    // ** Use provided CDS information OR predict CDS using Prodigal **
-                    
-                    if (cdsInfoMap.find(string(seq->name.s)) != cdsInfoMap.end()) {
-                    
-                    } else {
-                        // Train prodigal
-                        if (!trained) {
-
-                        }
-                        // Predict CDS
-                    }
-                    
-
                     // Train prodigal
                     prodigal->is_meta = 0;
                     if (lengthOfTrainingSeq < 100'000) {
@@ -982,22 +968,22 @@ size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
                                 delete[] maskedSeq;
                             }
                         } else { // Reverse complement
-                            reverseCompliment = seqIterator.reverseCompliment(seq->seq.s, seq->seq.l);
+                            reverseComplement = seqIterator.reverseComplement(seq->seq.s, seq->seq.l);
                             
                             // Get extended ORFs
-                            prodigal->getPredictedGenes(reverseCompliment);
+                            prodigal->getPredictedGenes(reverseComplement);
                             prodigal->removeCompletelyOverlappingGenes();
                             seqIterator.getExtendedORFs(prodigal->finalGenes, prodigal->nodes, extendedORFs,
-                                                             prodigal->fng, strlen(reverseCompliment),
-                                                        orfNum, intergenicKmers, reverseCompliment);
+                                                             prodigal->fng, strlen(reverseComplement),
+                                                        orfNum, intergenicKmers, reverseComplement);
 
                             // Get masked sequence
                             char *maskedSeq = nullptr;
                             if (par.maskMode) {
                                 maskedSeq = new char[seq->seq.l + 1];
-                                SeqIterator::maskLowComplexityRegions(reverseCompliment, maskedSeq, probMatrix, par.maskProb, subMat);
+                                SeqIterator::maskLowComplexityRegions(reverseComplement, maskedSeq, probMatrix, par.maskProb, subMat);
                             } else {
-                                maskedSeq = reverseCompliment;
+                                maskedSeq = reverseComplement;
                             }
 
                             for (size_t orfCnt = 0; orfCnt < orfNum; orfCnt++) {
@@ -1013,7 +999,7 @@ size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
                                     cout << "ERROR: Buffer overflow " << seq->name.s << seq->seq.l << endl;
                                 }
                             }
-                            free(reverseCompliment);
+                            free(reverseComplement);
                             if (par.maskMode) {
                                 delete[] maskedSeq;
                             }
@@ -1048,30 +1034,25 @@ size_t IndexCreator::fillTargetKmerBuffer2(TargetKmerBuffer &kmerBuffer,
                                            size_t &processedSplitCnt,
                                            const LocalParameters &par) {
     int hasOverflow = 0;
-    cout << "0" << endl;
 #pragma omp parallel default(none), shared(kmerBuffer, checker, processedSplitCnt, hasOverflow, par, cout)
     {
         ProbabilityMatrix probMatrix(*subMat);
-        // ProdigalWrapper prodigal;
         SeqIterator seqIterator(par);
         size_t posToWrite;
-        size_t orfNum;
-        vector<PredictedBlock> extendedORFs;
+        priority_queue<uint64_t> observedNonCDSKmerHashes;
         priority_queue<uint64_t> standardList;
         priority_queue<uint64_t> currentList;
-        size_t lengthOfTrainingSeq;
-        char *reverseCompliment;
+        char *reverseComplement;
+        string reverseComplementStr;
         vector<bool> strandness;
         kseq_buffer_t buffer;
         kseq_t *seq;
-        kseq_buffer_t bufferForTraining;
-        kseq_t *seqForTraining;
-        vector<uint64_t> intergenicKmers;
+        vector<uint64_t> observedNonCDSKmers;
 #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < fnaSplits.size(); i++) {
             if (!checker[i] && !hasOverflow) {
                 checker[i] = true;
-                intergenicKmers.clear();
+                observedNonCDSKmers.clear();
                 strandness.clear();
                 standardList = priority_queue<uint64_t>();
 
@@ -1085,179 +1066,91 @@ size_t IndexCreator::fillTargetKmerBuffer2(TargetKmerBuffer &kmerBuffer,
 
                 // Process current split if buffer has enough space.
                 posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
-                ProdigalWrapper * prodigal = new ProdigalWrapper();
-                bool trained = false;
                 if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
-                    // MMap FASTA file of current split
                     struct MmapedData<char> fastaFile = mmapData<char>(fastaList[fnaSplits[i].file_idx].path.c_str());
-                    
                     vector<string> cds;
                     vector<string> nonCds;
-                    for (auto it = cdsInfoMap.begin(); it != cdsInfoMap.end(); it++) {
-                        cout << it->first << endl;
-                    }
-                    // ** Use provided CDS information OR predict CDS using Prodigal **
+                    // ** Use provided CDS information **
                     for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
                         buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
                                   static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
                         seq = kseq_init(&buffer);
                         kseq_read(seq);
+                        
+                        // Mask low complexity regions
+                        char *maskedSeq = nullptr;
+                        if (par.maskMode) {
+                            maskedSeq = new char[seq->seq.l + 1];
+                            SeqIterator::maskLowComplexityRegions(seq->seq.s, maskedSeq, probMatrix, par.maskProb, subMat);
+                        } else {
+                            maskedSeq = seq->seq.s;
+                        }
+
                         cout << "Processing " << seq->name.s << "\t" << seq->seq.l << "\t" << posToWrite << endl;
-                        if (cdsInfoMap.find(string(seq->name.s)) != cdsInfoMap.end()) { // Provided CDS
-                            cout << "CDS found" << endl;
+                        if (cdsInfoMap.find(string(seq->name.s)) != cdsInfoMap.end()) { // CDS provided
                             cds.clear();
                             nonCds.clear();
-                            devideToCdsAndNonCds(seq->seq.s,
-                                                 seq->seq.l, 
-                                                 cdsInfoMap[string(seq->name.s)], 
-                                                 cds,  
-                                                 nonCds);
-                            // Translate CDS and non-CDS
-
-                            // Extract metamers                      
-                        } else {
-                            // Train prodigal
-                            if (!trained) {
-                                trained = true;
-                                // Check if current sequence is for training
-                                if (fnaSplits[i].offset + s_cnt == fnaSplits[i].training) { // Use current sequence for training.
-                                    seqForTraining = seq;
-                                } else {
-                                    bufferForTraining = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].start]),
-                                    static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].length)};
-                                    seqForTraining = kseq_init(&bufferForTraining);
-                                    kseq_read(seqForTraining);
-                                }
-                                lengthOfTrainingSeq = seqForTraining->seq.l;
-
-                                // Train prodigal
-                                prodigal->is_meta = 0;
-                                if (lengthOfTrainingSeq < 100'000) {
-                                    prodigal->is_meta = 1;
-                                    prodigal->trainMeta(seq->seq.s);
-                                } else {
-                                    prodigal->trainASpecies(seq->seq.s);
-                                }
- 
-                                // Generate intergenic 23-mer list. It is used to determine extension direction of intergenic sequences.
-                                prodigal->getPredictedGenes(seq->seq.s);
-                                seqIterator.generateIntergenicKmerList(prodigal->genes, prodigal->nodes,
-                                                                    prodigal->getNumberOfPredictedGenes(),
-                                                                    intergenicKmers,seq->seq.s);
-
-                                // Get min k-mer hash list for determining strandness
-                                seqIterator.getMinHashList(standardList, seq->seq.s);
-                                if (fnaSplits[i].offset + s_cnt != fnaSplits[i].training) {
-                                    kseq_destroy(seqForTraining);
-                                }
-                            }
-                            // Predict CDS
-                            currentList = priority_queue<uint64_t>();
-                            seqIterator.getMinHashList(currentList, seq->seq.s);
-                            if (seqIterator.compareMinHashList(standardList, currentList, lengthOfTrainingSeq, strlen(seq->seq.s))) {  // Forward
-                                prodigal->getPredictedGenes(seq->seq.s);
-                                // Devide to CDS and non-CDS
-
-                            } else { // Reverse complement
-                                reverseCompliment = seqIterator.reverseCompliment(seq->seq.s, seq->seq.l);
-                                prodigal->getPredictedGenes(reverseCompliment);
-                                // Devide to CDS and non-CDS
-
-                                free(reverseCompliment);
-                            }
-                        }
-                        kseq_destroy(seq);
-                    }
-                    
-
-                   
-                    
-
-                    
-
-                    // Extract k-mer from the sequences of current split
-                    for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
-                        buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
-                                  static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
-                        seq = kseq_init(&buffer);
-                        kseq_read(seq);
-
-                        cout << "Processing " << seq->name.s << "\t" << seq->seq.l << "\t" << posToWrite << endl;
-                        currentList = priority_queue<uint64_t>();
-                        seqIterator.getMinHashList(currentList, seq->seq.s);
-                        orfNum = 0;
-                        extendedORFs.clear();
-                        int tempCheck = 0;
-                        if (seqIterator.compareMinHashList(standardList, currentList, lengthOfTrainingSeq, // Forward
-                                                           strlen(seq->seq.s))) {
-                            // Get extended ORFs
-                            prodigal->getPredictedGenes(seq->seq.s);
-                            prodigal->removeCompletelyOverlappingGenes();
-                            seqIterator.getExtendedORFs(prodigal->finalGenes, prodigal->nodes, extendedORFs,
-                                                             prodigal->fng, strlen(seq->seq.s),
-                                                        orfNum, intergenicKmers, seq->seq.s);
-                            // Get masked sequence
-                            char *maskedSeq = nullptr;
-                            if (par.maskMode) {
-                                maskedSeq = new char[seq->seq.l + 1];
-                                SeqIterator::maskLowComplexityRegions(seq->seq.s, maskedSeq, probMatrix, par.maskProb, subMat);
-                            } else {
-                                maskedSeq = seq->seq.s;
-                            }
-
-                            // Get k-mers from extended ORFs
-                            for (size_t orfCnt = 0; orfCnt < orfNum; orfCnt++) {
-                                seqIterator.translateBlock(maskedSeq, extendedORFs[orfCnt]);
-                                tempCheck = seqIterator.fillBufferWithKmerFromBlock(
-                                        extendedORFs[orfCnt],
-                                        maskedSeq,
-                                        kmerBuffer,
-                                        posToWrite,
-                                        int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt),
-                                        fnaSplits[i].speciesID);
-                                if (tempCheck == -1) {
-                                    cout << "ERROR: Buffer overflow " << seq->name.s << seq->seq.l << endl;
-                                }
-                            }
-                            if (par.maskMode) {
-                                delete[] maskedSeq;
-                            }
-                        } else { // Reverse complement
-                            reverseCompliment = seqIterator.reverseCompliment(seq->seq.s, seq->seq.l);
+                            seqIterator.devideToCdsAndNonCds(
+                                maskedSeq, seq->seq.l,
+                                cdsInfoMap[string(seq->name.s)], cds, nonCds);
                             
-                            // Get extended ORFs
-                            prodigal->getPredictedGenes(reverseCompliment);
-                            prodigal->removeCompletelyOverlappingGenes();
-                            seqIterator.getExtendedORFs(prodigal->finalGenes, prodigal->nodes, extendedORFs,
-                                                             prodigal->fng, strlen(reverseCompliment),
-                                                        orfNum, intergenicKmers, reverseCompliment);
-
-                            // Get masked sequence
-                            char *maskedSeq = nullptr;
-                            if (par.maskMode) {
-                                maskedSeq = new char[seq->seq.l + 1];
-                                SeqIterator::maskLowComplexityRegions(reverseCompliment, maskedSeq, probMatrix, par.maskProb, subMat);
-                            } else {
-                                maskedSeq = reverseCompliment;
+                            cout << "CDS: " << endl;
+                            for (size_t j = 0; j < cds.size(); j++) {
+                                cout << cdsInfoMap[string(seq->name.s)][j].proteinId << endl;
+                                cout << cds[j] << endl << endl;
                             }
 
-                            for (size_t orfCnt = 0; orfCnt < orfNum; orfCnt++) {
-                                seqIterator.translateBlock(maskedSeq, extendedORFs[orfCnt]);
-                                tempCheck = seqIterator.fillBufferWithKmerFromBlock(
-                                        extendedORFs[orfCnt],
-                                        maskedSeq,
-                                        kmerBuffer,
-                                        posToWrite,
-                                        int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt),
-                                        fnaSplits[i].speciesID);
-                                if (tempCheck == -1) {
-                                    cout << "ERROR: Buffer overflow " << seq->name.s << seq->seq.l << endl;
+                            cout << "Non-CDS: " << endl;
+                            for (size_t j = 0; j < nonCds.size(); j++) {
+                                cout << nonCds[j] << endl << endl;
+                            }
+
+                            // Translate CDS and extract metamers
+                            for (size_t j = 0; j < cds.size(); j++) {
+                                seqIterator.translate(cds[j]);
+                                seqIterator.computeMetamers(cds[j].c_str(), 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
+                            }
+
+                            // Translate non-CDS and extract metamers
+                            for (size_t j = 0; j < nonCds.size(); j++) {
+                                if (observedNonCDSKmers.empty()) {
+                                    seqIterator.translate(nonCds[j]);
+                                    seqIterator.computeMetamers(nonCds[j].c_str(), 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
+                                    seqIterator.getMinHashList(observedNonCDSKmerHashes, nonCds[j].c_str());
+                                } else {
+                                    int frame = selectReadingFrame(observedNonCDSKmerHashes, nonCds[j].c_str(), seqIterator);
+                                    if (frame < 3) { // Forward
+                                        seqIterator.translate(nonCds[j], frame);
+                                        seqIterator.computeMetamers(nonCds[j].c_str(), frame, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
+                                    } else { // Reverse complement
+                                        reverseComplementStr.clear();
+                                        reverseComplementStr = seqIterator.reverseComplement(nonCds[j]);
+                                        seqIterator.translate(reverseComplementStr, frame - 3);
+                                        seqIterator.computeMetamers(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
+                                    }
                                 }
                             }
-                            free(reverseCompliment);
-                            if (par.maskMode) {
-                                delete[] maskedSeq;
-                            }
+                        } else { // CDS not provided
+                            // Translate the whole sequence
+                            if (observedNonCDSKmers.empty()) {
+                                seqIterator.translate(seq->seq.s);
+                                seqIterator.getMinHashList(observedNonCDSKmerHashes, seq->seq.s);
+                                seqIterator.computeMetamers(seq->seq.s, 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);                                    
+                            } else {
+                                int frame = selectReadingFrame(observedNonCDSKmerHashes, seq->seq.s, seqIterator);
+                                if (frame < 3) { // Forward
+                                    seqIterator.translate(seq->seq.s, frame);
+                                    seqIterator.computeMetamers(seq->seq.s, frame, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
+                                } else { // Reverse complement
+                                    reverseComplement = seqIterator.reverseComplement(seq->seq.s, seq->seq.l);
+                                    seqIterator.translate(reverseComplement,  frame - 3);
+                                    seqIterator.computeMetamers(reverseComplement, frame - 3, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
+                                    free(reverseComplement);
+                                }
+                            }                     
+                        }
+                        if (par.maskMode) {
+                            delete[] maskedSeq;
                         }
                         kseq_destroy(seq);
                     }
@@ -1268,14 +1161,10 @@ size_t IndexCreator::fillTargetKmerBuffer2(TargetKmerBuffer &kmerBuffer,
                     munmap(fastaFile.data, fastaFile.fileSize + 1);
                 } else {
                     // Withdraw the reservation if the buffer is full.
-                    // cout << "Buffer is full. Withdraw the reservation." << endl;
                     checker[i] = false;
                     __sync_fetch_and_add(&hasOverflow, 1);
                     __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
                 }
-                // cout << totalLength << " " << prodigal->fng << endl;
-                delete prodigal;
-                
             }
         }
     }
@@ -1435,7 +1324,8 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
                         size_t start = line.find('|') + 1;
                         size_t end = line.find('.', start);
                         string accession = line.substr(start, end - start + 2);
-                        cout << "Accession: " << accession << endl;
+                        // cout << "Accession: " << accession << endl;
+                        int frame = 1;
                         while (true) {
                             start = line.find('[', end) + 1;
                             end = line.find(']', start);
@@ -1445,14 +1335,17 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
                             string value = line.substr(equalPos + 1, end - equalPos - 1);
                             if (feature == "pseudo") {
                                 break;
+                            } else if (feature == "frame") {
+                                frame = stoi(value);
                             } else if (feature == "protein_id") {
-                                cout << "Protein ID: " << value << endl;
-                                cdsInfoMap[accession].emplace_back(CDSinfo(value));
+                                // cout << "Protein ID: " << value << "\t" << frame << endl;
+                                cdsInfoMap[accession].emplace_back(CDSinfo(value, frame));
                             } else if (feature == "location") {
-                                cout << "Location: " << value << endl;
+                                // cout << "Location: " << value << endl;
                                 // Check if the location is complement
                                 size_t complementPos = value.find('c');
-                                if (complementPos != string::npos) {
+                                bool isComplement = (complementPos != string::npos);
+                                if (isComplement) {
                                     cdsInfoMap[accession].back().isComplement = true;
                                     value = value.substr(complementPos + 11, value.size() - complementPos - 12);
                                 } else {
@@ -1473,6 +1366,7 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
                                     dotPos = value.find('.');
                                     locationBegin = value.substr(0, dotPos);
                                     locationEnd = value.substr(dotPos + 2, commaPos - dotPos - 2);
+                                    
                                     // Check < and > signs
                                     if (locationBegin[0] == '<') {
                                         locationBegin = locationBegin.substr(1, locationBegin.size() - 1);
@@ -1480,10 +1374,8 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
                                     if (locationEnd[0] == '>') {
                                         locationEnd = locationEnd.substr(1, locationEnd.size() - 1);
                                     }
-                                    cdsInfoMap[accession].back().loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
-                        
-                                    // cout << locationBegin << " " << locationEnd << endl;
 
+                                    cdsInfoMap[accession].back().loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
                                     value = value.substr(commaPos + 1, value.size() - commaPos - 1);
                                     commaPos = value.find(',');
                                 }
@@ -1498,6 +1390,15 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
                                     locationEnd = locationEnd.substr(1, locationEnd.size() - 1);
                                 }
                                 cdsInfoMap[accession].back().loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
+
+                                // Frame correction
+                                if (frame != 1) {
+                                    if (!isComplement) {
+                                        cdsInfoMap[accession].back().loc[0].first += frame - 1;
+                                    } else {
+                                        cdsInfoMap[accession].back().loc.back().second -= frame - 1;
+                                    }
+                                }
                                 break;
                             } 
                         }
@@ -1514,42 +1415,38 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
     }
 }
 
-void IndexCreator::devideToCdsAndNonCds(const char * seq,
-                                        size_t seqLen,
-                                        const vector<CDSinfo> & cdsInfo,
-                                        vector<string> & cds, 
-                                        vector<string> & nonCds) {
-    string tmp;
-    for (size_t i = 0; i < cdsInfo.size(); i++) {
-        tmp.clear();
-        for (size_t j = 0; j < cdsInfo[i].loc.size(); j++) {
-            tmp += string(seq + cdsInfo[i].loc[j].first - 1, cdsInfo[i].loc[j].second - cdsInfo[i].loc[j].first + 1);    
-        }
-        cds.emplace_back(tmp);
-    }
-
-    // Get non-CDS that are not in the CDS list
-    bool * checker = new bool[seqLen];
-    memset(checker, true, seqLen * sizeof(bool));
-    for (size_t i = 0; i < cdsInfo.size(); i++) {
-        for (size_t j = 0; j < cdsInfo[i].loc.size(); j++) {
-            for (size_t k = cdsInfo[i].loc[j].first - 1; k < cdsInfo[i].loc[j].second; k++) {
-                checker[k] = false;
-            }
+int IndexCreator::selectReadingFrame(priority_queue<uint64_t> & observedHashes, const char * seq, const SeqIterator & seqIterator){
+    priority_queue<uint64_t> currentList;
+    // Forward frame
+    int max = 0;
+    int frame = 0;
+    for (size_t i = 0; i < 3; i++) {
+        SeqIterator::getMinHashList(currentList, seq + i);
+        int cnt = countCommonMinHashes(observedHashes, currentList);
+        if (cnt > max) {
+            max = cnt;
+            frame = i;
         }
     }
 
-    size_t len;
-    size_t i = 0;
-    while (i < seqLen) {
-        len = 0;
-        while (i < seqLen && checker[i]) {
-            i++;
-            len++;
+    // Reverse frame
+    char * reverseComplement = seqIterator.reverseComplement(seq, strlen(seq));
+    for (size_t i = 0; i < 3; i++) {
+        SeqIterator::getMinHashList(currentList, reverseComplement + i);
+        int cnt = countCommonMinHashes(observedHashes, currentList);
+        if (cnt > max) {
+            max = cnt;
+            frame = i + 3;
         }
-        if (len > 32) {
-            nonCds.emplace_back(string(seq + i - len, len));
-        }
-        i ++;
     }
+    
+    // Update observedHashes
+    if (frame < 3) {
+        SeqIterator::getMinHashList(observedHashes, seq + frame, observedHashes.size() + 3000);
+    } else {
+        SeqIterator::getMinHashList(observedHashes, reverseComplement + frame - 3, observedHashes.size() + 3000);
+    }
+
+    free(reverseComplement);
+    return frame;
 }

@@ -148,3 +148,19 @@ int searchAccession2TaxID(const std::string &name,
 
   return 0;
 }
+
+int countCommonMinHashes(std::priority_queue <uint64_t> ref, std::priority_queue <uint64_t> & query) {
+    int identicalCount = 0;
+    while (!ref.empty() && !query.empty()) {
+        if (ref.top() == query.top()) {
+            identicalCount++;
+            ref.pop();
+            ref.pop();
+        } else if (ref.top() > query.top()) {
+            ref.pop();
+        } else if (ref.top() < query.top()) {
+            query.pop();
+        }
+    }
+  return identicalCount;
+}
