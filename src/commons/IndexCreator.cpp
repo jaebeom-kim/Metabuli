@@ -69,9 +69,10 @@ IndexCreator::~IndexCreator() {
 }
 
 void IndexCreator::createIndex(const LocalParameters &par) {
-
-    loadCdsInfo(par.cdsInfo);
-
+    if (!par.cdsInfo.empty()) {
+        loadCdsInfo(par.cdsInfo);
+    }
+    
     // Read through FASTA files and make blocks of sequences to be processed by each thread
     if (par.accessionLevel) {
         makeBlocksForParallelProcessing_accession_level();
@@ -103,7 +104,7 @@ void IndexCreator::createIndex(const LocalParameters &par) {
         memset(kmerBuffer.buffer, 0, kmerBuffer.bufferSize * sizeof(TargetKmer));
 
         // Extract Target k-mers
-        fillTargetKmerBuffer2(kmerBuffer, splitChecker, processedSplitCnt, par);
+        fillTargetKmerBuffer(kmerBuffer, splitChecker, processedSplitCnt, par);
 
         // Sort the k-mers
         time_t start = time(nullptr);
@@ -1334,6 +1335,8 @@ void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
                             string feature = line.substr(start, equalPos - start);
                             string value = line.substr(equalPos + 1, end - equalPos - 1);
                             if (feature == "pseudo") {
+                                break;
+                            } else if (feature == "protein" && value == "hypothetical protein") {
                                 break;
                             } else if (feature == "frame") {
                                 frame = stoi(value);

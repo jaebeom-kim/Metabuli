@@ -100,8 +100,10 @@ void Taxonomer::chooseBestTaxon(uint32_t currentQuery,
                                             end,
                                             offset,                        
                                             queryList[currentQuery].queryLength + queryList[currentQuery].queryLength2);
+    // for (auto & match : speciesMatches) {
+    //     cout << match.qInfo.sequenceID << " " << match.qInfo.frame << " " << match.qInfo.pos << " " << match.targetId << " " << (int)match.hamming << endl;
+    // }
     
-
     // If there is no proper species for current query, it is un-classified.
     if (speciesScore.score == 0 || speciesScore.score < par.minScore) {
         queryList[currentQuery].isClassified = false;
