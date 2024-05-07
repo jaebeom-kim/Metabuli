@@ -52,12 +52,13 @@ int LocalUtil::getFirstWhiteSpacePos(const std::string &str) {
     return str.size();
 }
 
-// std::string LocalUtil::getAccessionFromHeader(const std::string &header) {
-//     int pos = getFirstWhiteSpacePos(header);
-//     std::string accession = header.substr(0, pos);
-//     std::vector<std::string> splits = Util::split(accession, ".");
-//     if (splits.size() > 1) {
-//         accession = splits[0];
-//     }
-//     return std::stoi(accession.substr(3));
-// }
+void LocalUtil::loadUnorderedSetFromFile(std::unordered_set<int> &set, const std::string &filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file: " + filePath);
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        set.insert(std::stoi(line));
+    }
+}

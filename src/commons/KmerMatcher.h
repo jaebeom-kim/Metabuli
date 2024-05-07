@@ -11,6 +11,7 @@
 #include "unordered_map"
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 #define BufferSize 16'777'216 // 16 * 1024 * 1024 // 16 M
 
@@ -25,6 +26,7 @@ using namespace std;
 
 class KmerMatcher {
 protected:
+  const LocalParameters &par;
   NcbiTaxonomy *taxonomy;
   size_t threads;
   std::string dbDir;
@@ -41,6 +43,7 @@ protected:
       {3, 3, 2, 3, 4, 4, 0, 1}, {3, 2, 3, 3, 4, 4, 1, 0}};
   unordered_map<TaxID, TaxID> taxId2speciesId;
   unordered_map<TaxID, TaxID> taxId2genusId;
+  unordered_set<int> exclusionTaxIds;
 
   string targetDiffIdxFileName;
   string targetInfoFileName;

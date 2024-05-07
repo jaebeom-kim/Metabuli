@@ -57,6 +57,7 @@ public:
     PARAMETER(MATCH_PER_KMER)
     PARAMETER(MIN_SS_MATCH)
     PARAMETER(TIE_RATIO)
+    PARAMETER(EXCLUDE_TAXID)
 
     // DB build parameters
     PARAMETER(LIBRARY_PATH)
@@ -107,6 +108,7 @@ public:
     int matchPerKmer;
     int minSSMatch;
     float tieRatio;
+    std::string excludeTaxId;
 
     // Database creation
     std::string tinfoPath;

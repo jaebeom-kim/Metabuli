@@ -7,7 +7,7 @@
 #include <vector>
 
 KmerMatcher::KmerMatcher(const LocalParameters & par,
-                         NcbiTaxonomy * taxonomy) {
+                         NcbiTaxonomy * taxonomy) : par(par) {
     // Parameters
     threads = par.threads;
     dbDir = par.filenames[1 + (par.seqMode == 2)];
@@ -20,6 +20,9 @@ KmerMatcher::KmerMatcher(const LocalParameters & par,
     this->taxonomy = taxonomy;
     loadTaxIdList(par);
 
+    if (!par.excludeTaxId.empty()) {
+        LocalUtil::loadUnorderedSetFromFile(exclusionTaxIds, par.excludeTaxId);
+    }
 }
 
 
@@ -367,8 +370,12 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
                     // Load target k-mers that are matched in amino acid level
                     while (diffIdxPos != numOfDiffIdx &&
                            currentQueryAA == AminoAcidPart(currentTargetKmer)) {
-                        candidateTargetKmers.push_back(currentTargetKmer);
-                        candidateKmerInfos.push_back(getKmerInfo(BufferSize, kmerInfoFp, kmerInfoBuffer, kmerInfoBufferIdx));
+                        TargetKmerInfo kmerInfo = getKmerInfo(BufferSize, kmerInfoFp, kmerInfoBuffer, kmerInfoBufferIdx);
+                        if (exclusionTaxIds.find(taxId2speciesId[kmerInfo.sequenceID]) == exclusionTaxIds.end()) {
+                            candidateTargetKmers.push_back(currentTargetKmer);
+                            candidateKmerInfos.push_back(kmerInfo);
+                        }
+                        
                         // Print the target k-mer
 //                        if (par.printLog == 1) {
 //                            cout << queryKmerList[j].info.sequenceID << "\t" << queryKmerList[j].info.pos << "\t"

@@ -159,6 +159,13 @@ LocalParameters::LocalParameters() :
                       typeid(float),
                       (void *) &tieRatio,
                       "^0(\\.[0-9]+)?|1(\\.0+)?$"),
+        EXCLUDE_TAXID(EXCLUDE_TAXID_ID,
+                        "--exclude-taxid",
+                        "A file of sp. tax IDs to be excluded (one ID per line)",
+                        "A file of sp. tax IDs to be excluded (one ID per line)",
+                        typeid(int),
+                        (void *) &excludeTaxId,
+                        "^[0-9]+$"),
         LIBRARY_PATH(LIBRARY_PATH_ID,
                      "--library-path",
                      "Path to library where the FASTA files are stored",
@@ -331,7 +338,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&MATCH_PER_KMER);
     classify.push_back(&ACCESSION_LEVEL);
     classify.push_back(&TIE_RATIO);
-    // classify.push_back(&MIN_SS_MATCH);
+    classify.push_back(&EXCLUDE_TAXID);
 
     // filter 
     filter.push_back(&PARAM_THREADS);

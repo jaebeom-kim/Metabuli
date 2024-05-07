@@ -5,6 +5,8 @@
 #include <string>
 #include "common.h"
 #include "KSeqWrapper.h"
+#include <unordered_set>
+#include <fstream>
 
 class LocalUtil : public Util {
 public:
@@ -20,6 +22,8 @@ public:
     static int getMaxCoveredLength(int queryLength) ;
 
     static int getFirstWhiteSpacePos(const std::string & str);
+
+    static void loadUnorderedSetFromFile(std::unordered_set<int> & set, const std::string & filePath);
 
     // static std::string getAccessionFromHeader(const std::string & header);
 };

@@ -1,5 +1,6 @@
 #include "Taxonomer.h"
 #include "BitManipulateMacros.h"
+#include "LocalUtil.h"
 #include "Match.h"
 #include "NcbiTaxonomy.h"
 #include "common.h"
@@ -9,7 +10,7 @@
 #include <unordered_map>
 
 
-Taxonomer::Taxonomer(const LocalParameters &par, NcbiTaxonomy *taxonomy) : taxonomy(taxonomy) {
+Taxonomer::Taxonomer(const LocalParameters &par, NcbiTaxonomy *taxonomy) : par(par), taxonomy(taxonomy) {
     // Parameters
     auto mask = new uint32_t[par.spaceMask.length()];
     for(size_t i = 0, j = 0; i < par.spaceMask.length(); i++){
@@ -34,6 +35,10 @@ Taxonomer::Taxonomer(const LocalParameters &par, NcbiTaxonomy *taxonomy) : taxon
         denominator = 100;
     } else {
         denominator = 1000;
+    }
+
+    if (!par.excludeTaxId.empty()) {
+        LocalUtil::loadUnorderedSetFromFile(excludeTaxId, par.excludeTaxId);
     }
 }
 

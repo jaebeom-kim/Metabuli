@@ -48,6 +48,7 @@ struct MatchPath {
 
 class Taxonomer {
 private:
+    const LocalParameters &par;
     NcbiTaxonomy * taxonomy;
 
     // spaced k-mer
@@ -66,6 +67,7 @@ private:
 
     // Internal
     int denominator;
+    unordered_set<TaxID> excludeTaxId;
 
     struct MatchBlock {
         MatchBlock(size_t start, size_t end, int id) : start(start), end(end), id(id) {}
@@ -74,8 +76,6 @@ private:
         size_t end;
         uint32_t id;
     };
-
-
 
     // Output
     unordered_map<TaxID, unsigned int> taxCounts;
