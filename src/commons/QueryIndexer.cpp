@@ -77,7 +77,7 @@ void QueryIndexer::indexQueryFile(size_t processedQueryNum) {
         size_t seqCnt_1 = 0;
         size_t seqCnt_2 = 0;
         size_t start = 0;
-        size_t currentKmerCnt;
+        size_t currentKmerCnt = 0;
         bool end = false;
         while(true) {
             if (kseq_1->ReadEntry()) {

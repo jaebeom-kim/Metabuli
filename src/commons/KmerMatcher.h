@@ -60,24 +60,6 @@ protected:
 
   size_t AminoAcidPart(size_t kmer) const { return (kmer)&MARKER; }
 
-  template <typename T>
-  static void loadBuffer(FILE *fp, T *buffer, size_t &bufferIdx, size_t size) {
-    fread(buffer, sizeof(T), size, fp);
-    bufferIdx = 0;
-  }
-
-  template <typename T>
-  static void loadBuffer(FILE *fp, T *buffer, size_t &bufferIdx, size_t size,
-                         int cnt) {
-    fseek(fp, cnt * sizeof(T), SEEK_CUR);
-    fread(buffer, sizeof(T), size, fp);
-    bufferIdx = 0;
-  }
-
-  static uint64_t getNextTargetKmer(uint64_t lookingTarget,
-                                    const uint16_t *diffIdxBuffer,
-                                    size_t &diffBufferIdx, size_t &totalPos);
-
   static TargetKmerInfo getKmerInfo(size_t bufferSize, FILE *kmerInfoFp,
                                     TargetKmerInfo *infoBuffer,
                                     size_t &infoBufferIdx);
@@ -111,6 +93,10 @@ public:
                   const string &db = string());
   
   void sortMatches(Buffer<Match> *matchBuffer);
+
+  static uint64_t getNextTargetKmer(uint64_t lookingTarget,
+                                    const uint16_t *diffIdxBuffer,
+                                    size_t &diffBufferIdx, size_t &totalPos);
 
   // Getters
   size_t getTotalMatchCnt() const { return totalMatchCnt; }

@@ -1,4 +1,5 @@
 #include "FileMerger.h"
+#include "IndexCreator.h"
 #include "common.h"
 
 FileMerger::FileMerger(const LocalParameters & par) {
@@ -278,7 +279,7 @@ void FileMerger::mergeTargetFiles(const LocalParameters & par, int numOfSplits) 
     TargetKmerInfo entryInfo = lookingInfos[idxOfMin];
 
     // Write first k-mer
-    getDiffIdx(lastWrittenKmer, entryKmer, mergedDiffFile, diffBuffer, diffBufferIdx, totalBufferIdx);
+    getDiffIdx(lastWrittenKmer, entryKmer, mergedDiffFile, diffBuffer, diffBufferIdx, totalBufferIdx, this->bufferSize);
     lastWrittenKmer = entryKmer;
     writeInfo(&entryInfo, mergedInfoFile, infoBuffer, infoBufferIdx, totalInfoIdx);
     writtenKmerCnt++;
@@ -336,7 +337,7 @@ void FileMerger::mergeTargetFiles(const LocalParameters & par, int numOfSplits) 
         }
 
         entryInfo.redundancy = (hasSeenOtherStrains > 0 || entryInfo.redundancy);
-        getDiffIdx(lastWrittenKmer, entryKmer, mergedDiffFile, diffBuffer, diffBufferIdx, totalBufferIdx);
+        getDiffIdx(lastWrittenKmer, entryKmer, mergedDiffFile, diffBuffer, diffBufferIdx, totalBufferIdx, this->bufferSize);
         lastWrittenKmer = entryKmer;
         writeInfo(&entryInfo, mergedInfoFile, infoBuffer, infoBufferIdx, totalInfoIdx);
         writtenKmerCnt++;
@@ -434,7 +435,7 @@ size_t FileMerger::smallest(const uint64_t lookingKmers[],
     return idxOfMin;
 }
 
-void FileMerger::getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryToWrite, FILE* handleKmerTable, uint16_t *kmerBuf, size_t & localBufIdx, size_t & totalBufIdx){
+void FileMerger::getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryToWrite, FILE* handleKmerTable, uint16_t *kmerBuf, size_t & localBufIdx, size_t & totalBufIdx, size_t bufferSize){
     uint64_t kmerdiff = entryToWrite - lastKmer;
     uint16_t buffer[5];
     int idx = 3;
@@ -446,20 +447,15 @@ void FileMerger::getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryToW
         buffer[idx] = toWrite;
         idx--;
     }
-    writeDiffIdx(kmerBuf, handleKmerTable, (buffer + idx + 1), (4 - idx), localBufIdx, totalBufIdx);
+    writeDiffIdx(kmerBuf, handleKmerTable, (buffer + idx + 1), (4 - idx), localBufIdx, totalBufIdx, bufferSize);
 }
-void FileMerger::writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx, size_t & totalBufIdx) {
+void FileMerger::writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx, size_t & totalBufIdx, size_t bufferSize) {
     if (localBufIdx + size >= bufferSize) {
-        flushKmerBuf(buffer, handleKmerTable, localBufIdx);
+        IndexCreator::flushKmerBuf(buffer, handleKmerTable, localBufIdx);
     }
     memcpy(buffer + localBufIdx, toWrite, sizeof(uint16_t) * size);
     localBufIdx += size;
     totalBufIdx += size;
-}
-
-void FileMerger::flushKmerBuf(uint16_t *buffer, FILE *handleKmerTable, size_t & localBufIdx ) {
-    fwrite(buffer, sizeof(uint16_t), localBufIdx, handleKmerTable);
-    localBufIdx = 0;
 }
 
 void FileMerger::writeInfo(TargetKmerInfo * entryToWrite, FILE * infoFile, TargetKmerInfo * infoBuffer, size_t & infoBufferIdx, size_t & totalInfoIdx)

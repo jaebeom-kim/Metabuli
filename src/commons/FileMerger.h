@@ -21,9 +21,8 @@ private:
     int splitNum;
     size_t bufferSize;
 
-    void getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryToWrite, FILE* handleKmerTable, uint16_t *kmerBuf, size_t & localBufIdx, size_t & totalBufIdx);
-    void writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx , size_t & totalBufIdx);
-    void flushKmerBuf(uint16_t *buffer, FILE *handleKmerTable, size_t & localBufIdx );
+    // void writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx , size_t & totalBufIdx);
+    // void flushKmerBuf(uint16_t *buffer, FILE *handleKmerTable, size_t & localBufIdx );
     void writeInfo(TargetKmerInfo * entryToWrite, FILE * infoFile, TargetKmerInfo * infoBuffer, size_t & infoBufferIdx, size_t & totalInfoIdx);
     void flushInfoBuf(TargetKmerInfo * buffer, FILE * infoFile, size_t & localBufIdx );
     size_t AminoAcidPart(size_t kmer) {
@@ -43,6 +42,12 @@ public:
                            const unordered_map<TaxID, TaxID> & taxId2speciesId,
                            const size_t &fileCnt);
     static uint64_t getNextKmer(uint64_t currentValue, const struct MmapedData<uint16_t> & diffList, size_t &idx);
+
+    static void writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx , size_t & totalBufIdx, size_t bufferSize);
+    
+
+    static void getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryToWrite, FILE* handleKmerTable, uint16_t *kmerBuf, size_t & localBufIdx, size_t & totalBufIdx, size_t bufferSize);
+    
 };
 #endif //ADKMER4_MERGETARGETFILES_H
 

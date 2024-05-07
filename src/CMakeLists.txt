@@ -1,16 +1,19 @@
 include_directories(commons)
 include_directories(workflow)
+include_directories(functional)
 include_directories(../lib/prodigal)
 
 add_subdirectory(commons)
 add_subdirectory(util)
 add_subdirectory(version)
 add_subdirectory(workflow)
+add_subdirectory(functional)
 
 add_executable(metabuli
         ${commons_source_files}
         ${util_source_files}
         ${workflow_source_files}
+        ${functional_source_files}
         metabuli.cpp
         LocalCommandDeclarations.h util/filter_by_genus.cpp)
 

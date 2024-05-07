@@ -46,5 +46,16 @@ struct DiffIdxSplit{
     size_t infoIdxOffset;
 };
 
+struct AAKmer {
+    uint64_t kmer : 36;
+    uint64_t id : 28;
+};
+struct ProtIdxSplit{
+    ProtIdxSplit(uint64_t kmer, size_t idxOffset) : kmer(kmer), idxOffset(idxOffset) { }
+    // ProtIdxSplit(const ProtIdxSplit & copy) {kmer = copy.kmer; idxOffset = copy.idxOffset;}
+    ProtIdxSplit() {};
+    uint64_t kmer;
+    size_t idxOffset;
+};
 
 #endif //ADKMER3_KMER_H

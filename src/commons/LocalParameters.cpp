@@ -201,13 +201,6 @@ LocalParameters::LocalParameters() :
                         typeid(int),
                         (void *) &accessionLevel,
                         "[0-1]"),
-        CDS_INFO(CDS_INFO_ID,
-                 "--cds-info",
-                 "List of CDS files",
-                 "List of CDS files",
-                 typeid(std::string),
-                 (void *) &cdsInfo,
-                 "^.*$"),
         DB_NAME(DB_NAME_ID,
                 "--db-name",
                 "Name of the database (a random number as default)",
@@ -222,6 +215,20 @@ LocalParameters::LocalParameters() :
                 typeid(std::string),
                 (void *) &dbDate,
                 "^.*$"),
+        CDS_INFO(CDS_INFO_ID,
+                 "--cds-info",
+                 "List of CDS files",
+                 "List of CDS files",
+                 typeid(std::string),
+                 (void *) &cdsInfo,
+                 "^.*$"),
+        PROTEIN_DB(PROTEIN_DB_ID,
+                   "--protein-db",
+                   "Protein database",
+                   "Protein database",
+                   typeid(std::string),
+                   (void *) &proteinDB,
+                   "^.*$"),
         TEST_RANK(TEST_RANK_ID,
                   "--test-rank",
                   ".",
@@ -315,6 +322,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&DB_NAME);
     build.push_back(&DB_DATE);
     build.push_back(&CDS_INFO);
+    build.push_back(&PROTEIN_DB);
 
     //classify
     classify.push_back(&PARAM_THREADS);

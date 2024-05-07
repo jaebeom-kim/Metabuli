@@ -50,6 +50,7 @@ private:
     static const string iRCT;
     static const string atcg;
     vector<int> aaFrames[6];
+    int * aa2num;
     uint64_t powers[10];
     int nuc2aa[8][8][8];
     uint64_t nuc2num[4][4][4];
@@ -114,6 +115,7 @@ public:
                                   int taxIdAtRank);
 
   int computeMetamers(const char * seq, int frame, TargetKmerBuffer & kmerBuffer, size_t & posToWrite, int seqID, int taxIdAtRank);
+  size_t computeAAKmer(Buffer<uint64_t> * kmerBuffer, const char * seq, size_t seqLength, size_t & posToWrite, int seqId); 
 
   static void maskLowComplexityRegions(const char *seq, char *maskedSeq,
                                        ProbabilityMatrix &probMat,
@@ -121,6 +123,7 @@ public:
                                        const BaseMatrix *subMat);
 
   void printKmerInDNAsequence(uint64_t kmer);
+  void printAAKmer(uint64_t kmer);
 
   explicit SeqIterator(const LocalParameters &par);
   ~SeqIterator();

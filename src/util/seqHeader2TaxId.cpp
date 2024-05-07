@@ -43,7 +43,7 @@ int seqHeader2TaxId(int argc, const char **argv, const Command &command) {
             currFasta.open(fasta);
             while (getline(currFasta, line, '\n')){
                 if(line[0] == '>'){
-                    int i = 0;
+                    size_t i = 0;
                     for( ; i < line.size(); i++){
                         if(line[i] == ' ')
                             break;

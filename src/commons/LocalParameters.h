@@ -68,6 +68,7 @@ public:
     PARAMETER(DB_NAME)
     PARAMETER(DB_DATE)
     PARAMETER(CDS_INFO)
+    PARAMETER(PROTEIN_DB)
 
     // Test parameters
     PARAMETER(TEST_RANK)
@@ -119,6 +120,7 @@ public:
     size_t bufferSize;
     int accessionLevel;
     std::string cdsInfo;
+    std::string proteinDB;
 
     // Test parameters
     std::string testRank;

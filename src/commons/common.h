@@ -10,6 +10,12 @@
 #define unlikely(x) __builtin_expect((x),0)
 #define kmerLength 8
 
+struct Split{
+   Split(size_t offset, size_t end) : offset(offset), end(end) {}
+   size_t offset;
+   size_t end;
+};
+   
 struct CDSinfo{
     std::string proteinId;
     int frame;
@@ -67,6 +73,11 @@ struct Buffer {
         buffer = (T *) malloc(sizeof(T) * sizeOfBuffer);
         bufferSize = sizeOfBuffer;
         startIndexOfReserve = 0;
+        memset(buffer, 0, bufferSize * sizeof(T));
+    };
+
+    ~Buffer() {
+        free(buffer);
     };
 
     size_t reserveMemory(size_t numOfKmer) {
@@ -100,5 +111,18 @@ int loadDbParameters(LocalParameters & par);
 int searchAccession2TaxID(const std::string & name, const std::unordered_map<std::string, int> & acc2taxid);
 
 int countCommonMinHashes(std::priority_queue <uint64_t> ref, std::priority_queue <uint64_t> & query);
+
+template <typename T>
+size_t loadBuffer(FILE *fp, T *buffer, size_t &bufferIdx, size_t number, int cnt) {
+    bufferIdx = 0;
+    fseek(fp, cnt * sizeof(T), SEEK_CUR);
+    return fread(buffer, sizeof(T), number, fp);
+}
+
+template <typename T>
+size_t loadBuffer(FILE *fp, T *buffer, size_t &bufferIdx, size_t number) {
+    bufferIdx = 0;
+    return fread(buffer, sizeof(T), number, fp);
+}
 
 #endif //ADCLASSIFIER2_COMMON_H

@@ -8,4 +8,5 @@ set(util_source_files
         util/database-report.cpp
         util/mapping2taxon.cpp
         util/gradeByCladeSize.cpp
+        util/expand_diffidx.cpp
         PARENT_SCOPE)

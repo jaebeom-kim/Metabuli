@@ -20,6 +20,7 @@
 #include "SubstitutionMatrix.h"
 #include "tantan.h"
 #include "LocalUtil.h"
+#include "ProteinDbIndexer.h"
 
 
 #ifdef OPENMP
@@ -99,19 +100,11 @@ private:
         TaxID taxid;
     };
 
-   struct Split{
-       Split(size_t offset, size_t end) : offset(offset), end(end) {}
-       size_t offset;
-       size_t end;
-   };
-
     size_t numOfFlush=0;
 
     void writeTargetFiles(TargetKmer * kmerBuffer, size_t & kmerNum, const LocalParameters & par, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
 
     void writeTargetFilesAndSplits(TargetKmer * kmerBuffer, size_t & kmerNum, const LocalParameters & par, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
-
-    void writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx );
 
     void writeTaxonomyDB();
 
@@ -196,19 +189,24 @@ public:
     IndexCreator() {taxonomy = nullptr;}
     ~IndexCreator();
     int getNumOfFlush();
+
+    static void writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx, size_t bufferSize);
+
     void startIndexCreatingParallel(const LocalParameters & par);
 
     void createIndex(const LocalParameters & par);
 
     void updateIndex(const LocalParameters & par);
 
-    void getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryToWrite, FILE* handleKmerTable,
-                    uint16_t *kmerBuf, size_t & localBufIdx);
-    void getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryToWrite, FILE* handleKmerTable,
-                    uint16_t *kmerBuf, size_t & localBufIdx, size_t & totalBufferIdx);
+    static void getDiffIdx(uint64_t lastKmer, uint64_t entryToWrite, FILE* handleKmerTable,
+                    uint16_t *kmerBuf, size_t bufferSize, size_t & localBufIdx);
+
+    static void getDiffIdx(uint64_t lastKmer, uint64_t entryToWrite, FILE* handleKmerTable,
+                    uint16_t *kmerBuf, size_t bufferSize, size_t & localBufIdx, size_t & totalBufferIdx);
+
     void writeInfo(TargetKmerInfo * entryToWrite, FILE * infoFile, TargetKmerInfo * infoBuffer, size_t & infoBufferIdx);
     static void flushKmerBuf(uint16_t *buffer, FILE *handleKmerTable, size_t & localBufIdx);
-    static void flushInfoBuf(TargetKmerInfo * buffer, FILE * infoFile, size_t & localBufIdx );
+    static void flushInfoBuf(TargetKmerInfo * buffer, FILE * infoFile, size_t & localBufIdx);
 
 };
 #endif //ADKMER4_INDEXCREATOR_H

@@ -8,6 +8,10 @@
 #include "Reporter.h"
 #include "Util.h"
 #include "sys/mman.h"
+#include "Mmap.h"
+#include "KSeqWrapper.h"
+#include "kseq.h"
+#include "SeqIterator.h"
 
 void process_mem_usage(double &vm_usage, double &resident_set) {
   vm_usage = 0.0;

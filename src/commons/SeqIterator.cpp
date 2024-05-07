@@ -1,4 +1,5 @@
 #include "SeqIterator.h"
+#include <cstdint>
 
 const string SeqIterator::atcg = "................................................................"
                                  ".AGCG..GT..G.CN...ACTG.A.T.......agcg..gt..g.cn...actg.a.t......"
@@ -15,6 +16,7 @@ const string SeqIterator::iRCT = "..............................................
 SeqIterator::~SeqIterator() {
     delete[] mask;
     delete[] mask_int;
+    delete[] aa2num;
 }
 
 SeqIterator::SeqIterator(const LocalParameters &par) {
@@ -47,6 +49,57 @@ SeqIterator::SeqIterator(const LocalParameters &par) {
     for (int i = 0; i < kmerLength; i++) {
         powers[i] = pow;
         pow *= numOfAlphabets;
+    }
+
+    // AA to number
+    aa2num = new int[256];
+    for (int i = 0; i < 256; i++) {
+        aa2num[i] = -1;
+    }
+    if (par.reducedAA == 0) { 
+        aa2num[int('A')] = 0;
+        aa2num['R'] = 1;
+        aa2num['N'] = 2;
+        aa2num['D'] = 3;
+        aa2num['C'] = 4;
+        aa2num['Q'] = 5;
+        aa2num['E'] = 6;
+        aa2num['G'] = 7;
+        aa2num['H'] = 8;
+        aa2num['I'] = 9;
+        aa2num['L'] = 10;
+        aa2num['K'] = 11;
+        aa2num['M'] = 12;
+        aa2num['F'] = 13;
+        aa2num['P'] = 14;
+        aa2num['S'] = 15;
+        aa2num['T'] = 16;
+        aa2num['W'] = 17;
+        aa2num['Y'] = 18;
+        aa2num['V'] = 19;
+        aa2num['X'] = 20;
+    } else if (par.reducedAA == 1) {
+        aa2num['A'] = 0;
+        aa2num['R'] = 1;
+        aa2num['N'] = 2;
+        aa2num['D'] = 3;
+        aa2num['C'] = 4;
+        aa2num['Q'] = 5;
+        aa2num['E'] = 6;
+        aa2num['G'] = 7;
+        aa2num['H'] = 8;
+        aa2num['I'] = 9;
+        aa2num['L'] = 10;
+        aa2num['K'] = 11;
+        aa2num['M'] = 12;
+        aa2num['F'] = 13;
+        aa2num['P'] = 14;
+        aa2num['S'] = 15;
+        aa2num['T'] = 16;
+        aa2num['W'] = 17;
+        aa2num['Y'] = 18;
+        aa2num['V'] = 19;
+        aa2num['X'] = 20;
     }
 
     // Codon table
@@ -507,10 +560,42 @@ int SeqIterator::computeMetamers(const char * seq, // Reference sequence
     return 0;
 }
 
+size_t SeqIterator::computeAAKmer(Buffer<uint64_t> * kmerBuffer, const char *seq,
+                                  size_t seqLength, size_t &posToWrite,
+                                  int seqId) {
+    uint64_t tempKmer = 0;
+    int checkN;
+    for (size_t kmerCnt = 0; kmerCnt < seqLength - kmerLength + 1; kmerCnt ++) {
+        tempKmer = 0;
+        checkN = 0;
+        // cout << "SEQ: ";
+        for (uint32_t i = 0; i < kmerLength; i++) {
+            if (-1 == aa2num[seq[kmerCnt + i]]) {
+                checkN = 1;
+                break;
+            }
+            tempKmer += aa2num[seq[kmerCnt + i]] * powers[i] * mask[i];
+            // cout << seq[kmerCnt + i];
+        }
+        // cout << endl;
+        if (checkN == 1) {
+            kmerBuffer->buffer[posToWrite] = UINT64_MAX;
+        } else {
+            tempKmer <<= 28;
+            tempKmer |= seqId; // MUST: seqId < (2^28 - 1)
+            kmerBuffer->buffer[posToWrite] = tempKmer;
+            // printAAKmer(tempKmer); cout << endl;
+        }
+        posToWrite ++;
+    }
+    return 0;
+}
 
 // It adds DNA information to kmers referring the original DNA sequence.
-void
-SeqIterator::addDNAInfo_TargetKmer(uint64_t &kmer, const char *seq, const PredictedBlock &block, const int &kmerCnt) {
+void SeqIterator::addDNAInfo_TargetKmer(uint64_t &kmer,
+                                        const char *seq,
+                                        const PredictedBlock &block, 
+                                        const int &kmerCnt) {
     kmer <<= bitsFor8Codons;
     if (block.strand == 1) {
         int start = block.start + (kmerCnt * 3);
@@ -811,7 +896,7 @@ void SeqIterator::getMinHashList(priority_queue<uint64_t> &sortedHashQue, const 
         
         // Check if the kmer contains 'N' for masked region
         size_t nIdx = 0;
-        for (size_t j = 23; j >= 0; j--) {
+        for (int j = 23; j >= 0; j--) {
             if (kmer[j] == 'N') {
                 nIdx = j;
                 break;
@@ -914,7 +999,7 @@ void SeqIterator::devideToCdsAndNonCds(const char * seq,
             size_t end = cdsInfo[i].loc[j].second - 1;
             if (j == 0) {
                 int k = 0;
-                while (k < 7 && begin - 3 >= 0) {
+                while (k < 7 && begin >= 3) {
                     begin -= 3;
                     k++;
                 }
@@ -1582,3 +1667,17 @@ void SeqIterator::printKmerInDNAsequence(uint64_t kmer) {
         }
     }
 }
+
+void SeqIterator::printAAKmer(uint64_t kmer) {
+    kmer >>= 28;
+    vector<int> aa8mer(8);
+    for (int i = 0; i < 8; i++) {
+        int quotient = kmer / powers[7 - i];
+        kmer = kmer - (quotient * powers[7 - i]);
+        aa8mer[7 - i] = quotient;
+    }
+    string aminoacid = "ARNDCQEGHILKMFPSTWYVX";
+    for (int i = 0; i < 8; i++) {
+        cout << aminoacid[aa8mer[i]];
+    }
+} 

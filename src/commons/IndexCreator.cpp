@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include "NcbiTaxonomy.cpp"
+#include "ProteinDbIndexer.h"
 #include "SeqIterator.h"
 #include "common.h"
 
@@ -69,6 +70,11 @@ IndexCreator::~IndexCreator() {
 }
 
 void IndexCreator::createIndex(const LocalParameters &par) {
+    if (!par.proteinDB.empty()) {
+        cout << "here" << endl;
+        ProteinDbIndexer indexer(par);
+        indexer.index();
+    }
     if (!par.cdsInfo.empty()) {
         loadCdsInfo(par.cdsInfo);
     }
@@ -112,10 +118,10 @@ void IndexCreator::createIndex(const LocalParameters &par) {
                       IndexCreator::compareForDiffIdx);
         time_t sort = time(nullptr);
         cout << "Sort time: " << sort - start << endl;
+        
+        // Reduce redundancy
         auto * uniqKmerIdx = new size_t[kmerBuffer.startIndexOfReserve + 1];
         size_t uniqKmerCnt = 0;
-
-        // Reduce redundancy
         reduceRedundancy(kmerBuffer, uniqKmerIdx, uniqKmerCnt, par);
         time_t reduction = time(nullptr);
         cout<<"Time spent for reducing redundancy: "<<(double) (reduction - sort) << endl;
@@ -385,7 +391,7 @@ void IndexCreator::writeTargetFiles(TargetKmer * kmerBuffer, size_t & kmerNum, c
     for(size_t i = 0; i < uniqKmerCnt ; i++) {
         fwrite(& kmerBuffer[uniqeKmerIdx[i]].info, sizeof (TargetKmerInfo), 1, infoFile);
         write++;
-        getDiffIdx(lastKmer, kmerBuffer[uniqeKmerIdx[i]].ADkmer, diffIdxFile, diffIdxBuffer, localBufIdx);
+        getDiffIdx(lastKmer, kmerBuffer[uniqeKmerIdx[i]].ADkmer, diffIdxFile, diffIdxBuffer, this->bufferSize, localBufIdx);
         lastKmer = kmerBuffer[uniqeKmerIdx[i]].ADkmer;
     }
 
@@ -455,7 +461,7 @@ void IndexCreator::writeTargetFilesAndSplits(TargetKmer * kmerBuffer, size_t & k
         fwrite(& kmerBuffer[uniqKmerIdx[i]].info, sizeof (TargetKmerInfo), 1, infoFile);
         write++;
         getDiffIdx(lastKmer, kmerBuffer[uniqKmerIdx[i]].ADkmer, diffIdxFile,
-                   diffIdxBuffer, localBufIdx, totalDiffIdx);
+                   diffIdxBuffer, this->bufferSize, localBufIdx, totalDiffIdx);
         lastKmer = kmerBuffer[uniqKmerIdx[i]].ADkmer;
         if((splitIdx < splitCnt) && (lastKmer == splitList[splitIdx].ADkmer)){
             splitList[splitIdx].diffIdxOffset = totalDiffIdx;
@@ -594,7 +600,8 @@ void IndexCreator::reduceRedundancy(TargetKmerBuffer & kmerBuffer, size_t * uniq
     delete[] cntOfEachSplit;
 }
 
-void IndexCreator::getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryToWrite, FILE* handleKmerTable, uint16_t *kmerBuf, size_t & localBufIdx){
+void IndexCreator::getDiffIdx(uint64_t lastKmer, uint64_t entryToWrite, FILE* handleKmerTable,
+                              uint16_t *kmerBuf, size_t bufferSize, size_t & localBufIdx){
     uint64_t kmerdiff = entryToWrite - lastKmer;
     uint16_t buffer[5];
     int idx = 3;
@@ -606,11 +613,11 @@ void IndexCreator::getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryT
         buffer[idx] = toWrite;
         idx--;
     }
-    writeDiffIdx(kmerBuf, handleKmerTable, (buffer + idx + 1), (4 - idx), localBufIdx);
+    writeDiffIdx(kmerBuf, handleKmerTable, (buffer + idx + 1), (4 - idx), localBufIdx, bufferSize);
 }
 
-void IndexCreator::getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryToWrite, FILE* handleKmerTable,
-                              uint16_t *kmerBuf, size_t & localBufIdx, size_t & totalBufferIdx){
+void IndexCreator::getDiffIdx(uint64_t lastKmer, uint64_t entryToWrite, FILE* handleKmerTable,
+                              uint16_t *kmerBuf, size_t bufferSize, size_t & localBufIdx, size_t & totalBufferIdx){
     uint64_t kmerdiff = entryToWrite - lastKmer;
     uint16_t buffer[5];
     int idx = 3;
@@ -623,7 +630,7 @@ void IndexCreator::getDiffIdx(const uint64_t & lastKmer, const uint64_t & entryT
         idx--;
     }
     totalBufferIdx += 4 - idx;
-    writeDiffIdx(kmerBuf, handleKmerTable, (buffer + idx + 1), (4 - idx), localBufIdx);
+    writeDiffIdx(kmerBuf, handleKmerTable, (buffer + idx + 1), (4 - idx), localBufIdx, bufferSize);
 }
 
 void IndexCreator::flushKmerBuf(uint16_t *buffer, FILE *handleKmerTable, size_t & localBufIdx ) {
@@ -631,7 +638,7 @@ void IndexCreator::flushKmerBuf(uint16_t *buffer, FILE *handleKmerTable, size_t 
     localBufIdx = 0;
 }
 
-void IndexCreator::writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx ) {
+void IndexCreator::writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx, size_t bufferSize) {
     if (localBufIdx + size >= bufferSize) {
         flushKmerBuf(buffer, handleKmerTable, localBufIdx);
     }
