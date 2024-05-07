@@ -11,6 +11,7 @@
 #include "SeqIterator.h"
 #include "KmerBuffer.h"
 #include "KSeqWrapper.h"
+#include "FileUtil.h"
 
 class ProteinDbIndexer{
 private:
@@ -31,7 +32,7 @@ private:
     uint64_t mask_getAA;
     Buffer<uint64_t> * aaKmerBuffer;
     std::vector<SequenceBlock> sequenceBlocks;
-    std::unordered_map<string, int> proteinId2Index;
+    std::unordered_map<string, size_t> proteinId2Index;
     int flushCnt;
 
     // Outputs
@@ -44,8 +45,9 @@ private:
     size_t fillAAKmerBuffer(bool *checker, size_t & processedSplitCnt);
     void reduceRedundantAAKmers(size_t * uniqeKmerIdx, size_t & uniqueKmerCnt);
     void writeProteinIndexFile(const size_t * uniqeKmerIdx, size_t uniqKmerCnt, bool writeSplit=false);
+    void writeProteinDeltaIndexFile(const size_t * uniqeKmerIdx, size_t uniqKmerCnt, bool writeSplit=false);
     void mergeProteinIndexFiles();
-    void mergeProteinDiffIndexFiles();
+    void mergeProteinDeltaIndexFiles();
     size_t getSmallestKmer(const uint64_t lookingKmers[], size_t fileCnt); 
 
 public:

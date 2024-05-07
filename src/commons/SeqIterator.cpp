@@ -562,7 +562,7 @@ int SeqIterator::computeMetamers(const char * seq, // Reference sequence
 
 size_t SeqIterator::computeAAKmer(Buffer<uint64_t> * kmerBuffer, const char *seq,
                                   size_t seqLength, size_t &posToWrite,
-                                  int seqId) {
+                                  size_t seqId) {
     uint64_t tempKmer = 0;
     int checkN;
     for (size_t kmerCnt = 0; kmerCnt < seqLength - kmerLength + 1; kmerCnt ++) {

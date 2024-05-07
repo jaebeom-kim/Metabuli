@@ -52,10 +52,10 @@ struct AAKmer {
 };
 struct ProtIdxSplit{
     ProtIdxSplit(uint64_t kmer, size_t idxOffset) : kmer(kmer), idxOffset(idxOffset) { }
-    // ProtIdxSplit(const ProtIdxSplit & copy) {kmer = copy.kmer; idxOffset = copy.idxOffset;}
     ProtIdxSplit() {};
-    uint64_t kmer;
+    uint64_t kmer; 
     size_t idxOffset;
+    // getNextKmer(kmer, idxOffset) = next kmer
 };
 
 #endif //ADKMER3_KMER_H

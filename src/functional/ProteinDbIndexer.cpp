@@ -3,12 +3,15 @@
 #include "IndexCreator.h"
 #include "Kmer.h"
 #include "common.h"
+#include "printBinary.h"
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <ostream>
 
 ProteinDbIndexer::ProteinDbIndexer(const LocalParameters &par) : par(par){
     mask_getId = (1ULL << 28) - 1;
-    mask_getAA = (0xFFFFFFFFFFFFFFFFULL >> 28);
+    mask_getAA = ~((1ULL << 28) - 1);
     dbDir = par.filenames[0];
     aaKmerBuffer = new Buffer<uint64_t>(par.bufferSize);
     proteinIndexSplitFileName = dbDir + "/prot_split.mtbl";
@@ -38,13 +41,14 @@ void ProteinDbIndexer::index() {
         auto * uniqKmerIdx = new size_t[aaKmerBuffer->startIndexOfReserve + 1];
         size_t uniqKmerCnt = 0;
         reduceRedundantAAKmers(uniqKmerIdx, uniqKmerCnt);
-        writeProteinIndexFile(uniqKmerIdx, uniqKmerCnt, processedSplitCnt == numOfSplits && flushCnt == 0);
+
+        writeProteinDeltaIndexFile(uniqKmerIdx, uniqKmerCnt, processedSplitCnt == numOfSplits && flushCnt == 0);
         delete[] uniqKmerIdx;
     }
     if (flushCnt > 1) {
         // Merge
-        mergeProteinIndexFiles();
-        mergeProteinDiffIndexFiles();
+        // mergeProteinIndexFiles();
+        mergeProteinDeltaIndexFiles();
     }
     delete [] splitChecker;
 }
@@ -74,7 +78,7 @@ size_t ProteinDbIndexer::fillAAKmerBuffer(bool *checker, size_t & processedSplit
                               static_cast<size_t>(sequenceBlocks[i].length)};
                     seq = kseq_init(&buffer);
                     kseq_read(seq);
-                    // cout << "Processing " << seq->name.s << endl;
+                    cout << "Processing " << seq->name.s << " " << this->proteinId2Index[seq->name.s] << endl;
                     seqIterator.computeAAKmer(this->aaKmerBuffer, seq->seq.s, seq->seq.l, posToWrite, this->proteinId2Index[seq->name.s]);
                     kseq_destroy(seq);
                     __sync_fetch_and_add(&processedSplitCnt, 1);  
@@ -171,20 +175,14 @@ void ProteinDbIndexer::reduceRedundantAAKmers(size_t * uniqeKmerIdx, size_t & un
     delete[] cntOfEachSplit;
 }
 
-void ProteinDbIndexer::writeProteinIndexFile(const size_t * uniqKmerIdx, size_t uniqKmerCnt, bool writeSplit) {
+
+void ProteinDbIndexer::writeProteinIndexFile(const size_t * uniqKmerIdx, size_t uniqKmerCnt, bool completed) {
     string idxFileName;
-    string diffIdxFileName;
-    string kmerNumFileName;
-    if (writeSplit) {
-        diffIdxFileName = dbDir + "/protein_diff.mtbl";
-        idxFileName = dbDir + "/protein.mtbl";
+    if (completed) {
+        idxFileName = dbDir + "/protein_expanded.mtbl";
     } else {
-        kmerNumFileName = dbDir + "/" + to_string(flushCnt) + "_protein_kmer_num.mtbl";
-        diffIdxFileName = dbDir + "/" + to_string(flushCnt) + "_protein_diff.mtbl";
-        idxFileName = dbDir + "/" + to_string(flushCnt) + "_protein.mtbl";
+        idxFileName = dbDir + "/" + to_string(flushCnt) + "_protein_expanded.mtbl";
     }
-    FILE * kmerNum_fp = fopen(kmerNumFileName.c_str(), "wb");
-    FILE * diff_fp = fopen(diffIdxFileName.c_str(), "wb");
     FILE *fp = fopen(idxFileName.c_str(), "wb");
     flushCnt++;
 
@@ -192,7 +190,7 @@ void ProteinDbIndexer::writeProteinIndexFile(const size_t * uniqKmerIdx, size_t 
     FILE * idxSplitFile;
     ProtIdxSplit splitList[par.splitNum];    
     size_t splitCnt = 1;
-    if (writeSplit) {
+    if (completed) {
         idxSplitFile = fopen(proteinIndexSplitFileName.c_str(), "wb");
         memset(splitList, 0, sizeof(ProtIdxSplit) * par.splitNum);
         size_t splitWidth = uniqKmerCnt / par.splitNum;
@@ -220,27 +218,15 @@ void ProteinDbIndexer::writeProteinIndexFile(const size_t * uniqKmerIdx, size_t 
         cerr << "Error: Cannot open file " << idxFileName << endl;
         exit(1);
     }
-    uint16_t *diffIdxBuffer = (uint16_t *)malloc(sizeof(uint16_t) * this->bufferSize + 1);
-    size_t localBufIdx = 0;
-    uint64_t lastKmer = 0;
-
+    
     size_t splitIdx = 0;
-    if (!writeSplit) {
+    if (!completed) {
         for(size_t i = 0; i < uniqKmerCnt ; i++) {
             fwrite(&aaKmerBuffer->buffer[uniqKmerIdx[i]], sizeof (uint64_t), 1, fp);
-            IndexCreator::getDiffIdx(lastKmer,
-             aaKmerBuffer->buffer[uniqKmerIdx[i]],
-              diff_fp,
-               diffIdxBuffer,
-                this->bufferSize,
-                 localBufIdx);
-            lastKmer = aaKmerBuffer->buffer[uniqKmerIdx[i]];
         }
     } else {
         for(size_t i = 0; i < uniqKmerCnt ; i++) {
             fwrite(&this->aaKmerBuffer->buffer[uniqKmerIdx[i]], sizeof (uint64_t), 1, fp);
-            IndexCreator::getDiffIdx(lastKmer, aaKmerBuffer->buffer[uniqKmerIdx[i]], diff_fp, diffIdxBuffer, this->bufferSize, localBufIdx);
-            lastKmer = aaKmerBuffer->buffer[uniqKmerIdx[i]];
             if ((splitIdx < splitCnt) && (aaKmerBuffer->buffer[uniqKmerIdx[i]] == splitList[splitIdx].kmer)) {
                 splitList[splitIdx].idxOffset = i;
                 splitIdx++;
@@ -248,19 +234,122 @@ void ProteinDbIndexer::writeProteinIndexFile(const size_t * uniqKmerIdx, size_t 
         }
         fwrite(splitList, sizeof(ProtIdxSplit), par.splitNum, idxSplitFile);
     }
-    IndexCreator::flushKmerBuf(diffIdxBuffer, diff_fp, localBufIdx);
     // Write number of kmers
-    fwrite(&uniqKmerCnt, sizeof(size_t), 1, kmerNum_fp);
-
-    free(diffIdxBuffer);
-    fclose(kmerNum_fp);
     fclose(fp);
-    fclose(diff_fp);
+}
+
+void ProteinDbIndexer::writeProteinDeltaIndexFile(const size_t * uniqKmerIdx, size_t uniqKmerCnt, bool completed) {
+    string deltaIdxFileName;
+    string kmerNumFileName;
+    FILE * kmerNum_fp;
+    if (completed) {
+        deltaIdxFileName = dbDir + "/protein.mtbl";
+    } else {
+        deltaIdxFileName = dbDir + "/" + to_string(flushCnt) + "_protein.mtbl";
+        kmerNumFileName = dbDir + "/" + to_string(flushCnt) + "_protein_kmer_num.mtbl";
+        kmerNum_fp = fopen(kmerNumFileName.c_str(), "wb");
+        if (kmerNum_fp == NULL) {
+            cerr << "Error: Cannot open file " << kmerNumFileName << endl;
+            exit(1);
+        }
+    }
+    FILE *delta_fp = fopen(deltaIdxFileName.c_str(), "wb");
+    if (delta_fp == NULL) {
+        cerr << "Error: Cannot open file " << deltaIdxFileName << endl;
+        exit(1);
+    }
+    flushCnt++;
+
+    // Temporary offsets
+    size_t splitWidth = uniqKmerCnt / par.splitNum;
+    size_t remainder = uniqKmerCnt % par.splitNum;
+    size_t * tempOffsetList = new size_t[par.splitNum + 1];
+    tempOffsetList[0] = 0;
+    for (size_t i = 1; i < (size_t) par.splitNum; i++) {
+        tempOffsetList[i] = tempOffsetList[i - 1] + splitWidth;
+        if (remainder > 0) {
+            tempOffsetList[i]++;
+            remainder--;
+        }
+    }
+    tempOffsetList[par.splitNum] = UINT64_MAX;
+
+    // Offset list
+    FILE * offsetList_fp;
+    ProtIdxSplit * offsetList = new ProtIdxSplit[par.splitNum + 1];
+
+    
+    uint16_t *deltaIdxBuffer = (uint16_t *)malloc(sizeof(uint16_t) * this->bufferSize);
+    size_t localBufIdx = 0;
+    size_t totalBufferIdx = 0;
+    uint64_t lastKmer = 0;
+    if (!completed) {
+        for(size_t i = 0; i < uniqKmerCnt ; i++) {
+            IndexCreator::getDiffIdx(lastKmer,
+             aaKmerBuffer->buffer[uniqKmerIdx[i]],
+              delta_fp,
+               deltaIdxBuffer,
+                this->bufferSize,
+                 localBufIdx);
+            lastKmer = aaKmerBuffer->buffer[uniqKmerIdx[i]];
+        }
+    } else {
+        offsetList_fp = fopen(proteinIndexSplitFileName.c_str(), "wb");
+        if (offsetList_fp == NULL) {
+            cerr << "Error: Cannot open file " << proteinIndexSplitFileName << endl;
+            exit(1);
+        }
+        size_t processedKmers = 0;
+        size_t offsetListIdx = 0;
+        size_t processedOffset = 0;
+        bool check = false;
+        for(size_t i = 0; i < uniqKmerCnt ; i++) {
+            const uint64_t & currentKmer = aaKmerBuffer->buffer[uniqKmerIdx[i]];
+            IndexCreator::getDiffIdx(lastKmer,
+             currentKmer,
+              delta_fp,
+               deltaIdxBuffer,
+                this->bufferSize, 
+                localBufIdx,
+                 totalBufferIdx);
+
+            // Check if temporary offset is reached
+            if (processedKmers == tempOffsetList[offsetListIdx]) {
+                if (processedKmers == 0) {
+                    offsetList[processedOffset++] = {currentKmer, totalBufferIdx};
+                    offsetListIdx++;
+                } else {
+                    check = true;
+                    offsetListIdx++;
+                }
+            }
+            processedKmers++;
+
+            // If new temp. offset is reached and a new AA is seen, make a new offset point
+            if (check && (lastKmer & mask_getAA) != (currentKmer & mask_getAA)) {
+                offsetList[processedOffset++] = {currentKmer, totalBufferIdx};
+                check = false;
+            }
+            lastKmer = currentKmer;
+        }
+        fwrite(offsetList, sizeof(ProtIdxSplit), par.splitNum, offsetList_fp);
+    }
+    IndexCreator::flushKmerBuf(deltaIdxBuffer, delta_fp, localBufIdx);
+    if (!completed) {
+        fwrite(&uniqKmerCnt, sizeof(size_t), 1, kmerNum_fp);
+        fclose(kmerNum_fp);
+    }
+    free(deltaIdxBuffer);
+    fclose(delta_fp);
+    if (completed) {
+        fclose(offsetList_fp);
+    }
+    delete[] tempOffsetList;
+    delete[] offsetList;
 }
 
 void ProteinDbIndexer::mergeProteinIndexFiles() {
     string mergedFileName = dbDir + "/protein.mtbl";
-    string mergedDiffIdxFileName = dbDir + "/protein_diff.mtbl";
     FILE * mergedFile = fopen(mergedFileName.c_str(), "wb");
     FILE * idxSplitFile = fopen(proteinIndexSplitFileName.c_str(), "wb");
 
@@ -314,12 +403,11 @@ void ProteinDbIndexer::mergeProteinIndexFiles() {
     while(true) {
         // Find the smallest k-mer
         size_t idxOfMin = getSmallestKmer(lookingKmers, flushCnt);
-        uint64_t smallestKmer = lookingKmers[idxOfMin];
-        
+        uint64_t smallestKmer = lookingKmers[idxOfMin];        
         // Copy the smallest k-mer to the buffer
         // If the buffer is full, flush it 
         if (kmerBufferIdx == bufferSize) {
-            fwrite(kmerBuffer, sizeof(uint64_t), bufferSize, mergedFile);
+            fwrite(kmerBuffer, sizeof(uint64_t), kmerBufferIdx, mergedFile);
             kmerBufferIdx = 0;
         }
         kmerBuffer[kmerBufferIdx] = smallestKmer;
@@ -344,17 +432,16 @@ void ProteinDbIndexer::mergeProteinIndexFiles() {
         totalIdx++;
 
         // Update looking k-mers
-        lookingKmers[idxOfMin] = protIdxFileList[idxOfMin].data[currPositions[idxOfMin] ++];
-        if(currPositions[idxOfMin] >= maxIdxOfEachFiles[idxOfMin] ){
+        if (currPositions[idxOfMin] == maxIdxOfEachFiles[idxOfMin]) {
             lookingKmers[idxOfMin] = UINT64_MAX;
             remainedFiles--;
-            if(remainedFiles == 0) break;
+            if (remainedFiles == 0) break;
+        } else {
+            lookingKmers[idxOfMin] = protIdxFileList[idxOfMin].data[currPositions[idxOfMin]++];
         }
-        lastWrittenKmer = smallestKmer;
     }
 
-    // flush buffer
-    // write split
+    fwrite(kmerBuffer, sizeof(uint64_t), kmerBufferIdx, mergedFile);
     fwrite(splitList, sizeof(DiffIdxSplit), par.splitNum, idxSplitFile);
     free(kmerBuffer);
     fclose(mergedFile);
@@ -370,8 +457,8 @@ void ProteinDbIndexer::mergeProteinIndexFiles() {
     delete[] maxIdxOfEachFiles;
 }
 
-void ProteinDbIndexer::mergeProteinDiffIndexFiles() {
-    string mergedFileName = dbDir + "/protein_diff.mtbl";
+void ProteinDbIndexer::mergeProteinDeltaIndexFiles() {
+    string mergedFileName = dbDir + "/protein.mtbl";
     FILE * mergedFile = fopen(mergedFileName.c_str(), "wb");
     FILE * idxSplitFile = fopen(proteinIndexSplitFileName.c_str(), "wb");
 
@@ -394,6 +481,7 @@ void ProteinDbIndexer::mergeProteinDiffIndexFiles() {
         kmerCntFileList[file] = mmapData<size_t>((dbDir + "/" + to_string(file) + "_protein_kmer_num.mtbl").c_str());
         maxIdxOfEachFiles[file] = protIdxFileList[file].fileSize / sizeof(uint16_t);
         numOfKmerBeforeMerge += kmerCntFileList[file].data[0];
+        cout << "Num of kmers: " << kmerCntFileList[file].data[0] << endl;
     }    
     
     // Temporary offsets
@@ -424,31 +512,22 @@ void ProteinDbIndexer::mergeProteinDiffIndexFiles() {
     uint64_t lastWrittenKmer = 0;
     size_t offsetListIdx = 0;
     bool check = false;
-    size_t totalIdx = 0;
+    size_t processedKmers = 0;
     while(true) {
         // Find the smallest k-mer
         size_t idxOfMin = getSmallestKmer(lookingKmers, flushCnt);
         uint64_t smallestKmer = lookingKmers[idxOfMin];
-        FileMerger::getDiffIdx(lastWrittenKmer,
+        IndexCreator::getDiffIdx(lastWrittenKmer,
                              smallestKmer,
                               mergedFile,
                                kmerBuffer,
+                               bufferSize,
                                 kmerBufferIdx,
-                                 totalBufferIdx,
-                                  bufferSize); 
-        
-        
-        // Copy the smallest k-mer to the buffer
-        // If the buffer is full, flush it 
-        // if (kmerBufferIdx == bufferSize) {
-        //     fwrite(kmerBuffer, sizeof(uint64_t), bufferSize, mergedFile);
-        //     kmerBufferIdx = 0;
-        // }
-        // kmerBuffer[kmerBufferIdx] = smallestKmer;
+                                 totalBufferIdx); 
         
         // Check if offset is reached
-        if (totalIdx == offsetList[offsetListIdx]) {
-            if (totalIdx == 0) {
+        if (processedKmers == offsetList[offsetListIdx]) {
+            if (processedKmers == 0) {
                 splitList[splitCnt++] = {smallestKmer, totalBufferIdx};
                 offsetListIdx++;
             } else {
@@ -456,27 +535,31 @@ void ProteinDbIndexer::mergeProteinDiffIndexFiles() {
                 offsetListIdx++;
             }
         }
+        processedKmers++;
 
         // If new offset is reached and new AA is seen, it is time to split
         if (check && (lastWrittenKmer & mask_getAA) != (smallestKmer & mask_getAA)) {
             splitList[splitCnt++] = {smallestKmer, totalBufferIdx};
             check = false;
         }
-        totalIdx++;
+        
 
         // Update looking k-mers
-        lookingKmers[idxOfMin] =  FileMerger::getNextKmer(smallestKmer, protIdxFileList[idxOfMin], currPositions[idxOfMin]);
-        if (currPositions[idxOfMin] >= maxIdxOfEachFiles[idxOfMin] ){
+        if (currPositions[idxOfMin] == maxIdxOfEachFiles[idxOfMin]) {
             lookingKmers[idxOfMin] = UINT64_MAX;
             remainedFiles--;
             if(remainedFiles == 0) break;
+        } else {
+            lookingKmers[idxOfMin] =  FileMerger::getNextKmer(smallestKmer, protIdxFileList[idxOfMin], currPositions[idxOfMin]);
         }
         lastWrittenKmer = smallestKmer;
     }
 
     // flush buffer
+    IndexCreator::flushKmerBuf(kmerBuffer, mergedFile, kmerBufferIdx);
+
     // write split
-    fwrite(splitList, sizeof(DiffIdxSplit), par.splitNum, idxSplitFile);
+    fwrite(splitList, sizeof(ProtIdxSplit), par.splitNum, idxSplitFile);
     free(kmerBuffer);
     fclose(mergedFile);
     fclose(idxSplitFile);
@@ -489,19 +572,19 @@ void ProteinDbIndexer::mergeProteinDiffIndexFiles() {
     delete[] lookingKmers;
     delete[] currPositions;
     delete[] maxIdxOfEachFiles;
+    delete[] kmerCntFileList;
 }
 
 void ProteinDbIndexer::splitFasta(const std::string &fastaFileName, std::vector<SequenceBlock> &blocks) {
   KSeqWrapper* kseq = KSeqFactory(fastaFileName.c_str());
-  int idx = 0;
+  size_t idx = 0;
   while (kseq->ReadEntry()) {
     const KSeqWrapper::KSeqEntry & e = kseq->entry;
-    this->proteinId2Index[e.name.s] = idx;
+    this->proteinId2Index[e.name.s] = idx++;
     blocks.emplace_back(e.headerOffset - 1,
                         e.headerOffset + e.sequence.l + e.newlineCount + e.sequenceOffset - e.headerOffset - 2,
                         e.sequence.l + e.newlineCount + e.sequenceOffset - e.headerOffset,
                         e.sequence.l);
-    idx++;
   }
   delete kseq;
 }
@@ -510,13 +593,15 @@ size_t ProteinDbIndexer::getSmallestKmer(const uint64_t lookingKmers[], size_t f
     size_t idxOfMin = 0;
     uint64_t minKmer = lookingKmers[0] & mask_getAA;
     uint64_t minId = lookingKmers[0] & mask_getId;
-    for(size_t i = 1; i < fileCnt; i++) {
-        if ((lookingKmers[i] & mask_getAA) < minKmer) {
-            minKmer = lookingKmers[i] & mask_getAA;
-            minId = lookingKmers[i] & mask_getId;
+    for(size_t i = 0; i < fileCnt; i++) {
+        size_t currentKmer = lookingKmers[i] & mask_getAA;
+        size_t currentId = lookingKmers[i] & mask_getId;
+        if (currentKmer < minKmer) {
+            minKmer = currentKmer;
+            minId = currentId;
             idxOfMin = i;
-        } else if (((lookingKmers[i] & mask_getAA) == minKmer) && ((lookingKmers[i] & mask_getId) < minId)) {
-            minId = lookingKmers[i] & mask_getId;
+        } else if ((currentKmer == minKmer) && (currentId < minId)) {
+            minId = currentId;
             idxOfMin = i;
         } 
     }

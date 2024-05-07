@@ -115,7 +115,7 @@ public:
                                   int taxIdAtRank);
 
   int computeMetamers(const char * seq, int frame, TargetKmerBuffer & kmerBuffer, size_t & posToWrite, int seqID, int taxIdAtRank);
-  size_t computeAAKmer(Buffer<uint64_t> * kmerBuffer, const char * seq, size_t seqLength, size_t & posToWrite, int seqId); 
+  size_t computeAAKmer(Buffer<uint64_t> * kmerBuffer, const char * seq, size_t seqLength, size_t & posToWrite, size_t seqId); 
 
   static void maskLowComplexityRegions(const char *seq, char *maskedSeq,
                                        ProbabilityMatrix &probMat,

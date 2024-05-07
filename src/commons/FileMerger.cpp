@@ -401,8 +401,7 @@ uint64_t FileMerger::getNextKmer(uint64_t lookingTarget, const struct MmapedData
 
     for(int i = 0; i < 5; i++)
     {
-        fragment = diffList.data[idx];
-        idx++;
+        fragment = diffList.data[idx++];
         if(fragment & (0x1u << 15))
         {
             fragment &= ~(1<<15u);

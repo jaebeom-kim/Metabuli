@@ -71,7 +71,10 @@ int expand_diffidx(int argc, const char **argv, const Command &command){
                     
             
 
-    
+    fclose(diffIdxFp);
+    fclose(expandedDiffIdxFp);
+    free(diffIdxBuffer);
+    free(expandedIdxBuffer);
     return 0;
 }
 
