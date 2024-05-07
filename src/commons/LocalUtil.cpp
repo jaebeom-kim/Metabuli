@@ -55,7 +55,8 @@ int LocalUtil::getFirstWhiteSpacePos(const std::string &str) {
 void LocalUtil::loadUnorderedSetFromFile(std::unordered_set<int> &set, const std::string &filePath) {
     std::ifstream file(filePath);
     if (!file.is_open()) {
-        throw std::runtime_error("Cannot open file: " + filePath);
+        std::cerr << "Error: Unable to open file " << filePath << std::endl;
+        exit(1);
     }
     std::string line;
     while (std::getline(file, line)) {
