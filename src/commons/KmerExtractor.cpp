@@ -13,7 +13,7 @@ KmerExtractor::~KmerExtractor() {
     delete subMat;
 }
 
-void KmerExtractor::extractQueryKmers(QueryKmerBuffer &kmerBuffer,
+void KmerExtractor::extractQueryKmers(Buffer<QueryKmer> &kmerBuffer,
                                       vector<Query> & queryList,
                                       const QuerySplit & currentSplit,
                                       const LocalParameters &par,
@@ -45,7 +45,7 @@ void KmerExtractor::extractQueryKmers(QueryKmerBuffer &kmerBuffer,
 }
 
 void KmerExtractor::fillQueryKmerBufferParallel(KSeqWrapper *kseq1,
-                                                QueryKmerBuffer &kmerBuffer,
+                                                Buffer<QueryKmer> &kmerBuffer,
                                                 vector<Query> &queryList,
                                                 const QuerySplit &currentSplit,
                                                 const LocalParameters &par) {                                                   
@@ -115,7 +115,7 @@ void KmerExtractor::fillQueryKmerBufferParallel(KSeqWrapper *kseq1,
 
 void KmerExtractor::fillQueryKmerBufferParallel_paired(KSeqWrapper *kseq1,
                                                        KSeqWrapper *kseq2,
-                                                       QueryKmerBuffer &kmerBuffer,
+                                                       Buffer<QueryKmer> &kmerBuffer,
                                                        vector<Query> &queryList,
                                                        const QuerySplit &currentSplit,
                                                        const LocalParameters &par) {

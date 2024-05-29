@@ -58,7 +58,7 @@ public:
     explicit ReducedKmerMatcher(LocalParameters & par,
                                 NcbiTaxonomy * taxonomy)
                                 : KmerMatcher(par,taxonomy) {
-        MARKER = 0Xffffffff;
+        dnaEncodingMasker = 0Xffffffff;
     }
 
     ~ReducedKmerMatcher() override = default;

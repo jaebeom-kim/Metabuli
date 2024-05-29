@@ -1,5 +1,6 @@
 #include "IndexCreator.h"
 #include "FileUtil.h"
+#include "Kmer.h"
 #include "LocalUtil.h"
 #include "ProdigalWrapper.h"
 #include <cstdint>
@@ -15,7 +16,7 @@
 
 extern const char *version;
 
-IndexCreator::IndexCreator(const LocalParameters & par) {
+IndexCreator::IndexCreator(const LocalParameters & par) : par(par){
     // Parameters
     threadNum = par.threads;
     bufferSize = par.bufferSize;
@@ -69,7 +70,7 @@ IndexCreator::~IndexCreator() {
     delete subMat;
 }
 
-void IndexCreator::createIndex(const LocalParameters &par) {
+void IndexCreator::createIndex() {
     if (!par.proteinDB.empty()) {
         cout << "here" << endl;
         ProteinDbIndexer indexer(par);
@@ -85,22 +86,16 @@ void IndexCreator::createIndex(const LocalParameters &par) {
     } else {
         makeBlocksForParallelProcessing();
     }
+    writeTaxIdList();
     
     cout << "Made blocks for each thread" << endl;
-
-    // Write taxonomy id list
-    FILE * taxidListFile = fopen(taxidListFileName.c_str(), "w");
-    for (auto & taxid : taxIdList) {
-        fprintf(taxidListFile, "%d\n", taxid);
-    }
-    fclose(taxidListFile);
 
     // Process the splits until all are processed
     size_t numOfSplits = fnaSplits.size();
     bool * splitChecker = new bool[numOfSplits];
     fill_n(splitChecker, numOfSplits, false);
     size_t processedSplitCnt = 0;
-    TargetKmerBuffer kmerBuffer(par.bufferSize);
+    Buffer<TargetKmer> kmerBuffer(par.bufferSize);
     cout << "Kmer buffer size: " << kmerBuffer.bufferSize << endl;
 #ifdef OPENMP
     omp_set_num_threads(par.threads);
@@ -110,7 +105,7 @@ void IndexCreator::createIndex(const LocalParameters &par) {
         memset(kmerBuffer.buffer, 0, kmerBuffer.bufferSize * sizeof(TargetKmer));
 
         // Extract Target k-mers
-        fillTargetKmerBuffer(kmerBuffer, splitChecker, processedSplitCnt, par);
+        fillTargetKmerBuffer(kmerBuffer, splitChecker, processedSplitCnt);
 
         // Sort the k-mers
         time_t start = time(nullptr);
@@ -135,56 +130,6 @@ void IndexCreator::createIndex(const LocalParameters &par) {
     delete[] splitChecker;
     writeTaxonomyDB();
     writeDbParameters();
-}
-
-void IndexCreator::updateIndex(const LocalParameters &par) {
-    // Read through FASTA files and make blocks of sequences to be processed by each thread
-    makeBlocksForParallelProcessing();
-    cout << "Made blocks for each thread" << endl;
-
-    // Train Prodigal for each species
-    time_t prodigalStart = time(nullptr);
-    time_t prodigalEnd = time(nullptr);
-    cout << "Prodigal training time: " << prodigalEnd - prodigalStart << " seconds" << endl;
-
-    // Write taxonomy id list
-    string taxidListFileName = dbDir + "/taxID_list";
-    FILE * taxidListFile = fopen(taxidListFileName.c_str(), "w");
-    for (auto & taxid : taxIdList) {
-        fprintf(taxidListFile, "%d\n", taxid);
-    }
-    fclose(taxidListFile);
-
-    // Process the splits until all are processed
-    size_t numOfSplits = fnaSplits.size();
-    bool * splitChecker = new bool[numOfSplits];
-    fill_n(splitChecker, numOfSplits, false);
-    size_t processedSplitCnt = 0;
-    TargetKmerBuffer kmerBuffer(par.bufferSize);
-    cout << "Kmer buffer size: " << kmerBuffer.bufferSize << endl;
-#ifdef OPENMP
-    omp_set_num_threads(par.threads);
-#endif
-    while(processedSplitCnt < numOfSplits){
-        fillTargetKmerBuffer(kmerBuffer, splitChecker, processedSplitCnt, par);
-        time_t start = time(nullptr);
-        SORT_PARALLEL(kmerBuffer.buffer, kmerBuffer.buffer + kmerBuffer.startIndexOfReserve,
-                      IndexCreator::compareForDiffIdx);
-        time_t sort = time(nullptr);
-        cout << "Sort time: " << sort - start << endl;
-        auto * uniqKmerIdx = new size_t[kmerBuffer.startIndexOfReserve + 1];
-        size_t uniqKmerCnt = 0;
-        reduceRedundancy(kmerBuffer, uniqKmerIdx, uniqKmerCnt, par);
-        time_t reduction = time(nullptr);
-        cout<<"Time spent for reducing redundancy: "<<(double) (reduction - sort) << endl;
-        if(processedSplitCnt == numOfSplits && numOfFlush == 0){
-            writeTargetFilesAndSplits(kmerBuffer.buffer, kmerBuffer.startIndexOfReserve, par, uniqKmerIdx, uniqKmerCnt);
-        } else {
-            writeTargetFiles(kmerBuffer.buffer, kmerBuffer.startIndexOfReserve, par,uniqKmerIdx, uniqKmerCnt);
-        }
-        delete[] uniqKmerIdx;
-    }
-    delete[] splitChecker;
 }
 
 void IndexCreator::makeBlocksForParallelProcessing() {
@@ -231,8 +176,16 @@ void IndexCreator::makeBlocksForParallelProcessing() {
 
 }
 
-void IndexCreator::makeBlocksForParallelProcessing_accession_level() {
+void IndexCreator::writeTaxIdList() {
+    // Write taxonomy id list
+    FILE * taxidListFile = fopen(taxidListFileName.c_str(), "w");
+    for (auto & taxid : taxIdList) {
+        fprintf(taxidListFile, "%d\n", taxid);
+    }
+    fclose(taxidListFile);
+}
 
+void IndexCreator::makeBlocksForParallelProcessing_accession_level() {
     unordered_map<string, TaxID> acc2taxid;
     TaxID maxTaxID = load_accession2taxid(acc2taxidFileName, acc2taxid);
     newTaxID = std::max(getMaxTaxID() + 1, maxTaxID + 1);
@@ -323,13 +276,6 @@ void IndexCreator::splitFastaForProdigalTraining(int file_idx, TaxID speciesID) 
             cnt = 0;
             stored = true;
         }
-        // if(lengthSum > 100'000'000 || cnt > 300 || (cnt > 100 && lengthSum > 50'000'000)){
-        //     tempSplits.emplace_back(0, offset, cnt - 1, speciesID, file_idx);
-        //     offset += cnt - 1;
-        //     lengthSum = 0;
-        //     cnt = 1;
-        //     stored = true;
-        // }
         seqIdx ++;
     }
     if(!stored){
@@ -486,7 +432,7 @@ void IndexCreator::writeTargetFilesAndSplits(TargetKmer * kmerBuffer, size_t & k
     kmerNum = 0;
 }
 
-void IndexCreator::reduceRedundancy(TargetKmerBuffer & kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqueKmerCnt,
+void IndexCreator::reduceRedundancy(Buffer<TargetKmer> & kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqueKmerCnt,
                                     const LocalParameters & par) {
     // Find the first index of garbage k-mer (UINT64_MAX)
     for(size_t checkN = kmerBuffer.startIndexOfReserve - 1; checkN != 0; checkN--){
@@ -857,10 +803,9 @@ void IndexCreator::load_assacc2taxid(const string & mappingFile, unordered_map<s
 }
 
 
-size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
+size_t IndexCreator::fillTargetKmerBuffer(Buffer<TargetKmer> &kmerBuffer,
                                           bool *checker,
-                                          size_t &processedSplitCnt,
-                                          const LocalParameters &par) {
+                                          size_t &processedSplitCnt) {
     int hasOverflow = 0;
 
 #pragma omp parallel default(none), shared(kmerBuffer, checker, processedSplitCnt, hasOverflow, par, cout)
@@ -1036,151 +981,6 @@ size_t IndexCreator::fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
     cout << "Before return: " << kmerBuffer.startIndexOfReserve << endl;
     return 0;
 }
-
-size_t IndexCreator::fillTargetKmerBuffer2(TargetKmerBuffer &kmerBuffer,
-                                           bool *checker,
-                                           size_t &processedSplitCnt,
-                                           const LocalParameters &par) {
-    int hasOverflow = 0;
-#pragma omp parallel default(none), shared(kmerBuffer, checker, processedSplitCnt, hasOverflow, par, cout)
-    {
-        ProbabilityMatrix probMatrix(*subMat);
-        SeqIterator seqIterator(par);
-        size_t posToWrite;
-        priority_queue<uint64_t> observedNonCDSKmerHashes;
-        priority_queue<uint64_t> standardList;
-        priority_queue<uint64_t> currentList;
-        char *reverseComplement;
-        string reverseComplementStr;
-        vector<bool> strandness;
-        kseq_buffer_t buffer;
-        kseq_t *seq;
-        vector<uint64_t> observedNonCDSKmers;
-#pragma omp for schedule(dynamic, 1)
-        for (size_t i = 0; i < fnaSplits.size(); i++) {
-            if (!checker[i] && !hasOverflow) {
-                checker[i] = true;
-                observedNonCDSKmers.clear();
-                strandness.clear();
-                standardList = priority_queue<uint64_t>();
-
-                // Estimate the number of k-mers to be extracted from current split
-                size_t totalLength = 0;
-                for (size_t p = 0; p < fnaSplits[i].cnt; p++) {
-                    totalLength += fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + p].length;
-                }
-                size_t seqNum = fnaSplits[i].cnt;
-                size_t estimatedKmerCnt = (totalLength + totalLength / 10) / 3;
-
-                // Process current split if buffer has enough space.
-                posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
-                if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
-                    struct MmapedData<char> fastaFile = mmapData<char>(fastaList[fnaSplits[i].file_idx].path.c_str());
-                    vector<string> cds;
-                    vector<string> nonCds;
-                    // ** Use provided CDS information **
-                    for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
-                        buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
-                                  static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
-                        seq = kseq_init(&buffer);
-                        kseq_read(seq);
-                        
-                        // Mask low complexity regions
-                        char *maskedSeq = nullptr;
-                        if (par.maskMode) {
-                            maskedSeq = new char[seq->seq.l + 1];
-                            SeqIterator::maskLowComplexityRegions(seq->seq.s, maskedSeq, probMatrix, par.maskProb, subMat);
-                        } else {
-                            maskedSeq = seq->seq.s;
-                        }
-
-                        cout << "Processing " << seq->name.s << "\t" << seq->seq.l << "\t" << posToWrite << endl;
-                        if (cdsInfoMap.find(string(seq->name.s)) != cdsInfoMap.end()) { // CDS provided
-                            cds.clear();
-                            nonCds.clear();
-                            seqIterator.devideToCdsAndNonCds(
-                                maskedSeq, seq->seq.l,
-                                cdsInfoMap[string(seq->name.s)], cds, nonCds);
-                            
-                            cout << "CDS: " << endl;
-                            for (size_t j = 0; j < cds.size(); j++) {
-                                cout << cdsInfoMap[string(seq->name.s)][j].proteinId << endl;
-                                cout << cds[j] << endl << endl;
-                            }
-
-                            cout << "Non-CDS: " << endl;
-                            for (size_t j = 0; j < nonCds.size(); j++) {
-                                cout << nonCds[j] << endl << endl;
-                            }
-
-                            // Translate CDS and extract metamers
-                            for (size_t j = 0; j < cds.size(); j++) {
-                                seqIterator.translate(cds[j]);
-                                seqIterator.computeMetamers(cds[j].c_str(), 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
-                            }
-
-                            // Translate non-CDS and extract metamers
-                            for (size_t j = 0; j < nonCds.size(); j++) {
-                                if (observedNonCDSKmers.empty()) {
-                                    seqIterator.translate(nonCds[j]);
-                                    seqIterator.computeMetamers(nonCds[j].c_str(), 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
-                                    seqIterator.getMinHashList(observedNonCDSKmerHashes, nonCds[j].c_str());
-                                } else {
-                                    int frame = selectReadingFrame(observedNonCDSKmerHashes, nonCds[j].c_str(), seqIterator);
-                                    if (frame < 3) { // Forward
-                                        seqIterator.translate(nonCds[j], frame);
-                                        seqIterator.computeMetamers(nonCds[j].c_str(), frame, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
-                                    } else { // Reverse complement
-                                        reverseComplementStr.clear();
-                                        reverseComplementStr = seqIterator.reverseComplement(nonCds[j]);
-                                        seqIterator.translate(reverseComplementStr, frame - 3);
-                                        seqIterator.computeMetamers(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
-                                    }
-                                }
-                            }
-                        } else { // CDS not provided
-                            // Translate the whole sequence
-                            if (observedNonCDSKmers.empty()) {
-                                seqIterator.translate(seq->seq.s);
-                                seqIterator.getMinHashList(observedNonCDSKmerHashes, seq->seq.s);
-                                seqIterator.computeMetamers(seq->seq.s, 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);                                    
-                            } else {
-                                int frame = selectReadingFrame(observedNonCDSKmerHashes, seq->seq.s, seqIterator);
-                                if (frame < 3) { // Forward
-                                    seqIterator.translate(seq->seq.s, frame);
-                                    seqIterator.computeMetamers(seq->seq.s, frame, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
-                                } else { // Reverse complement
-                                    reverseComplement = seqIterator.reverseComplement(seq->seq.s, seq->seq.l);
-                                    seqIterator.translate(reverseComplement,  frame - 3);
-                                    seqIterator.computeMetamers(reverseComplement, frame - 3, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID);
-                                    free(reverseComplement);
-                                }
-                            }                     
-                        }
-                        if (par.maskMode) {
-                            delete[] maskedSeq;
-                        }
-                        kseq_destroy(seq);
-                    }
-                    __sync_fetch_and_add(&processedSplitCnt, 1);
-#ifdef OPENMP
-                    cout << omp_get_thread_num() << " Processed " << i << "th splits (" << processedSplitCnt << ")" << endl;
-#endif
-                    munmap(fastaFile.data, fastaFile.fileSize + 1);
-                } else {
-                    // Withdraw the reservation if the buffer is full.
-                    checker[i] = false;
-                    __sync_fetch_and_add(&hasOverflow, 1);
-                    __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
-                }
-            }
-        }
-    }
-
-    cout << "Before return: " << kmerBuffer.startIndexOfReserve << endl;
-    return 0;
-}
-
 
 void IndexCreator::writeTaxonomyDB() {
     std::pair<char *, size_t> serialized = NcbiTaxonomy::serialize(*taxonomy);

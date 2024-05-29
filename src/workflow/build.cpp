@@ -1,3 +1,4 @@
+#include "FuncIndexer.h"
 #include "IndexCreator.h"
 #include "FileMerger.h"
 #include "LocalParameters.h"
@@ -35,9 +36,15 @@ int build(int argc, const char **argv, const Command &command){
         FileUtil::makeDir(par.filenames[0].c_str());
     }
 
+    if (!par.proteinDB.empty()) {
+        FuncIndexer funcIndexer(par);
+        funcIndexer.createIndex();
+        return 0;
+    }
+
     // Create index
     IndexCreator idxCre(par);
-    idxCre.createIndex(par);
+    idxCre.createIndex();
 
     if(idxCre.getNumOfFlush() == 1) {
         cerr << "Index creation completed." << endl;

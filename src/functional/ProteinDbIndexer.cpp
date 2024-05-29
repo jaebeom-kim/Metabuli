@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <ostream>
 
 ProteinDbIndexer::ProteinDbIndexer(const LocalParameters &par) : par(par){
@@ -26,6 +27,7 @@ ProteinDbIndexer::~ProteinDbIndexer() {
 
 void ProteinDbIndexer::index() {
     splitFasta(par.proteinDB.c_str(), this->sequenceBlocks);
+    writePrtIdMap();
     size_t numOfSplits = sequenceBlocks.size();
     bool * splitChecker = new bool[numOfSplits];
     fill_n(splitChecker, numOfSplits, false);
@@ -607,4 +609,14 @@ size_t ProteinDbIndexer::getSmallestKmer(const uint64_t lookingKmers[], size_t f
     }
     return idxOfMin;
 }
+
+void ProteinDbIndexer::writePrtIdMap() {
+    string prtIdMapFileName = dbDir + "/prtIdMap.mtbl";
+    ofstream prtIdMapFile(prtIdMapFileName);
+    for (auto & kv : proteinId2Index) {
+        prtIdMapFile << kv.first << " " << kv.second << endl;
+    }
+    prtIdMapFile.close();
+}
+
 

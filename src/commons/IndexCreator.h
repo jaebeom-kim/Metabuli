@@ -38,7 +38,8 @@ struct TaxId2Fasta{
 using namespace std;
 
 class IndexCreator{
-private:
+protected:
+    const LocalParameters &par;
     uint64_t MARKER;
     BaseMatrix *subMat;
 
@@ -102,6 +103,8 @@ private:
 
     size_t numOfFlush=0;
 
+    void writeTaxIdList();
+
     void writeTargetFiles(TargetKmer * kmerBuffer, size_t & kmerNum, const LocalParameters & par, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
 
     void writeTargetFilesAndSplits(TargetKmer * kmerBuffer, size_t & kmerNum, const LocalParameters & par, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
@@ -114,15 +117,9 @@ private:
     
     static bool compareForDiffIdx2(const TargetKmer & a, const TargetKmer & b);
 
-    size_t fillTargetKmerBuffer(TargetKmerBuffer &kmerBuffer,
+    size_t fillTargetKmerBuffer(Buffer<TargetKmer> &kmerBuffer,
                                 bool *checker,
-                                size_t &processedSplitCnt,
-                                const LocalParameters &par);
-
-    size_t fillTargetKmerBuffer2(TargetKmerBuffer &kmerBuffer,
-                                bool *checker,
-                                size_t &processedSplitCnt,
-                                const LocalParameters &par);
+                                size_t &processedSplitCnt);
 
     int selectReadingFrame(priority_queue<uint64_t> & observedKmers, const char * seq, const SeqIterator & seqIt);
 
@@ -146,7 +143,7 @@ private:
 
     void editTaxonomyDumpFiles(const vector<pair<string, pair<TaxID, TaxID>>> & newAcc2taxid);
 
-    void reduceRedundancy(TargetKmerBuffer & kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt,
+    void reduceRedundancy(Buffer<TargetKmer> & kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt,
                           const LocalParameters & par);
     size_t AminoAcidPart(size_t kmer) {
         return (kmer) & MARKER;
@@ -186,17 +183,12 @@ public:
 
     static void getSeqSegmentsWithHead(vector<SequenceBlock> & seqSegments, const char * seqFileName);
     IndexCreator(const LocalParameters & par);
-    IndexCreator() {taxonomy = nullptr;}
     ~IndexCreator();
     int getNumOfFlush();
 
     static void writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_t *toWrite, size_t size, size_t & localBufIdx, size_t bufferSize);
 
-    void startIndexCreatingParallel(const LocalParameters & par);
-
-    void createIndex(const LocalParameters & par);
-
-    void updateIndex(const LocalParameters & par);
+    void createIndex();
 
     static void getDiffIdx(uint64_t lastKmer, uint64_t entryToWrite, FILE* handleKmerTable,
                     uint16_t *kmerBuf, size_t bufferSize, size_t & localBufIdx);

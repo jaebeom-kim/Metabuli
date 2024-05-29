@@ -49,6 +49,7 @@ private:
     void mergeProteinIndexFiles();
     void mergeProteinDeltaIndexFiles();
     size_t getSmallestKmer(const uint64_t lookingKmers[], size_t fileCnt); 
+    void writePrtIdMap();
 
 public:
     ProteinDbIndexer(const LocalParameters &par);

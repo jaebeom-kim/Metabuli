@@ -58,4 +58,24 @@ struct ProtIdxSplit{
     // getNextKmer(kmer, idxOffset) = next kmer
 };
 
+struct MetamerF {
+    MetamerF(uint64_t metamer, uint32_t seqId, uint32_t protId) : metamer(metamer), seqId(seqId), protId(protId) {}
+    MetamerF() {}
+    uint64_t metamer;
+    uint32_t seqId;
+    uint32_t protId; 
+    // The ID of originated CDS is first stored in protId to sort the metamerF list
+    // After the CDS is mapped to a protein, the protein ID is stored in protId
+     
+};
+
+struct TargetMetamerF {
+    TargetMetamerF(uint64_t metamer, uint32_t seqId, uint32_t protId, TaxID taxId, uint32_t cdsPos) 
+        : metamerF(metamer, seqId, protId), speciesId(taxId), cdsPos(cdsPos) {}
+    MetamerF metamerF;
+    TaxID speciesId;
+    uint32_t cdsPos; // The position of the metamer in the CDS
+};
+
+
 #endif //ADKMER3_KMER_H

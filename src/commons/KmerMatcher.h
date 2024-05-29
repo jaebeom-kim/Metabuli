@@ -2,6 +2,7 @@
 #define METABULI_KMERMATCHER_H
 #include "BitManipulateMacros.h"
 #include "FileUtil.h"
+#include "Kmer.h"
 #include "KmerBuffer.h"
 #include "LocalParameters.h"
 #include "Match.h"
@@ -25,12 +26,14 @@ using namespace std;
 
 class KmerMatcher {
 protected:
+  const LocalParameters &par;
   NcbiTaxonomy *taxonomy;
   size_t threads;
   std::string dbDir;
-  //   string targetDiffIdxFileName, targetInfoFileName, diffIdxSplitFileName;
-  //   MmapedData<DiffIdxSplit> diffIdxSplits;
-  uint64_t MARKER;
+  uint64_t dnaEncodingMasker;
+  uint64_t protIdMasker;
+  uint64_t protKmerMasker;
+
   int bitsForCodon = 3;
   uint8_t hammingMargin;
   size_t totalMatchCnt;
@@ -47,24 +50,35 @@ protected:
   string diffIdxSplitFileName;
     
 
+  template <typename T>
   struct QueryKmerSplit {
     QueryKmerSplit(size_t start, size_t end, size_t length,
-                   const DiffIdxSplit &diffIdxSplit)
+                   const T &diffIdxSplit)
         : start(start), end(end), length(length), diffIdxSplit(diffIdxSplit) {}
     size_t start; // start idx in query k-mer list
     size_t end;   // end idx in query k-mer list
     size_t length;
-    DiffIdxSplit diffIdxSplit; // index in target k-mer list from where the
+    T diffIdxSplit; // index in target k-mer list from where the
                                // search begins.
   };
 
-  size_t AminoAcidPart(size_t kmer) const { return (kmer)&MARKER; }
+  size_t AminoAcidPart(size_t kmer) const { return (kmer)&dnaEncodingMasker;}
+
+  size_t getAAofAAkmer(size_t kmer) const { return ((kmer & protIdMasker) >> 4);}
+
+  uint32_t getIdOfAAkmer(size_t kmer) const { return (kmer & protKmerMasker);}
+
+  bool compareMetamerAndAAKmer(uint64_t metamer, uint64_t aaKmer) const {
+    return AminoAcidPart(metamer) == ((aaKmer & protIdMasker) >> 4) ;
+  }
 
   static TargetKmerInfo getKmerInfo(size_t bufferSize, FILE *kmerInfoFp,
                                     TargetKmerInfo *infoBuffer,
                                     size_t &infoBufferIdx);
 
   void moveMatches(Match *dest, Match *src, int &matchNum);
+
+  void moveMatches(ProtMatch *dest, ProtMatch *src, int &matchNum);
 
   void compareDna(uint64_t query, std::vector<uint64_t> &targetKmersToCompare,
                   std::vector<size_t> &selectedMatches,
@@ -88,9 +102,13 @@ public:
 
   virtual ~KmerMatcher();
   
-  bool matchKmers(QueryKmerBuffer *queryKmerBuffer,
+  bool matchKmers(Buffer<QueryKmer> *queryKmerBuffer,
                   Buffer<Match> *matchBuffer,
                   const string &db = string());
+
+  bool matchAAKmers(Buffer<TargetMetamerF> *queryKmerBuffer,
+                    Buffer<ProtMatch> *matchBuffer,
+                    const string &db = string());
   
   void sortMatches(Buffer<Match> *matchBuffer);
 

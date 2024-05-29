@@ -74,7 +74,7 @@ public:
                             vector<string> &nonCds);
                             
   void fillQueryKmerBuffer(const char *seq, int seqLen,
-                           QueryKmerBuffer &kmerBuffer, size_t &posToWrite,
+                           Buffer<QueryKmer> &kmerBuffer, size_t &posToWrite,
                            uint32_t seqID, uint32_t offset = 0);
 
   string reverseComplement(string &read) const;
@@ -110,11 +110,12 @@ public:
   size_t getNumOfKmerForBlock(const PredictedBlock &block);
 
   int fillBufferWithKmerFromBlock(const PredictedBlock &block, const char *seq,
-                                  TargetKmerBuffer &kmerBuffer,
+                                  Buffer<TargetKmer> &kmerBuffer,
                                   size_t &posToWrite, int seqID,
                                   int taxIdAtRank);
 
-  int computeMetamers(const char * seq, int frame, TargetKmerBuffer & kmerBuffer, size_t & posToWrite, int seqID, int taxIdAtRank);
+  int computeMetamers(const char * seq, int frame, Buffer<TargetKmer> & kmerBuffer, size_t & posToWrite, int seqID, int taxIdAtRank);
+  int computeMetamerF(const char * seq, int frame, Buffer<TargetMetamerF> & kmerBuffer, size_t & posToWrite, uint32_t seqID, int taxIdAtRank, uint32_t cdsIdx);
   size_t computeAAKmer(Buffer<uint64_t> * kmerBuffer, const char * seq, size_t seqLength, size_t & posToWrite, size_t seqId); 
 
   static void maskLowComplexityRegions(const char *seq, char *maskedSeq,
@@ -123,7 +124,7 @@ public:
                                        const BaseMatrix *subMat);
 
   void printKmerInDNAsequence(uint64_t kmer);
-  void printAAKmer(uint64_t kmer);
+  void printAAKmer(uint64_t kmer, int shits = 28);
 
   explicit SeqIterator(const LocalParameters &par);
   ~SeqIterator();

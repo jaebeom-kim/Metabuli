@@ -17,14 +17,14 @@ private:
 
     // Extract query k-mer
     void fillQueryKmerBufferParallel(KSeqWrapper* kseq1,
-                                     QueryKmerBuffer &kmerBuffer,
+                                     Buffer<QueryKmer> &kmerBuffer,
                                      vector<Query> & queryList,
                                      const QuerySplit & currentSplit,
                                      const LocalParameters &par);
 
     void fillQueryKmerBufferParallel_paired(KSeqWrapper* kseq1,
                                             KSeqWrapper* kseq2,
-                                            QueryKmerBuffer &kmerBuffer,
+                                            Buffer<QueryKmer> &kmerBuffer,
                                             vector<Query> &queryList,
                                             const QuerySplit & currentSplit,
                                             const LocalParameters &par);
@@ -32,7 +32,7 @@ private:
 public:
     explicit KmerExtractor(const LocalParameters & par);
     ~KmerExtractor();
-    void extractQueryKmers(QueryKmerBuffer &kmerBuffer,
+    void extractQueryKmers(Buffer<QueryKmer> &kmerBuffer,
                            vector<Query> & queryList,
                            const QuerySplit & currentSplit,
                            const LocalParameters &par,

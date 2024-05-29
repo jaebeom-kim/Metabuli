@@ -6,6 +6,15 @@
 #include <iostream>
 #include "BitManipulateMacros.h"
 
+
+struct ProtMatch {
+    ProtMatch(uint32_t cdsId, uint32_t cdsPos, uint32_t protId) : cdsId(cdsId), cdsPos(cdsPos), protId(protId) {}
+    ProtMatch(){}
+    uint32_t cdsId; // CDS id
+    uint32_t cdsPos;
+    uint32_t protId;
+};
+
 struct Match { // 24 byte
     Match(){}
     Match(QueryKmerInfo qInfo,
@@ -92,6 +101,24 @@ struct Match { // 24 byte
         }
         return sum;
     }
+};
+
+struct MatchBlock {
+    MatchBlock(size_t start, size_t end, int id) : start(start), end(end), id(id) {}
+    MatchBlock() : start(0), end(0), id(0) {}
+    size_t start;
+    size_t end;
+    uint32_t id;
+};
+
+struct ProtMatchBlock {
+    ProtMatchBlock(size_t start, size_t end, uint32_t cdsId, uint32_t protId) : 
+        start(start), end(end), cdsId(cdsId), protId(protId) {}
+    ProtMatchBlock() : start(0), end(0), cdsId(0), protId(0) {}
+    size_t start;
+    size_t end;
+    uint32_t cdsId;
+    uint32_t protId; // counter for candidate protein, starts from 0
 };
 
 #endif //ADCLASSIFIER2_MATCH_H
