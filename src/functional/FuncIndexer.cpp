@@ -4,8 +4,10 @@
 #include "KmerMatcher.h"
 #include "Match.h"
 #include "ProteinDbIndexer.h"
+#include "SeqIterator.h"
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 
 FuncIndexer::FuncIndexer(const LocalParameters &par) : IndexCreator(par), par(par) {
     protDBFileName = par.proteinDB + "/protein.mtbl";
@@ -58,6 +60,10 @@ void FuncIndexer::createIndex() {
                       metamerBuffer.buffer + metamerBuffer.startIndexOfReserve, 
                       [] (const TargetMetamerF & a, const TargetMetamerF & b) {
                                 return a.metamerF.metamer < b.metamerF.metamer;});
+        // SORT_PARALLEL(metamerBuffer.buffer,
+        //               metamerBuffer.buffer + metamerBuffer.startIndexOfReserve,
+        //               sortTargetMetamerF);
+                              
         time_t sort = time(nullptr);
         cout << "Sort time: " << sort - start << endl;
         
@@ -71,14 +77,19 @@ void FuncIndexer::createIndex() {
             continue;
         }
 
+        SORT_PARALLEL(metamerBuffer.buffer,
+                      metamerBuffer.buffer + metamerBuffer.startIndexOfReserve,
+                      sortTargetMetamerF);
         // Reduce redundancy
+        auto * uniqKmerIdx = new size_t[metamerBuffer.startIndexOfReserve + 1];
+        size_t uniqKmerCnt = 0;
+        reduceRedundancy(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
+
+        cout << "redundacny reduced" << endl;
+
+        return;
 
 
-
-        // // Reduce redundancy
-        // auto * uniqKmerIdx = new size_t[metamerBuffer.startIndexOfReserve + 1];
-        // size_t uniqKmerCnt = 0;
-        // reduceRedundancy(metamerBuffer, uniqKmerIdx, uniqKmerCnt, par);
         // time_t reduction = time(nullptr);
         // cout<<"Time spent for reducing redundancy: "<<(double) (reduction - sort) << endl;
         // if(processedSplitCnt == fnaSplits.size() && numOfFlush == 0){
@@ -244,6 +255,7 @@ size_t FuncIndexer::fillTargetKmerBuffer(Buffer<TargetMetamerF> &kmerBuffer,
 int FuncIndexer::getProteinId(Buffer<TargetMetamerF> &kmerBuffer) {
     Buffer<ProtMatch> matchBuffer(par.bufferSize);
     if (kmerMatcher->matchAAKmers(& kmerBuffer, & matchBuffer, dbDir)) {
+        cout << "Number of matches: " << matchBuffer.startIndexOfReserve << endl;
         SORT_PARALLEL(matchBuffer.buffer, matchBuffer.buffer + matchBuffer.startIndexOfReserve, 
         [] (const ProtMatch & a, const ProtMatch & b) {
             if (a.cdsId != b.cdsId) {
@@ -276,10 +288,7 @@ int FuncIndexer::getProteinId(Buffer<TargetMetamerF> &kmerBuffer) {
         // for (auto & it : cdsId2protId) {
         //     cout << it.first << " " << it.second << " " <<  queryCdsList[it.first].cdsId << " " << protIdMap[it.second] << endl;
         // }
-        // cout << "print queryCdsList" << endl;
-        // for (size_t i = 0; i < queryCdsList.size(); i++) {
-        //     cout << queryCdsList[i].cdsId << " " << queryCdsList[i].proteinId << endl;
-        // }
+        // cout << "print cdsId2protId done" << endl;
         labelKmerWithProtId(kmerBuffer, cdsId2protId);
         cout << "K-mers from CDS are labeled with protein IDs" << endl;
         return 1;
@@ -291,10 +300,8 @@ int FuncIndexer::getProteinId(Buffer<TargetMetamerF> &kmerBuffer) {
 void FuncIndexer::labelCdsWithProtId(Buffer<ProtMatch> & protMatch, unordered_map<uint32_t, uint32_t> & cdsId2protId) {
     // Divide ProtMatches into blocks for multi threading
     size_t seqNum = queryCdsList.size();
-    // ProtMatchBlock *matchBlocks = new ProtMatchBlock[seqNum];
     vector<ProtMatchBlock> matchBlocks;
     size_t matchIdx = 0;
-    // size_t blockIdx = 0;
     uint32_t currentCDS;
     uint32_t currentProt;
     size_t numOfMatch = protMatch.startIndexOfReserve;
@@ -303,24 +310,20 @@ void FuncIndexer::labelCdsWithProtId(Buffer<ProtMatch> & protMatch, unordered_ma
         size_t protCnt = 0;
         while((matchIdx < numOfMatch) && (currentCDS == protMatch.buffer[matchIdx].cdsId)) {
             currentProt = protMatch.buffer[matchIdx].protId;
-            // matchBlocks[blockIdx].cdsId = currentCDS;
-            // matchBlocks[blockIdx].protId = protCnt;
-            // matchBlocks[blockIdx].start = matchIdx;
             size_t start = matchIdx;
             while ((matchIdx < numOfMatch) &&
                    (currentCDS == protMatch.buffer[matchIdx].cdsId) &&
                    (currentProt == protMatch.buffer[matchIdx].protId)) {
                 ++matchIdx;
             }
-            // matchBlocks[blockIdx++].end = matchIdx - 1;
             matchBlocks.emplace_back(start, matchIdx - 1, currentCDS, protCnt++);
             cds2protScoreMap[currentCDS].emplace_back(0, 0);
         }
     }
     // How about start a thread when a block is ready? Then, we can avoid the overhead of creating threads.
-    for (size_t i = 0; i < matchBlocks.size(); ++i) {
-            cout << i << " " << matchBlocks[i].cdsId << " " << matchBlocks[i].protId << " " <<  queryCdsList[matchBlocks[i].cdsId].cdsId << " " << protIdMap[protMatch.buffer[matchBlocks[i].start].protId] << " " << matchBlocks[i].start << " " << matchBlocks[i].end << endl;
-    }
+    // for (size_t i = 0; i < matchBlocks.size(); ++i) {
+    //         cout << i << " " << matchBlocks[i].cdsId << " " << matchBlocks[i].protId << " " <<  queryCdsList[matchBlocks[i].cdsId].cdsId << " " << protIdMap[protMatch.buffer[matchBlocks[i].start].protId] << " " << matchBlocks[i].start << " " << matchBlocks[i].end << endl;
+    // }
 
     // Process each block
 #pragma omp parallel default(none), shared(cout, matchBlocks, protMatch, seqNum, cdsId2protId)
@@ -353,11 +356,13 @@ void FuncIndexer::labelKmerWithProtId(Buffer<TargetMetamerF> &kmerBuffer, const 
     {
 #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < kmerBuffer.startIndexOfReserve; i++) {
+            // cdsKmerCnt[kmerBuffer.buffer[i].metamerF.protId]++;
             if (kmerBuffer.buffer[i].metamerF.protId != 0) {
                 kmerBuffer.buffer[i].metamerF.protId = cdsId2protId.at(kmerBuffer.buffer[i].metamerF.protId);
             }
         }
     }
+    
 }
 
 ProtScore FuncIndexer::scoreProteinMatches(size_t start, size_t end, const Buffer<ProtMatch> & protMatch) {
@@ -403,8 +408,17 @@ ProtScore FuncIndexer::scoreProteinMatches(size_t start, size_t end, const Buffe
     return ProtScore(protId, score / len);
 }
 
-bool FuncIndexer::sortTargetMetamerF(const TargetMetamerF & a, const TargetMetamerF & b){
-    return a.metamerF.metamer < b.metamerF.metamer;
+inline bool FuncIndexer::sortTargetMetamerF(const TargetMetamerF & a, const TargetMetamerF & b){
+    if (a.metamerF.metamer != b.metamerF.metamer) {
+        return a.metamerF.metamer < b.metamerF.metamer;
+    }
+    if (a.speciesId != b.speciesId) {
+        return a.speciesId < b.speciesId;
+    }
+    if (a.metamerF.protId != b.metamerF.protId) {
+        return a.metamerF.protId < b.metamerF.protId;
+    }
+    return a.metamerF.seqId < b.metamerF.seqId;
 }
 
 void FuncIndexer::loadProtIdMap() {
@@ -422,4 +436,84 @@ void FuncIndexer::loadProtIdMap() {
         protIdMap[protIdx] = protId;
     }
     protIdMapFile.close();
+}
+
+void FuncIndexer::reduceRedundancy(Buffer<TargetMetamerF> &kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt) {
+    // Find the first index of garbage k-mer (UINT64_MAX)
+    for(size_t i = kmerBuffer.startIndexOfReserve - 1; i != 0; i--){
+        if(kmerBuffer.buffer[i].metamerF.metamer != UINT64_MAX){
+            kmerBuffer.startIndexOfReserve = i + 1;
+            break;
+        }
+    }
+
+    SeqIterator seqIterator(par);
+    cout << "Before reducing redundancy: " << kmerBuffer.startIndexOfReserve << endl;
+    // for(size_t i = 0; i < kmerBuffer.startIndexOfReserve ; i++){
+    //     if(kmerBuffer.buffer[i].speciesId == 0){
+    //         cout << i << " " << kmerBuffer.buffer[i].metamerF.metamer << " " << kmerBuffer.buffer[i].speciesId << " " << kmerBuffer.buffer[i].metamerF.protId << " " << kmerBuffer.buffer[i].metamerF.seqId << endl;
+    //         seqIterator.printKmerInDNAsequence(kmerBuffer.buffer[i].metamerF.metamer); cout << endl;
+    //     }
+    // }
+
+    // Find the first index of meaningful k-mer
+    size_t startIdx = 0;
+    for(size_t i = 0; i < kmerBuffer.startIndexOfReserve ; i++){
+        if(kmerBuffer.buffer[i].speciesId != 0){
+            startIdx = i;
+            cout << "startIdx: " << startIdx << endl;
+            break;
+        }
+    }
+
+    // for (size_t i = startIdx; i < kmerBuffer.startIndexOfReserve; i++) {
+    //     cout << i << " "; seqIterator.printKmerInDNAsequence(kmerBuffer.buffer[i].metamerF.metamer);
+    //     cout << " " << kmerBuffer.buffer[i].speciesId << " " << kmerBuffer.buffer[i].metamerF.protId << " " << kmerBuffer.buffer[i].metamerF.seqId << endl;
+    // }
+
+    cout << kmerBuffer.startIndexOfReserve - startIdx << endl;
+
+    TargetMetamerF * lookingKmer = nullptr;
+    size_t lookingIndex = 0;
+    bool isEnd = false;
+    vector<TaxID> taxIds;
+
+    lookingKmer = & kmerBuffer.buffer[startIdx];
+    lookingIndex = startIdx;
+    // cout << "Unique k-mers:" << endl;
+    for (size_t i = startIdx + 1; i < kmerBuffer.startIndexOfReserve; i++) {
+        taxIds.clear();
+        taxIds.push_back(taxIdList[lookingKmer->metamerF.seqId]);
+        while((lookingKmer->metamerF.metamer == kmerBuffer.buffer[i].metamerF.metamer)
+              && (lookingKmer->speciesId == kmerBuffer.buffer[i].speciesId)
+              && (lookingKmer->metamerF.protId == kmerBuffer.buffer[i].metamerF.protId)){
+            taxIds.push_back(taxIdList[kmerBuffer.buffer[i].metamerF.seqId]);
+            i++;
+            if (i == kmerBuffer.startIndexOfReserve) {
+                isEnd = true;
+                break;
+            }
+        }
+        if(taxIds.size() > 1){
+            lookingKmer->metamerF.seqId = taxonomy->LCA(taxIds)->taxId;
+        } else {
+            lookingKmer->metamerF.seqId = taxIds[0];
+        }
+        uniqeKmerIdx[uniqKmerCnt] = lookingIndex;
+        // cout << uniqKmerCnt << " " << lookingIndex << " "; seqIterator.printKmerInDNAsequence(lookingKmer->metamerF.metamer);
+        // cout << " " << lookingKmer->speciesId << " " << lookingKmer->metamerF.protId << " " << lookingKmer->metamerF.seqId << endl;
+        uniqKmerCnt ++;
+        if (isEnd) break;
+        lookingKmer = & kmerBuffer.buffer[i];
+        lookingIndex = i;
+    }
+
+    if (!((kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 2].metamerF.metamer == kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].metamerF.metamer)
+        && (kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 2].speciesId == kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].speciesId)
+        && (kmerBuffer.buffer[kmerBuffer.startIndexOfReserve- 2].metamerF.protId == kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].metamerF.protId))) {
+        kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].metamerF.seqId = taxIdList[kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].metamerF.seqId];
+        uniqeKmerIdx[uniqKmerCnt] = kmerBuffer.startIndexOfReserve - 1;
+        uniqKmerCnt ++;
+    }
+    cout << "After reducing redundancy: " << uniqKmerCnt << endl;
 }

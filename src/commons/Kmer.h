@@ -62,7 +62,7 @@ struct MetamerF {
     MetamerF(uint64_t metamer, uint32_t seqId, uint32_t protId) : metamer(metamer), seqId(seqId), protId(protId) {}
     MetamerF() {}
     uint64_t metamer;
-    uint32_t seqId;
+    uint32_t seqId; // taxonomy ID will be stored at last
     uint32_t protId; 
     // The ID of originated CDS is first stored in protId to sort the metamerF list
     // After the CDS is mapped to a protein, the protein ID is stored in protId

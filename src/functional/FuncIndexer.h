@@ -68,11 +68,13 @@ protected:
 
     void labelKmerWithProtId(Buffer<TargetMetamerF> &kmerBuffer, const unordered_map<uint32_t, uint32_t> & cdsId2protId);
 
+    void reduceRedundancy(Buffer<TargetMetamerF> &kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
+
     uint32_t chooseBestProtein(size_t start, size_t end, const Buffer<ProtMatch> & protMatch);
 
     ProtScore scoreProteinMatches(size_t start, size_t end, const Buffer<ProtMatch> & protMatch);
 
-    bool sortTargetMetamerF(const TargetMetamerF &a, const TargetMetamerF &b);
+    static bool sortTargetMetamerF(const TargetMetamerF &a, const TargetMetamerF &b);
 public:
     FuncIndexer(const LocalParameters &par);
     ~FuncIndexer();
