@@ -80,7 +80,7 @@ size_t ProteinDbIndexer::fillAAKmerBuffer(bool *checker, size_t & processedSplit
                               static_cast<size_t>(sequenceBlocks[i].length)};
                     seq = kseq_init(&buffer);
                     kseq_read(seq);
-                    cout << "Processing " << seq->name.s << " " << this->proteinId2Index[seq->name.s] << endl;
+                    // cout << "Processing " << seq->name.s << " " << this->proteinId2Index[seq->name.s] << endl;
                     seqIterator.computeAAKmer(this->aaKmerBuffer, seq->seq.s, seq->seq.l, posToWrite, this->proteinId2Index[seq->name.s]);
                     kseq_destroy(seq);
                     __sync_fetch_and_add(&processedSplitCnt, 1);  
