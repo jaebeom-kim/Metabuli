@@ -1,5 +1,6 @@
 #ifndef ADKMER3_KMER_H
 #define ADKMER3_KMER_H
+#include <cstdint>
 #include <iostream>
 #include "NcbiTaxonomy.h"
 
@@ -58,6 +59,47 @@ struct ProtIdxSplit{
     // getNextKmer(kmer, idxOffset) = next kmer
 };
 
+
+
+union MetamerID {
+    uint64_t id;
+    struct {
+        uint64_t seqID : 32; // 30?
+        uint64_t protID : 32;
+    } ids;
+
+    MetamerID(uint32_t seqID, uint32_t protID) : ids{seqID, protID} {}
+    MetamerID(uint64_t id) : id(id) {}
+    MetamerID() : id(0) {}
+};
+
+struct MetamerF2 {
+    MetamerF2(uint64_t metamer, uint32_t seqId, uint32_t protId) : metamer(metamer), metamerID(seqId, protId) {}
+    MetamerF2(uint64_t metamer, uint64_t ids) : metamer(metamer), metamerID(ids) {}
+    MetamerF2() {}
+    uint64_t metamer;
+    MetamerID metamerID;
+
+    MetamerF2 substract(const MetamerF2 & other) const { // self is equal or greater than other
+        if (metamer < other.metamer) {
+            std::cerr << "MetamerF2: substract: metamer is smaller than other.metamer" << std::endl;
+        } else if (metamer == other.metamer) {
+            return MetamerF2(0, metamerID.id - other.metamerID.id);
+        } else { // metamer > other.metamer
+            if (metamerID.ids.protID > other.metamerID.ids.protID) {
+                return MetamerF2(metamer - other.metamer, metamerID.id - other.metamerID.id);
+            } else if (metamerID.ids.protID < other.metamerID.ids.protID) {
+                return MetamerF2((metamer - 1) - other.metamer, UINT64_MAX - other.metamerID.id + metamerID.id + 1); // UINT60_MAX
+            } else if (metamerID.ids.seqID < other.metamerID.ids.seqID) {
+                return MetamerF2((metamer - 1) - other.metamer, UINT64_MAX - other.metamerID.id + metamerID.id + 1);
+            } else {
+                return MetamerF2(metamer - other.metamer, metamerID.id - other.metamerID.id);
+            }
+        }
+    }
+
+};
+
 struct MetamerF {
     MetamerF(uint64_t metamer, uint32_t seqId, uint32_t protId) : metamer(metamer), seqId(seqId), protId(protId) {}
     MetamerF() {}
@@ -66,6 +108,7 @@ struct MetamerF {
     uint32_t protId; 
     // The ID of originated CDS is first stored in protId to sort the metamerF list
     // After the CDS is mapped to a protein, the protein ID is stored in protId
+
      
 };
 
