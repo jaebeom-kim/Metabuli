@@ -8,11 +8,12 @@
 
 
 struct ProtMatch {
-    ProtMatch(uint32_t cdsId, uint32_t cdsPos, uint32_t protId) : cdsId(cdsId), cdsPos(cdsPos), protId(protId) {}
+    ProtMatch(uint32_t queryProtId, uint32_t queryProtPos, uint32_t targetProtId) 
+        : queryProtId(queryProtId), queryProtPos(queryProtPos), targetProtId(targetProtId) {}
     ProtMatch(){}
-    uint32_t cdsId; // CDS id
-    uint32_t cdsPos;
-    uint32_t protId;
+    uint32_t queryProtId; // CDS id
+    uint32_t queryProtPos;
+    uint32_t targetProtId;
 };
 
 struct Match { // 24 byte

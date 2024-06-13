@@ -17,12 +17,12 @@ struct Split{
 };
    
 struct CDSinfo{
-    std::string proteinId;
+    uint32_t protId; //4,294,967,295
     int frame;
     bool isComplement;
     std::vector<std::pair<size_t, size_t>> loc;
     CDSinfo() = default;
-    CDSinfo(const std::string & proteinId, int frame) : proteinId(proteinId), frame(frame) {}
+    CDSinfo(uint32_t protId, int frame) : protId(protId), frame(frame) {}
 };
 
 struct SequenceBlock{

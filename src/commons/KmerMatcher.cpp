@@ -725,6 +725,256 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDelta
     return true;
 }
 
+bool KmerMatcher::matchAAKmers(Buffer<ExtractedMetamer> * queryKmerBuffer,
+                               Buffer<ProtMatch> * matchBuffer,
+                               const string & db,
+                               uint32_t lastProtIdx) {
+    diffIdxSplitFileName = db + "/prot_split.mtbl";
+    targetDiffIdxFileName = db + "/protein.mtbl";
+    MmapedData<ProtIdxSplit> deltaIdxSplits = mmapData<ProtIdxSplit>(diffIdxSplitFileName.c_str(), 3);
+    // cout << "HI" << endl;
+    // for (size_t i = 0; i < deltaIdxSplits.fileSize / sizeof(ProtIdxSplit); i++) {
+    //     cout << deltaIdxSplits.data[i].idxOffset << " " << deltaIdxSplits.data[i].kmer << endl;
+    // }
+    size_t numOfDeltas = FileUtil::getFileSize(targetDiffIdxFileName) / sizeof(uint16_t);
+
+    size_t queryKmerNum = queryKmerBuffer->startIndexOfReserve;
+    ExtractedMetamer *queryKmerList = queryKmerBuffer->buffer;
+    
+    // Find the first index of garbage query k-mer (UINT64_MAX) and discard from there
+    for (size_t checkN = queryKmerNum - 1; checkN > 0; checkN--) {
+        if (queryKmerList[checkN].metamer.metamer != UINT64_MAX) {
+            queryKmerNum = checkN + 1;
+            break;
+        }
+    }
+    
+    // Filter out meaningless target splits
+    size_t numOfDiffIdxSplits = deltaIdxSplits.fileSize / sizeof(ProtIdxSplit);
+    size_t numOfDiffIdxSplits_use = numOfDiffIdxSplits;
+    for (size_t i = 1; i < numOfDiffIdxSplits; i++) {
+        if (deltaIdxSplits.data[i].idxOffset == 0) {
+            deltaIdxSplits.data[i] = {0, 0};
+            numOfDiffIdxSplits_use--;
+        }
+    }
+
+    // Divide query k-mer list into blocks for multi threading.
+    // Each split has start and end points of query list + proper offset point of target k-mer list
+    std::vector<QueryKmerSplit<ProtIdxSplit>> querySplits;
+    uint64_t queryAA;
+    size_t quotient = queryKmerNum / threads;
+    size_t remainder = queryKmerNum % threads;
+    size_t startIdx = 0;
+    size_t endIdx = 0; // endIdx is inclusive
+    for (size_t i = 0; i < threads; i++) {
+        endIdx = startIdx + quotient - 1;
+        if (remainder > 0) {
+            endIdx++;
+            remainder--;
+        }
+        bool needLastTargetBlock = true;
+        queryAA = AminoAcidPart(queryKmerList[startIdx].metamer.metamer);
+        for (size_t j = 0; j < numOfDiffIdxSplits_use; j ++) {
+            if (queryAA <= (deltaIdxSplits.data[j].kmer & protIdMasker >> 4)) {
+                j = j - (j != 0);
+                querySplits.emplace_back(startIdx, endIdx, endIdx - startIdx + 1, deltaIdxSplits.data[j]);
+                needLastTargetBlock = false;
+                break;
+            }
+        }
+        if (needLastTargetBlock) {
+            querySplits.emplace_back(startIdx, endIdx, endIdx - startIdx + 1, deltaIdxSplits.data[numOfDiffIdxSplits_use - 2]);
+        }
+        startIdx = endIdx + 1;
+    }
+
+    if (querySplits.size() != threads) {
+        threads = querySplits.size();
+    }
+
+    bool *splitCheckList = (bool *) malloc(sizeof(bool) * threads);
+    std::fill_n(splitCheckList, threads, false);
+    size_t completedSplitCnt = 0;
+
+    time_t beforeSearch = time(nullptr);
+
+    while (completedSplitCnt < threads) {
+        bool hasOverflow = false;
+#pragma omp parallel default(none), shared(completedSplitCnt, splitCheckList, hasOverflow, \
+querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDeltas, targetInfoFileName, lastProtIdx)
+        {
+            SeqIterator seqIterator(par);
+
+            FILE * deltaIdxFp = fopen(targetDiffIdxFileName.c_str(), "rb");
+
+            // Target K-mer buffer
+            uint16_t * deltaBuffer = (uint16_t *) malloc(sizeof(uint16_t) * (BufferSize + 1)); // size = 32 Mb
+            size_t deltaBufferIdx = 0;
+
+            //query variables
+            MetamerF currentMetamer;
+            uint64_t currentQueryAA = UINT64_MAX;
+            
+            //target variables
+            size_t totalDeltaPos = 0;
+            std::vector<uint64_t> aaMatches; //vector for candidate target k-mer, some of which are selected after based on hamming distance
+            uint64_t currentTargetKmer;
+
+            //Match buffer for each thread
+            int localBufferSize = 2'000'000; // 32 Mb
+            auto *matches = new ProtMatch[localBufferSize]; // 16 * 2'000'000 = 32 Mb
+            int matchCnt = 0;
+            size_t posToWrite;
+
+            int currMatchNum;
+#pragma omp for schedule(dynamic, 1)
+            for (size_t i = 0; i < querySplits.size(); i++) {
+                if (hasOverflow || splitCheckList[i]) {
+                    continue;
+                }
+
+                currentTargetKmer = querySplits[i].diffIdxSplit.kmer;
+                deltaBufferIdx = querySplits[i].diffIdxSplit.idxOffset;
+                totalDeltaPos = deltaBufferIdx;
+                
+                fseek(deltaIdxFp, 2 * (long) (deltaBufferIdx), SEEK_SET);
+                loadBuffer(deltaIdxFp, deltaBuffer, deltaBufferIdx, BufferSize);
+            
+                currentQueryAA = UINT64_MAX;
+
+                size_t lastMovedQueryIdx = 0;
+                const ExtractedMetamer * curMetamer;
+                for (size_t j = querySplits[i].start; j < querySplits[i].end + 1; j++) {
+                    querySplits[i].start++;
+                    // Skip metamers from non-CDS
+                    if (queryKmerList[j].metamer.id > lastProtIdx) {
+                        continue;
+                    }
+
+                    // Reuse the amino acid matches 
+                    if (currentQueryAA == AminoAcidPart(queryKmerList[j].metamer.metamer)) {
+                        // If local buffer is full, copy them to the shared buffer.
+                        currMatchNum = aaMatches.size();
+                        if (matchCnt + currMatchNum > localBufferSize) {
+                            // Check if the shared buffer is full.
+                            posToWrite = matchBuffer->reserveMemory(matchCnt);
+                            if (posToWrite + matchCnt >= matchBuffer->bufferSize) { // full -> write matches to file first
+                                hasOverflow = true;
+                                querySplits[i].start = lastMovedQueryIdx + 1;
+                                __sync_fetch_and_sub(&matchBuffer->startIndexOfReserve, matchCnt);
+                                break;
+                            } else { // not full -> copy matches to the shared buffer
+                                moveMatches(matchBuffer->buffer + posToWrite, matches, matchCnt);
+                                lastMovedQueryIdx = j;
+                            }
+                        }
+                        for (int k = 0; k < currMatchNum; k++) {
+                            matches[matchCnt++] = {queryKmerList[j].metamer.id,
+                                                  queryKmerList[j].cdsPos, // cdsId
+                                                  getIdOfAAkmer(aaMatches[k]) // protId
+                                                  };
+                        }
+                        continue;
+                    }
+                    aaMatches.clear();
+                    
+                    // Get next query, and start to find matches
+                    curMetamer = & queryKmerList[j];
+                    currentQueryAA = AminoAcidPart(queryKmerList[j].metamer.metamer);
+
+                    // Skip target k-mers that are not matched in amino acid level
+                    while (totalDeltaPos != numOfDeltas
+                           && (currentQueryAA > getAAofAAkmer(currentTargetKmer))) {
+                        if (unlikely(BufferSize < deltaBufferIdx + 7)){
+                            loadBuffer(deltaIdxFp, deltaBuffer, deltaBufferIdx, BufferSize, ((int)(BufferSize - deltaBufferIdx)) * -1 );
+                        }
+                        currentTargetKmer = getNextTargetKmer(currentTargetKmer, deltaBuffer,
+                                                              deltaBufferIdx, totalDeltaPos);
+                    }
+
+                    // Move to the next query k-mer if there isn't any match.
+                    if (currentQueryAA != getAAofAAkmer(currentTargetKmer)) { 
+                        continue;
+                    }
+
+                    // Load target k-mers that are matched in amino acid level
+                    while (totalDeltaPos != numOfDeltas &&
+                           currentQueryAA == getAAofAAkmer(currentTargetKmer)) {
+                        // print_binary64(64, currentQueryAA);
+                        // cout << " ";
+                        // print_binary64(64, getAAofAAkmer(currentTargetKmer));
+                        // cout << endl;
+                        aaMatches.push_back(currentTargetKmer);
+                        if (unlikely(BufferSize < deltaBufferIdx + 7)){
+                            loadBuffer(deltaIdxFp, deltaBuffer, deltaBufferIdx,
+                                       BufferSize, ((int)(BufferSize - deltaBufferIdx)) * -1 );
+                        }
+                        currentTargetKmer = getNextTargetKmer(currentTargetKmer, deltaBuffer,
+                                                              deltaBufferIdx, totalDeltaPos);
+                    }
+
+                    // If local buffer is full, copy them to the shared buffer.
+                    currMatchNum = aaMatches.size();
+                    if (matchCnt + currMatchNum > localBufferSize) {
+                        // Check if the shared buffer is full.
+                        posToWrite = matchBuffer->reserveMemory(matchCnt);
+                        if (posToWrite + matchCnt >= matchBuffer->bufferSize) { // full -> write matches to file first
+                            hasOverflow = true;
+                            querySplits[i].start = lastMovedQueryIdx + 1;
+                            __sync_fetch_and_sub(&matchBuffer->startIndexOfReserve, matchCnt);
+                            break;
+                        } else { // not full -> copy matches to the shared buffer
+                            moveMatches(matchBuffer->buffer + posToWrite, matches, matchCnt);
+                            lastMovedQueryIdx = j;
+                        }
+                    }
+                    for (int k = 0; k < currMatchNum; k++) {
+                        matches[matchCnt++] = {curMetamer->metamerF.protId,
+                                            curMetamer->cdsPos, // cdsId
+                                             getIdOfAAkmer(aaMatches[k]) // protId
+                                             };
+                        // cout << curMetamer->metamerF.protId << " " << curMetamer->cdsPos << " " << getIdOfAAkmer(aaMatches[k]) << " ";
+                        // seqIterator.printAAKmer(curMetamer->metamerF.metamer, 24);
+                        // cout << " ";
+                        // seqIterator.printAAKmer(aaMatches[k]);
+                        // cout << endl;  
+                    }
+                } // End of one split
+
+                // Move matches in the local buffer to the shared buffer
+                posToWrite = matchBuffer->reserveMemory(matchCnt);
+                if (posToWrite + matchCnt >= matchBuffer->bufferSize) {
+                    hasOverflow = true;
+                    querySplits[i].start = lastMovedQueryIdx + 1;
+                    __sync_fetch_and_sub(& matchBuffer->startIndexOfReserve, matchCnt);
+                } else {
+                    moveMatches(matchBuffer->buffer + posToWrite, matches, matchCnt);
+                }
+
+                // Check whether current split is completed or not
+                if (querySplits[i].start - 1 == querySplits[i].end) {
+                    splitCheckList[i] = true;
+                    __sync_fetch_and_add(&completedSplitCnt, 1);
+                }
+            } // End of omp for (Iterating for splits)
+            delete[] matches;
+            fclose(deltaIdxFp);
+            free(deltaBuffer);
+        } // End of omp parallel
+        
+        if (hasOverflow) {
+            return false;
+        }
+    } // end of while(completeSplitCnt < threadNum)
+    
+    std::cout << "Time spent for the comparison: " << double(time(nullptr) - beforeSearch) << std::endl;
+    free(splitCheckList);
+
+    totalMatchCnt += matchBuffer->startIndexOfReserve;
+    return true;
+}
+
 
 void KmerMatcher::sortMatches(Buffer<Match> * matchBuffer) {
     time_t beforeSortMatches = time(nullptr);

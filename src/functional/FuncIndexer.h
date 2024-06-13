@@ -11,18 +11,17 @@
 #include <unordered_map>
 
 struct QueryCDS {
-    QueryCDS(const std::string &cdsId, int cdsIdx, int cdsLength, const std::string &proteinId, uint32_t protIdx, float score)
-        : cdsId(cdsId), cdsIdx(cdsIdx), cdsLength(cdsLength), proteinId(proteinId), protIdx(protIdx), score(score) {}
-    QueryCDS(const std::string &cdsId, int cdsIdx, int cdsLength)
-        : cdsId(cdsId), cdsIdx(cdsIdx), cdsLength(cdsLength) {}
+    QueryCDS(uint32_t cds_protein_id, int cdsIdx, int cdsLength, const string & assigend_uniref_id, uint32_t assigend_uniref_idx, float score)
+        : cds_protein_id(cds_protein_id), cdsIdx(cdsIdx), cdsLength(cdsLength), assigend_uniref_id(assigend_uniref_id), assigend_uniref_idx(assigend_uniref_idx), score(score) {}
+    QueryCDS(uint32_t cds_protein_id, int cdsIdx, int cdsLength)
+        : cds_protein_id(cds_protein_id), cdsIdx(cdsIdx), cdsLength(cdsLength) {}
     QueryCDS() = default;
-    std::string cdsId;
+    uint32_t cds_protein_id;
     int cdsIdx;
     int cdsLength;
-    std::string proteinId;
-    uint32_t protIdx;
+    string assigend_uniref_id;
+    uint32_t assigend_uniref_idx;
     float score;
-    
 };
 
 struct ProtScore {
@@ -51,6 +50,9 @@ protected:
 
     KmerMatcher *kmerMatcher;
 
+    uint32_t lastProtIdx;
+    std::unordered_map<string, vector<CDSinfo>> cdsInfoMap;
+    std::unordered_map<uint32_t, string> uniRefIdMap;
     std::unordered_map<uint32_t, string> protIdMap;
     std::vector<QueryCDS> queryCdsList;
     std::unordered_map<uint32_t, int> cds2lengthMap;
@@ -58,10 +60,13 @@ protected:
 
     void loadProtIdMap();
 
-    size_t fillTargetKmerBuffer(Buffer<TargetMetamerF> &kmerBuffer,
+    size_t fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
                                 bool * tempChecker,
-                                size_t &processedSplitCnt);
+                                size_t &processedSplitCnt,
+                                uint32_t & nonCdsIdx);
     
+    int getProteinId(Buffer<ExtractedMetamer> &kmerBuffer);
+
     int getProteinId(Buffer<TargetMetamerF> &kmerBuffer);
 
     void labelCdsWithProtId(Buffer<ProtMatch> & protMatch, unordered_map<uint32_t, uint32_t> & cdsId2protId);
@@ -75,6 +80,8 @@ protected:
     ProtScore scoreProteinMatches(size_t start, size_t end, const Buffer<ProtMatch> & protMatch);
 
     static bool sortTargetMetamerF(const TargetMetamerF &a, const TargetMetamerF &b);
+
+    void loadCdsInfo(const string & cdsInfoFileList);
 public:
     FuncIndexer(const LocalParameters &par);
     ~FuncIndexer();

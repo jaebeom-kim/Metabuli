@@ -97,7 +97,6 @@ struct MetamerF2 {
             }
         }
     }
-
 };
 
 struct MetamerF {
@@ -108,8 +107,20 @@ struct MetamerF {
     uint32_t protId; 
     // The ID of originated CDS is first stored in protId to sort the metamerF list
     // After the CDS is mapped to a protein, the protein ID is stored in protId
+};
 
-     
+struct Metamer {
+    Metamer(uint64_t metamer, uint32_t id) : metamer(metamer), id(id) {}
+    uint64_t metamer;
+    uint32_t id;
+};
+
+struct ExtractedMetamer {
+    ExtractedMetamer(uint64_t metamer, uint32_t id,  uint32_t seqId, TaxID speciesId, uint32_t cdsPos) : metamer(metamer, id), seqId(seqId), speciesId(speciesId), cdsPos(cdsPos) {}
+    Metamer metamer;
+    uint32_t seqId;
+    TaxID speciesId;
+    uint32_t cdsPos;
 };
 
 struct TargetMetamerF {

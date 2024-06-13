@@ -78,7 +78,7 @@ protected:
     vector<FASTA> fastaList;
     vector<TaxID> taxIdList;
     vector<size_t> processedSeqCnt; // Index of this vector is the same as the index of fnaList
-    unordered_map<string, vector<CDSinfo>> cdsInfoMap;
+    std::unordered_map<std::string, TaxID> foundAcc2taxid;
 
     struct FnaSplit{
         // species, file_idx, training, offset, cnt
@@ -135,7 +135,6 @@ protected:
 
     void load_assacc2taxid(const string & mappingFile, unordered_map<string, int> & assacc2taxid);
 
-    void loadCdsInfo(const string & cdsInfoFileList);
 
     static TaxID load_accession2taxid(const string & mappingFile, unordered_map<string, int> & assacc2taxid);
 

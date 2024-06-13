@@ -593,6 +593,38 @@ int SeqIterator::computeMetamerF(const char * seq, // Reference sequence
     return 0;
 }
 
+int SeqIterator::computeMetamerF(const char * seq, // Reference sequence
+                                 int frame, // 0-2
+                                 Buffer<ExtractedMetamer> & kmerBuffer,
+                                 size_t & posToWrite,
+                                 uint32_t seqID,
+                                 int taxIdAtRank,
+                                 uint32_t protId) {
+    uint64_t tempKmer = 0;
+    uint32_t aaLen = aaFrames[0].size();
+    int checkN;
+    for (uint32_t kmerCnt = 0; kmerCnt < aaLen - kmerLength + 1; kmerCnt ++) {
+        tempKmer = 0;
+        checkN = 0;
+        for (uint32_t i = 0; i < kmerLength; i++) {
+            if (-1 == aaFrames[0][kmerCnt + i]) {
+                checkN = 1;
+                break;
+            }
+            tempKmer += aaFrames[0][kmerCnt + i] * powers[i];
+        }
+        if (checkN == 1) {
+            kmerBuffer.buffer[posToWrite] = {UINT64_MAX, UINT32_MAX, 0, taxIdAtRank, kmerCnt * 3};
+        } else {
+            addDNAInfo_TargetKmer(tempKmer, seq, kmerCnt, frame);
+            kmerBuffer.buffer[posToWrite] = {tempKmer, protId, seqID, taxIdAtRank, kmerCnt * 3};
+            // printKmerInDNAsequence(tempKmer); cout << endl;
+        }
+        posToWrite ++;
+    }
+    return 0;
+}
+
 size_t SeqIterator::computeAAKmer(Buffer<uint64_t> * kmerBuffer, const char *seq,
                                   size_t seqLength, size_t &posToWrite,
                                   size_t seqId) {

@@ -25,8 +25,7 @@ FuncIndexer::~FuncIndexer() {
 }
 
 void FuncIndexer::createIndex() {
-    loadCdsInfo(par.cdsInfo);
-    
+
     // Read through FASTA files and make blocks of sequences to be processed by each thread
     if (par.accessionLevel) {
         makeBlocksForParallelProcessing_accession_level();
@@ -34,6 +33,11 @@ void FuncIndexer::createIndex() {
         makeBlocksForParallelProcessing();
     }
     writeTaxIdList();
+    
+    loadCdsInfo(par.cdsInfo);
+    uint32_t nonCdsIdx = lastProtIdx + 1;
+    
+    
 
     // Process the splits until all are processed
     bool * tempChecker = new bool[fnaSplits.size()];
@@ -42,7 +46,7 @@ void FuncIndexer::createIndex() {
     memset(completionChecker, 0, fnaSplits.size() * sizeof(bool));
     // fill_n(completionChecker, fnaSplits.size(), false);
     size_t totalProcessedSplitCnt = 0;
-    Buffer<TargetMetamerF> metamerBuffer(par.bufferSize);
+    Buffer<ExtractedMetamer> metamerBuffer(par.bufferSize);
 #ifdef OPENMP
     omp_set_num_threads(par.threads);
 #endif
@@ -52,14 +56,14 @@ void FuncIndexer::createIndex() {
 
         size_t processedSplitCnt = 0;
         memset(metamerBuffer.buffer, 0, metamerBuffer.bufferSize * sizeof(TargetMetamerF));
-        fillTargetKmerBuffer(metamerBuffer, tempChecker, processedSplitCnt);
+        fillTargetKmerBuffer(metamerBuffer, tempChecker, processedSplitCnt, nonCdsIdx);
 
         // Sort the k-mers
         time_t start = time(nullptr);
         SORT_PARALLEL(metamerBuffer.buffer,
                       metamerBuffer.buffer + metamerBuffer.startIndexOfReserve, 
-                      [] (const TargetMetamerF & a, const TargetMetamerF & b) {
-                                return a.metamerF.metamer < b.metamerF.metamer;});
+                      [] (const ExtractedMetamer & a, const ExtractedMetamer & b) {
+                                return a.metamer.metamer < b.metamer.metamer;});
         // SORT_PARALLEL(metamerBuffer.buffer,
         //               metamerBuffer.buffer + metamerBuffer.startIndexOfReserve,
         //               sortTargetMetamerF);
@@ -106,12 +110,13 @@ void FuncIndexer::createIndex() {
 }
 
 
-size_t FuncIndexer::fillTargetKmerBuffer(Buffer<TargetMetamerF> &kmerBuffer,
+size_t FuncIndexer::fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
                                          bool * tempChecker,
-                                         size_t &processedSplitCnt) {
+                                         size_t &processedSplitCnt,
+                                         uint32_t & nonCdsIdx) {
     uint32_t cdsCnt = 1;
     int hasOverflow = 0;
-#pragma omp parallel default(none), shared(kmerBuffer, tempChecker, processedSplitCnt, hasOverflow, cout, cdsCnt)
+#pragma omp parallel default(none), shared(kmerBuffer, tempChecker, processedSplitCnt, hasOverflow, cout, cdsCnt, nonCdsIdx)
     {
         ProbabilityMatrix probMatrix(*subMat);
         SeqIterator seqIterator(par);
@@ -189,45 +194,55 @@ size_t FuncIndexer::fillTargetKmerBuffer(Buffer<TargetMetamerF> &kmerBuffer,
                                 //     cout << endl;
                                 // }
                                 uint32_t cdsId = __sync_fetch_and_add(&cdsCnt, 1);
-                                queryCdsList[cdsId] = QueryCDS(cdsInfoMap[string(seq->name.s)][j].proteinId, cdsId, cds[j].size());
+                                queryCdsList[cdsId] = QueryCDS(cdsInfoMap[string(seq->name.s)][j].protId, cdsId, cds[j].size());
                                 // queryCdsList.emplace_back(cdsInfoMap[string(seq->name.s)][j].proteinId, cdsId, cds[j].size());
-                                seqIterator.computeMetamerF(cds[j].c_str(), 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, cdsId);
+                                seqIterator.computeMetamerF(
+                                    cds[j].c_str(), // DNA sequence string
+                                    0,            // frame
+                                    kmerBuffer,       // extracted k-mer buffer
+                                    posToWrite,     // position to write
+                                    int(processedSeqCnt[fnaSplits[i].file_idx] +
+                                        fnaSplits[i].offset + s_cnt),
+                                    fnaSplits[i].speciesID,
+                                     cdsInfoMap[string(seq->name.s)][j].protId);
                             }
 
                             // Translate non-CDS and extract metamers
                             for (size_t j = 0; j < nonCds.size(); j++) {
+                                uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
                                 if (observedNonCDSKmers.empty()) {
                                     seqIterator.translate(nonCds[j]);
-                                    seqIterator.computeMetamerF(nonCds[j].c_str(), 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, 0);
+                                    seqIterator.computeMetamerF(nonCds[j].c_str(), 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, nonCdsId);
                                     seqIterator.getMinHashList(observedNonCDSKmerHashes, nonCds[j].c_str());
                                 } else {
                                     int frame = selectReadingFrame(observedNonCDSKmerHashes, nonCds[j].c_str(), seqIterator);
                                     if (frame < 3) { // Forward
                                         seqIterator.translate(nonCds[j], frame);
-                                        seqIterator.computeMetamerF(nonCds[j].c_str(), frame, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, 0);
+                                        seqIterator.computeMetamerF(nonCds[j].c_str(), frame, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, nonCdsId);
                                     } else { // Reverse complement
                                         reverseComplementStr.clear();
                                         reverseComplementStr = seqIterator.reverseComplement(nonCds[j]);
                                         seqIterator.translate(reverseComplementStr, frame - 3);
-                                        seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, 0);
+                                        seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, nonCdsId);
                                     }
                                 }
                             }
                         } else { // CDS not provided
                             // Translate the whole sequence
+                            uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
                             if (observedNonCDSKmers.empty()) {
                                 seqIterator.translate(seq->seq.s);
                                 seqIterator.getMinHashList(observedNonCDSKmerHashes, seq->seq.s);
-                                seqIterator.computeMetamerF(seq->seq.s, 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, 0);                                    
+                                seqIterator.computeMetamerF(seq->seq.s, 0, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, nonCdsId);                                    
                             } else {
                                 int frame = selectReadingFrame(observedNonCDSKmerHashes, seq->seq.s, seqIterator);
                                 if (frame < 3) { // Forward
                                     seqIterator.translate(seq->seq.s, frame);
-                                    seqIterator.computeMetamerF(seq->seq.s, frame, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, 0);
+                                    seqIterator.computeMetamerF(seq->seq.s, frame, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, nonCdsId);
                                 } else { // Reverse complement
                                     reverseComplement = seqIterator.reverseComplement(seq->seq.s, seq->seq.l);
                                     seqIterator.translate(reverseComplement,  frame - 3);
-                                    seqIterator.computeMetamerF(reverseComplement, frame - 3, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, 0);
+                                    seqIterator.computeMetamerF(reverseComplement, frame - 3, kmerBuffer, posToWrite,int(processedSeqCnt[fnaSplits[i].file_idx] + fnaSplits[i].offset + s_cnt), fnaSplits[i].speciesID, nonCdsId);
                                     free(reverseComplement);
                                 }
                             }                     
@@ -252,18 +267,63 @@ size_t FuncIndexer::fillTargetKmerBuffer(Buffer<TargetMetamerF> &kmerBuffer,
     return 0;
 }
 
+int FuncIndexer::getProteinId(Buffer<ExtractedMetamer> &kmerBuffer) {
+    Buffer<ProtMatch> matchBuffer(par.bufferSize);
+    if (kmerMatcher->matchAAKmers(& kmerBuffer, & matchBuffer, dbDir)) {
+        cout << "Number of matches: " << matchBuffer.startIndexOfReserve << endl;
+        SORT_PARALLEL(matchBuffer.buffer, matchBuffer.buffer + matchBuffer.startIndexOfReserve, 
+        [] (const ProtMatch & a, const ProtMatch & b) {
+            if (a.queryProtId != b.queryProtId) {
+                return a.queryProtId < b.queryProtId;
+            } else if (a.targetProtId != b.targetProtId) {
+                return a.targetProtId < b.targetProtId;
+            } else {
+                return a.queryProtPos < b.queryProtPos;
+            }
+        });
+        // print matchBuffer
+        // uint32_t lastPost = 0;
+        // for (size_t i = 0; i < matchBuffer.startIndexOfReserve; i++) {
+        //     cout << matchBuffer.buffer[i].cdsId << " " 
+        //          << matchBuffer.buffer[i].protId << " " 
+        //          << matchBuffer.buffer[i].cdsPos << " "
+        //          << queryCdsList[matchBuffer.buffer[i].cdsId].cdsId << " "
+        //          << protIdMap[matchBuffer.buffer[i].protId] << " ";
+        //     if (matchBuffer.buffer[i].cdsPos == lastPost) {
+        //         cout << "Duplicated";
+        //     } 
+        //     cout << endl; 
+        //     lastPost = matchBuffer.buffer[i].cdsPos;
+        // }
+
+        unordered_map<uint32_t, uint32_t> cdsId2protId;
+        labelCdsWithProtId(matchBuffer, cdsId2protId);
+        // // print cdsId2protId
+        // cout << "print cdsId2protId" << endl;
+        // for (auto & it : cdsId2protId) {
+        //     cout << it.first << " " << it.second << " " <<  queryCdsList[it.first].cdsId << " " << protIdMap[it.second] << endl;
+        // }
+        // cout << "print cdsId2protId done" << endl;
+        labelKmerWithProtId(kmerBuffer, cdsId2protId);
+        cout << "K-mers from CDS are labeled with protein IDs" << endl;
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 int FuncIndexer::getProteinId(Buffer<TargetMetamerF> &kmerBuffer) {
     Buffer<ProtMatch> matchBuffer(par.bufferSize);
     if (kmerMatcher->matchAAKmers(& kmerBuffer, & matchBuffer, dbDir)) {
         cout << "Number of matches: " << matchBuffer.startIndexOfReserve << endl;
         SORT_PARALLEL(matchBuffer.buffer, matchBuffer.buffer + matchBuffer.startIndexOfReserve, 
         [] (const ProtMatch & a, const ProtMatch & b) {
-            if (a.cdsId != b.cdsId) {
-                return a.cdsId < b.cdsId;
-            } else if (a.protId != b.protId) {
-                return a.protId < b.protId;
+            if (a.queryProtId != b.queryProtId) {
+                return a.queryProtId < b.queryProtId;
+            } else if (a.targetProtId != b.targetProtId) {
+                return a.targetProtId < b.targetProtId;
             } else {
-                return a.cdsPos < b.cdsPos;
+                return a.queryProtPos < b.queryProtPos;
             }
         });
         // print matchBuffer
@@ -306,14 +366,14 @@ void FuncIndexer::labelCdsWithProtId(Buffer<ProtMatch> & protMatch, unordered_ma
     uint32_t currentProt;
     size_t numOfMatch = protMatch.startIndexOfReserve;
     while (matchIdx < numOfMatch) {
-        currentCDS = protMatch.buffer[matchIdx].cdsId;        
+        currentCDS = protMatch.buffer[matchIdx].queryProtId;        
         size_t protCnt = 0;
-        while((matchIdx < numOfMatch) && (currentCDS == protMatch.buffer[matchIdx].cdsId)) {
-            currentProt = protMatch.buffer[matchIdx].protId;
+        while((matchIdx < numOfMatch) && (currentCDS == protMatch.buffer[matchIdx].queryProtId)) {
+            currentProt = protMatch.buffer[matchIdx].targetProtId;
             size_t start = matchIdx;
             while ((matchIdx < numOfMatch) &&
-                   (currentCDS == protMatch.buffer[matchIdx].cdsId) &&
-                   (currentProt == protMatch.buffer[matchIdx].protId)) {
+                   (currentCDS == protMatch.buffer[matchIdx].queryProtId) &&
+                   (currentProt == protMatch.buffer[matchIdx].targetProtId)) {
                 ++matchIdx;
             }
             matchBlocks.emplace_back(start, matchIdx - 1, currentCDS, protCnt++);
@@ -345,8 +405,8 @@ void FuncIndexer::labelCdsWithProtId(Buffer<ProtMatch> & protMatch, unordered_ma
         }
         cdsId2protId[it.first] = bestProt;
         // For debugging
-        queryCdsList[it.first].protIdx = bestProt;
-        queryCdsList[it.first].proteinId = protIdMap[bestProt];
+        queryCdsList[it.first].assigend_uniref_idx = bestProt;
+        queryCdsList[it.first].assigend_uniref_id = uniRefIdMap[bestProt];
         queryCdsList[it.first].score = maxScore;
     }
 }
@@ -366,15 +426,15 @@ void FuncIndexer::labelKmerWithProtId(Buffer<TargetMetamerF> &kmerBuffer, const 
 }
 
 ProtScore FuncIndexer::scoreProteinMatches(size_t start, size_t end, const Buffer<ProtMatch> & protMatch) {
-    uint32_t protId = protMatch.buffer[start].protId;
+    uint32_t protId = protMatch.buffer[start].targetProtId;
     float score = 0;
-    float len = (float) queryCdsList[protMatch.buffer[start].cdsId].cdsLength;
+    float len = (float) queryCdsList[protMatch.buffer[start].queryProtId].cdsLength;
     vector<const ProtMatch *> consecutiveMatches;
     consecutiveMatches.reserve(protMatch.startIndexOfReserve);
     for (size_t i = start; i + 1 < end; i++) {
         size_t consecutive = 1;
         // MUST: protMatch.buffer[i].cdsPos != protMatch.buffer[i + 1].cdsPos
-        while ((i + 1 < end) && protMatch.buffer[i].cdsPos + 3 == protMatch.buffer[i + 1].cdsPos) {
+        while ((i + 1 < end) && protMatch.buffer[i].queryProtPos + 3 == protMatch.buffer[i + 1].queryProtPos) {
             ++consecutive;
             ++i;
         }
@@ -390,7 +450,7 @@ ProtScore FuncIndexer::scoreProteinMatches(size_t start, size_t end, const Buffe
     auto *checker = new bool[aminoAcidNum + 1];
     memset(checker, 0, (aminoAcidNum + 1));
     for (size_t i = 0; i < consecutiveMatches.size(); i++) {
-        uint32_t currPos = consecutiveMatches[i]->cdsPos / 3;
+        uint32_t currPos = consecutiveMatches[i]->queryProtPos / 3;
         checker[currPos] = true;
         checker[currPos + 1] = true;
         checker[currPos + 2] = true;
@@ -433,7 +493,7 @@ void FuncIndexer::loadProtIdMap() {
         uint32_t protIdx;
         string protId;
         iss >> protId >> protIdx;
-        protIdMap[protIdx] = protId;
+        uniRefIdMap[protIdx] = protId;
     }
     protIdMapFile.close();
 }
@@ -516,4 +576,115 @@ void FuncIndexer::reduceRedundancy(Buffer<TargetMetamerF> &kmerBuffer, size_t * 
         uniqKmerCnt ++;
     }
     cout << "After reducing redundancy: " << uniqKmerCnt << endl;
+}
+
+void FuncIndexer::loadCdsInfo(const string & cdsInfoFileList) {
+    uint32_t prtId = 1;
+    ifstream cdsInfoList(cdsInfoFileList);
+    if (cdsInfoList.is_open()) {
+        string cdsInfoFile;
+        while (getline(cdsInfoList, cdsInfoFile)) { // Read each CDS info file
+            ifstream cdsInfo(cdsInfoFile);
+            if (cdsInfo.is_open()) {
+                string line;
+                while (getline(cdsInfo, line)) { // Read each line of the CDS info file
+                    if (line[0] == '>') { // Check if the line starts with ">"
+                        // Get the accession number between the '|' and '.'.
+                        size_t start = line.find('|') + 1;
+                        size_t end = line.find('.', start);
+                        string accession = line.substr(start, end - start + 2);
+                        TaxID taxonomyId = foundAcc2taxid[accession];
+                        // cout << "Accession: " << accession << endl;
+                        int frame = 1;
+                        while (true) {
+                            start = line.find('[', end) + 1;
+                            end = line.find(']', start);
+                            if (start == string::npos) { break;}
+                            size_t equalPos = line.find('=', start);
+                            string feature = line.substr(start, equalPos - start);
+                            string value = line.substr(equalPos + 1, end - equalPos - 1);
+                            if (feature == "pseudo") {
+                                break;
+                            } else if (feature == "protein" && value == "hypothetical protein") {
+                                break;
+                            } else if (feature == "frame") {
+                                frame = stoi(value);
+                            } else if (feature == "protein_id") {
+                                // cout << "Protein ID: " << value << "\t" << frame << endl;
+                                protIdMap[prtId] = value;
+                                cdsInfoMap[accession].emplace_back(CDSinfo(prtId++, frame));
+                            } else if (feature == "location") {
+                                // cout << "Location: " << value << endl;
+                                // Check if the location is complement
+                                size_t complementPos = value.find('c');
+                                bool isComplement = (complementPos != string::npos);
+                                if (isComplement) {
+                                    cdsInfoMap[accession].back().isComplement = true;
+                                    value = value.substr(complementPos + 11, value.size() - complementPos - 12);
+                                } else {
+                                    cdsInfoMap[accession].back().isComplement = false;
+                                }
+
+                                // Check if spliced
+                                size_t joinPos = value.find('j');
+                                if (joinPos != string::npos) {
+                                    value = value.substr(joinPos + 5, value.size() - joinPos - 6);
+                                }
+                                
+                                // Load the locations
+                                size_t commaPos = value.find(',');
+                                size_t dotPos;
+                                string locationBegin, locationEnd;
+                                while (commaPos != string::npos) {
+                                    dotPos = value.find('.');
+                                    locationBegin = value.substr(0, dotPos);
+                                    locationEnd = value.substr(dotPos + 2, commaPos - dotPos - 2);
+                                    
+                                    // Check < and > signs
+                                    if (locationBegin[0] == '<') {
+                                        locationBegin = locationBegin.substr(1, locationBegin.size() - 1);
+                                    }
+                                    if (locationEnd[0] == '>') {
+                                        locationEnd = locationEnd.substr(1, locationEnd.size() - 1);
+                                    }
+
+                                    cdsInfoMap[accession].back().loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
+                                    value = value.substr(commaPos + 1, value.size() - commaPos - 1);
+                                    commaPos = value.find(',');
+                                }
+                                dotPos = value.find('.');
+                                locationBegin = value.substr(0, dotPos);
+                                locationEnd = value.substr(dotPos + 2, commaPos - dotPos - 2);
+                                // Check < and > signs
+                                if (locationBegin[0] == '<') {
+                                    locationBegin = locationBegin.substr(1, locationBegin.size() - 1);
+                                }
+                                if (locationEnd[0] == '>') {
+                                    locationEnd = locationEnd.substr(1, locationEnd.size() - 1);
+                                }
+                                cdsInfoMap[accession].back().loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
+
+                                // Frame correction
+                                if (frame != 1) {
+                                    if (!isComplement) {
+                                        cdsInfoMap[accession].back().loc[0].first += frame - 1;
+                                    } else {
+                                        cdsInfoMap[accession].back().loc.back().second -= frame - 1;
+                                    }
+                                }
+                                break;
+                            } 
+                        }
+                    }
+                }
+            } else {
+                Debug(Debug::ERROR) << "Cannot open file " << cdsInfoFile << "\n";
+                EXIT(EXIT_FAILURE);
+            }
+        }
+    } else {
+        Debug(Debug::ERROR) << "Cannot open file " << cdsInfoFileList << "\n";
+        EXIT(EXIT_FAILURE);
+    }
+    lastProtIdx = prtId - 1;
 }

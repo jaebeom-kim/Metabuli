@@ -76,9 +76,9 @@ void IndexCreator::createIndex() {
         ProteinDbIndexer indexer(par);
         indexer.index();
     }
-    if (!par.cdsInfo.empty()) {
-        loadCdsInfo(par.cdsInfo);
-    }
+    // if (!par.cdsInfo.empty()) {
+    //     loadCdsInfo(par.cdsInfo);
+    // }
     
     // Read through FASTA files and make blocks of sequences to be processed by each thread
     if (par.accessionLevel) {
@@ -150,7 +150,6 @@ void IndexCreator::makeBlocksForParallelProcessing() {
     string seqHeader;
     string accession_version;
 
-    unordered_map<string, TaxID> foundAcc2taxid;
     for (int i = 0; i < fileNum; ++i) {
         // Get start and end position of each sequence in the file
         getline(fnaListFile, eachFile);
@@ -238,6 +237,7 @@ void IndexCreator::makeBlocksForParallelProcessing_accession_level() {
     string acc2taxidFileName2 = dbDir + "/acc2taxid.map";
     FILE * acc2taxidFile = fopen(acc2taxidFileName2.c_str(), "w");
     for (auto it : newAcc2taxid) {
+        foundAcc2taxid[it.first] = it.second.second;
         fprintf(acc2taxidFile, "%s\t%d\t%d\n", it.first.c_str(), it.second.first, it.second.second);
     }
     fclose(acc2taxidFile);
@@ -1118,112 +1118,7 @@ TaxID IndexCreator::getMaxTaxID() {
     return maxTaxID;
 }
 
-void IndexCreator::loadCdsInfo(const string & cdsInfoFileList) {
-    ifstream cdsInfoList(cdsInfoFileList);
-    if (cdsInfoList.is_open()) {
-        string cdsInfoFile;
-        while (getline(cdsInfoList, cdsInfoFile)) { // Read each CDS info file
-            ifstream cdsInfo(cdsInfoFile);
-            if (cdsInfo.is_open()) {
-                string line;
-                while (getline(cdsInfo, line)) { // Read each line of the CDS info file
-                    if (line[0] == '>') { // Check if the line starts with ">"
-                        // Get the accession number between the '|' and '.'.
-                        size_t start = line.find('|') + 1;
-                        size_t end = line.find('.', start);
-                        string accession = line.substr(start, end - start + 2);
-                        // cout << "Accession: " << accession << endl;
-                        int frame = 1;
-                        while (true) {
-                            start = line.find('[', end) + 1;
-                            end = line.find(']', start);
-                            if (start == string::npos) { break;}
-                            size_t equalPos = line.find('=', start);
-                            string feature = line.substr(start, equalPos - start);
-                            string value = line.substr(equalPos + 1, end - equalPos - 1);
-                            if (feature == "pseudo") {
-                                break;
-                            } else if (feature == "protein" && value == "hypothetical protein") {
-                                break;
-                            } else if (feature == "frame") {
-                                frame = stoi(value);
-                            } else if (feature == "protein_id") {
-                                // cout << "Protein ID: " << value << "\t" << frame << endl;
-                                cdsInfoMap[accession].emplace_back(CDSinfo(value, frame));
-                            } else if (feature == "location") {
-                                // cout << "Location: " << value << endl;
-                                // Check if the location is complement
-                                size_t complementPos = value.find('c');
-                                bool isComplement = (complementPos != string::npos);
-                                if (isComplement) {
-                                    cdsInfoMap[accession].back().isComplement = true;
-                                    value = value.substr(complementPos + 11, value.size() - complementPos - 12);
-                                } else {
-                                    cdsInfoMap[accession].back().isComplement = false;
-                                }
 
-                                // Check if spliced
-                                size_t joinPos = value.find('j');
-                                if (joinPos != string::npos) {
-                                    value = value.substr(joinPos + 5, value.size() - joinPos - 6);
-                                }
-                                
-                                // Load the locations
-                                size_t commaPos = value.find(',');
-                                size_t dotPos;
-                                string locationBegin, locationEnd;
-                                while (commaPos != string::npos) {
-                                    dotPos = value.find('.');
-                                    locationBegin = value.substr(0, dotPos);
-                                    locationEnd = value.substr(dotPos + 2, commaPos - dotPos - 2);
-                                    
-                                    // Check < and > signs
-                                    if (locationBegin[0] == '<') {
-                                        locationBegin = locationBegin.substr(1, locationBegin.size() - 1);
-                                    }
-                                    if (locationEnd[0] == '>') {
-                                        locationEnd = locationEnd.substr(1, locationEnd.size() - 1);
-                                    }
-
-                                    cdsInfoMap[accession].back().loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
-                                    value = value.substr(commaPos + 1, value.size() - commaPos - 1);
-                                    commaPos = value.find(',');
-                                }
-                                dotPos = value.find('.');
-                                locationBegin = value.substr(0, dotPos);
-                                locationEnd = value.substr(dotPos + 2, commaPos - dotPos - 2);
-                                // Check < and > signs
-                                if (locationBegin[0] == '<') {
-                                    locationBegin = locationBegin.substr(1, locationBegin.size() - 1);
-                                }
-                                if (locationEnd[0] == '>') {
-                                    locationEnd = locationEnd.substr(1, locationEnd.size() - 1);
-                                }
-                                cdsInfoMap[accession].back().loc.emplace_back(stoi(locationBegin), stoi(locationEnd));
-
-                                // Frame correction
-                                if (frame != 1) {
-                                    if (!isComplement) {
-                                        cdsInfoMap[accession].back().loc[0].first += frame - 1;
-                                    } else {
-                                        cdsInfoMap[accession].back().loc.back().second -= frame - 1;
-                                    }
-                                }
-                                break;
-                            } 
-                        }
-                    }
-                }
-            } else {
-                Debug(Debug::ERROR) << "Cannot open file " << cdsInfoFile << "\n";
-                EXIT(EXIT_FAILURE);
-            }
-        }
-    } else {
-        Debug(Debug::ERROR) << "Cannot open file " << cdsInfoFileList << "\n";
-        EXIT(EXIT_FAILURE);
-    }
-}
 
 int IndexCreator::selectReadingFrame(priority_queue<uint64_t> & observedHashes, const char * seq, const SeqIterator & seqIterator){
     priority_queue<uint64_t> currentList;

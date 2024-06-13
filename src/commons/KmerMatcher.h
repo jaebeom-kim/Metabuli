@@ -109,7 +109,12 @@ public:
   bool matchAAKmers(Buffer<TargetMetamerF> *queryKmerBuffer,
                     Buffer<ProtMatch> *matchBuffer,
                     const string &db = string());
-  
+
+  bool matchAAKmers(Buffer<ExtractedMetamer> *queryKmerBuffer,
+                    Buffer<ProtMatch> *matchBuffer,
+                    const string &db = string(),
+                    uint32_t lastProtIdx = 0);
+                
   void sortMatches(Buffer<Match> *matchBuffer);
 
   static uint64_t getNextTargetKmer(uint64_t lookingTarget,
