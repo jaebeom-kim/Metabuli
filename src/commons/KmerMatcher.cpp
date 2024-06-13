@@ -930,10 +930,7 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDelta
                         }
                     }
                     for (int k = 0; k < currMatchNum; k++) {
-                        matches[matchCnt++] = {curMetamer->metamerF.protId,
-                                            curMetamer->cdsPos, // cdsId
-                                             getIdOfAAkmer(aaMatches[k]) // protId
-                                             };
+                        matches[matchCnt++] = {curMetamer->metamer.id, curMetamer->cdsPos, getIdOfAAkmer(aaMatches[k])};
                         // cout << curMetamer->metamerF.protId << " " << curMetamer->cdsPos << " " << getIdOfAAkmer(aaMatches[k]) << " ";
                         // seqIterator.printAAKmer(curMetamer->metamerF.metamer, 24);
                         // cout << " ";

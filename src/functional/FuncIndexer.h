@@ -25,10 +25,10 @@ struct QueryCDS {
 };
 
 struct ProtScore {
-    ProtScore(uint32_t protIdx, float score) : protIdx(protIdx), score(score) {}
-    ProtScore(uint32_t protIdx) : protIdx(protIdx), score(0) {}
+    ProtScore(uint32_t targetProtIdx, float score) : targetProtIdx(targetProtIdx), score(score) {}
+    ProtScore(uint32_t targetProtIdx) : targetProtIdx(targetProtIdx), score(0) {}
     ProtScore() = default;
-    uint32_t protIdx;
+    uint32_t targetProtIdx;
     float score;
 };
 
@@ -56,7 +56,10 @@ protected:
     std::unordered_map<uint32_t, string> protIdMap;
     std::vector<QueryCDS> queryCdsList;
     std::unordered_map<uint32_t, int> cds2lengthMap;
-    std::unordered_map<uint32_t, std::vector<ProtScore>> cds2protScoreMap;
+    std::unordered_map<uint32_t, std::vector<ProtScore>> query2targetProtScMap;
+    std::unordered_map<uint32_t, TaxID> protIdx2taxId;
+    std::unordered_map<uint32_t, uint32_t> protIdx2unirefId;
+
 
     void loadProtIdMap();
 
@@ -69,17 +72,23 @@ protected:
 
     int getProteinId(Buffer<TargetMetamerF> &kmerBuffer);
 
-    void labelCdsWithProtId(Buffer<ProtMatch> & protMatch, unordered_map<uint32_t, uint32_t> & cdsId2protId);
+    void mapQueryProt2TargetProt(Buffer<ProtMatch> & protMatch);
+
+    void labelExtractedMetamerWithUniRefId(Buffer<ExtractedMetamer> &kmerBuffer);
 
     void labelKmerWithProtId(Buffer<TargetMetamerF> &kmerBuffer, const unordered_map<uint32_t, uint32_t> & cdsId2protId);
 
     void reduceRedundancy(Buffer<TargetMetamerF> &kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
+
+    void reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
 
     uint32_t chooseBestProtein(size_t start, size_t end, const Buffer<ProtMatch> & protMatch);
 
     ProtScore scoreProteinMatches(size_t start, size_t end, const Buffer<ProtMatch> & protMatch);
 
     static bool sortTargetMetamerF(const TargetMetamerF &a, const TargetMetamerF &b);
+
+    static bool sortExtractedMetamer(const ExtractedMetamer &a, const ExtractedMetamer &b);
 
     void loadCdsInfo(const string & cdsInfoFileList);
 public:

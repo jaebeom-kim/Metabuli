@@ -113,13 +113,13 @@ struct MatchBlock {
 };
 
 struct ProtMatchBlock {
-    ProtMatchBlock(size_t start, size_t end, uint32_t cdsId, uint32_t protId) : 
-        start(start), end(end), cdsId(cdsId), protId(protId) {}
-    ProtMatchBlock() : start(0), end(0), cdsId(0), protId(0) {}
+    ProtMatchBlock(size_t start, size_t end, uint32_t queryProtId, uint32_t targetProtCnt) : 
+        start(start), end(end), queryProtId(queryProtId), targetProtCnt(targetProtCnt) {}
+    ProtMatchBlock() : start(0), end(0), queryProtId(0), targetProtCnt(0) {}
     size_t start;
     size_t end;
-    uint32_t cdsId;
-    uint32_t protId; // counter for candidate protein, starts from 0
+    uint32_t queryProtId; // CDS id
+    uint32_t targetProtCnt; // counter for candidate protein, starts from 0
 };
 
 #endif //ADCLASSIFIER2_MATCH_H

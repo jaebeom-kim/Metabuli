@@ -112,15 +112,15 @@ struct MetamerF {
 struct Metamer {
     Metamer(uint64_t metamer, uint32_t id) : metamer(metamer), id(id) {}
     uint64_t metamer;
-    uint32_t id;
+    uint32_t id; // protIdx
 };
 
 struct ExtractedMetamer {
-    ExtractedMetamer(uint64_t metamer, uint32_t id,  uint32_t seqId, TaxID speciesId, uint32_t cdsPos) : metamer(metamer, id), seqId(seqId), speciesId(speciesId), cdsPos(cdsPos) {}
+    ExtractedMetamer(uint64_t metamer, uint32_t id, TaxID speciesId, uint32_t cdsPos) : metamer(metamer, id), speciesId(speciesId), cdsPos(cdsPos), unirefId(0) {}
     Metamer metamer;
-    uint32_t seqId;
     TaxID speciesId;
     uint32_t cdsPos;
+    uint32_t unirefId;
 };
 
 struct TargetMetamerF {

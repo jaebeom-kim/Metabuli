@@ -116,7 +116,7 @@ public:
 
   int computeMetamers(const char * seq, int frame, Buffer<TargetKmer> & kmerBuffer, size_t & posToWrite, int seqID, int taxIdAtRank);
   int computeMetamerF(const char * seq, int frame, Buffer<TargetMetamerF> & kmerBuffer, size_t & posToWrite, uint32_t seqID, int taxIdAtRank, uint32_t cdsIdx);
-  int computeMetamerF(const char * seq, int frame, Buffer<ExtractedMetamer> & kmerBuffer, size_t & posToWrite, uint32_t seqID, int taxIdAtRank, uint32_t protId);
+  int computeMetamerF(const char * seq, int frame, Buffer<ExtractedMetamer> & kmerBuffer, size_t & posToWrite, int taxIdAtRank, uint32_t protId);
   size_t computeAAKmer(Buffer<uint64_t> * kmerBuffer, const char * seq, size_t seqLength, size_t & posToWrite, size_t seqId); 
 
   static void maskLowComplexityRegions(const char *seq, char *maskedSeq,
