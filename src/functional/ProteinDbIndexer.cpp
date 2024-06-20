@@ -3,6 +3,7 @@
 #include "IndexCreator.h"
 #include "Kmer.h"
 #include "LocalUtil.h"
+#include "NcbiTaxonomy.h"
 #include "common.h"
 #include "printBinary.h"
 #include <cstddef>
@@ -17,6 +18,7 @@ ProteinDbIndexer::ProteinDbIndexer(const LocalParameters &par) : par(par){
     dbDir = par.filenames[0];
     aaKmerBuffer = new Buffer<uint64_t>(par.bufferSize);
     proteinIndexSplitFileName = dbDir + "/prot_split.mtbl";
+    prtId2taxIdFileName = dbDir + "/unirefIdx2taxId.mtbl";
     bufferSize = par.bufferSize;
     flushCnt = 0;
     
@@ -30,6 +32,8 @@ void ProteinDbIndexer::index() {
     splitFasta(par.proteinDB.c_str(), this->sequenceBlocks);
     // LocalUtil::writeMappingFile(proteinId2Index, dbDir + "/prtIdMap.mtbl");
     writePrtIdMap();
+    LocalUtil::writeMappingFile(proteinIndex2taxonomyId, prtId2taxIdFileName);
+    
     size_t numOfSplits = sequenceBlocks.size();
     bool * splitChecker = new bool[numOfSplits];
     fill_n(splitChecker, numOfSplits, false);
@@ -584,13 +588,22 @@ void ProteinDbIndexer::splitFasta(const std::string &fastaFileName, std::vector<
   size_t idx = 0;
   while (kseq->ReadEntry()) {
     const KSeqWrapper::KSeqEntry & e = kseq->entry;
-    this->proteinId2Index[e.name.s] = idx++;
+    this->proteinId2Index[e.name.s] = idx;
+    proteinIndex2taxonomyId[idx++] = getTaxIdFromComment(kseq->entry.comment.s);
     blocks.emplace_back(e.headerOffset - 1,
                         e.headerOffset + e.sequence.l + e.newlineCount + e.sequenceOffset - e.headerOffset - 2,
                         e.sequence.l + e.newlineCount + e.sequenceOffset - e.headerOffset,
                         e.sequence.l);
   }
   delete kseq;
+}
+
+TaxID ProteinDbIndexer::getTaxIdFromComment(const std::string &header) {
+// comment format: 
+// peptidylprolyl isomerase n=1 Tax=Triplophysa tibetana TaxID=1572043 RepID=A0A5A9P0L4_9TELE
+    size_t taxIDPos = header.find("TaxID=");
+    size_t taxIDEndPos = header.find(" ", taxIDPos);
+    return std::stoi(header.substr(taxIDPos + 6, taxIDEndPos - taxIDPos - 6));    
 }
 
 size_t ProteinDbIndexer::getSmallestKmer(const uint64_t lookingKmers[], size_t fileCnt) {

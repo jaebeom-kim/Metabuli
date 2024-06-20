@@ -33,11 +33,13 @@ private:
     Buffer<uint64_t> * aaKmerBuffer;
     std::vector<SequenceBlock> sequenceBlocks;
     std::unordered_map<string, size_t> proteinId2Index;
+    std::unordered_map<size_t, int> proteinIndex2taxonomyId;
     int flushCnt;
 
     // Outputs
     std::string versionFileName;
     std::string paramterFileName;
+    std::string prtId2taxIdFileName;
 
     size_t numOfFlush=0;
 
@@ -50,6 +52,7 @@ private:
     void mergeProteinDeltaIndexFiles();
     size_t getSmallestKmer(const uint64_t lookingKmers[], size_t fileCnt); 
     void writePrtIdMap();
+    TaxID getTaxIdFromComment(const std::string & header);
 
 public:
     ProteinDbIndexer(const LocalParameters &par);

@@ -19,10 +19,10 @@ public:
     static T getQueryKmerNumber(T queryLength, int spaceNum);
 
     template<typename K, typename V>
-    static void writeMappingFile(const std::unordered_map<K, V>, const std::string & fileName);
+    static void writeMappingFile(const std::unordered_map<K, V> & map, const std::string & fileName);
 
     template<typename K, typename V>
-    static void writeMappingFile_text(const std::unordered_map<K, V>, const std::string & fileName);
+    static void writeMappingFile_text(const std::unordered_map<K, V> & map, const std::string & fileName);
 
     static void splitQueryFile(std::vector<SequenceBlock> & seqSegments, const std::string & queryPath);
 
@@ -40,7 +40,7 @@ T LocalUtil::getQueryKmerNumber(T queryLength, int spaceNum) {
 }
 
 template <typename K, typename V>
-void LocalUtil::writeMappingFile(const std::unordered_map<K, V> map, const std::string & fileName) {
+void LocalUtil::writeMappingFile(const std::unordered_map<K, V> & map, const std::string & fileName) {
     // Write the mapping files
     std::ofstream ofs(fileName, std::ios::binary);
     if (!ofs) {
@@ -63,7 +63,7 @@ void LocalUtil::writeMappingFile(const std::unordered_map<K, V> map, const std::
 }
 
 template <typename K, typename V>
-void LocalUtil::writeMappingFile_text(const std::unordered_map<K, V> map, const std::string & fileName) {
+void LocalUtil::writeMappingFile_text(const std::unordered_map<K, V> & map, const std::string & fileName) {
     // Write the mapping files
     std::ofstream ofs(fileName);
     if (!ofs) {
