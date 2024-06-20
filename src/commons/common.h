@@ -35,7 +35,8 @@ struct SequenceBlock{
     size_t seqLength;
 };
 
-struct Query{
+class Query {
+public:
     int queryId;
     int classification;
     float score;

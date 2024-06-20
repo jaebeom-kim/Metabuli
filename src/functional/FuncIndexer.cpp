@@ -2,7 +2,9 @@
 #include "IndexCreator.h"
 #include "Kmer.h"
 #include "KmerMatcher.h"
+#include "LocalUtil.h"
 #include "Match.h"
+#include "NcbiTaxonomy.h"
 #include "ProteinDbIndexer.h"
 #include "SeqIterator.h"
 #include <cstdint>
@@ -13,7 +15,12 @@ FuncIndexer::FuncIndexer(const LocalParameters &par) : IndexCreator(par), par(pa
     protDBFileName = par.proteinDB + "/protein.mtbl";
     protDbSplitFileName = par.proteinDB + "/prot_split.mtbl";
     protIdMapFileName = par.proteinDB + "/prtIdMap.mtbl";
-    loadProtIdMap();
+    protIdx2taxIdFileName = dbDir + "/id2taxonomy.mtbl";
+    protIdx2unirefIdFileName = dbDir + "/id2uniref.mtbl";
+    protIdx2taxIdFileName_debug = dbDir + "/id2taxonomy_debug.mtbl";
+    protIdx2unirefIdFileName_debug = dbDir + "/id2uniref_debug.mtbl";
+
+    // loadProtIdMap();
     kmerMatcher = new KmerMatcher(par, taxonomy);
 
     queryCdsList.resize(par.bufferSize / 50);
@@ -52,7 +59,7 @@ void FuncIndexer::createIndex() {
         queryCdsList.resize(par.bufferSize / 50);
 
         size_t processedSplitCnt = 0;
-        memset(metamerBuffer.buffer, 0, metamerBuffer.bufferSize * sizeof(TargetMetamerF));
+        memset(metamerBuffer.buffer, 0, metamerBuffer.bufferSize * sizeof(ExtractedMetamer));
         fillTargetKmerBuffer(metamerBuffer, tempChecker, processedSplitCnt, nonCdsIdx);
 
         // Sort the k-mers
@@ -61,9 +68,6 @@ void FuncIndexer::createIndex() {
                       metamerBuffer.buffer + metamerBuffer.startIndexOfReserve, 
                       [] (const ExtractedMetamer & a, const ExtractedMetamer & b) {
                                 return a.metamer.metamer < b.metamer.metamer;});
-        // SORT_PARALLEL(metamerBuffer.buffer,
-        //               metamerBuffer.buffer + metamerBuffer.startIndexOfReserve,
-        //               sortTargetMetamerF);
                               
         time_t sort = time(nullptr);
         cout << "Sort time: " << sort - start << endl;
@@ -81,29 +85,30 @@ void FuncIndexer::createIndex() {
         SORT_PARALLEL(metamerBuffer.buffer,
                       metamerBuffer.buffer + metamerBuffer.startIndexOfReserve,
                       sortExtractedMetamer);
+        
         // Reduce redundancy
+        time_t reduction = time(nullptr);
         auto * uniqKmerIdx = new size_t[metamerBuffer.startIndexOfReserve + 1];
         size_t uniqKmerCnt = 0;
         reduceRedundancy(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
-
-        cout << "redundacny reduced" << endl;
-
-        return;
-
-
-        // time_t reduction = time(nullptr);
-        // cout<<"Time spent for reducing redundancy: "<<(double) (reduction - sort) << endl;
-        // if(processedSplitCnt == fnaSplits.size() && numOfFlush == 0){
-        //     writeTargetFilesAndSplits(metamerBuffer.buffer, metamerBuffer.startIndexOfReserve, par, uniqKmerIdx, uniqKmerCnt);
-        // } else {
-        //     writeTargetFiles(metamerBuffer.buffer, metamerBuffer.startIndexOfReserve, par,uniqKmerIdx, uniqKmerCnt);
-        // }
-        // delete[] uniqKmerIdx;
+        cout<<"Time spent for reducing redundancy: "<<(double) (reduction - sort) << endl;
+        
+        // Write the k-mers to the database
+        if(processedSplitCnt == fnaSplits.size() && numOfFlush == 0){
+            writeTargetFilesAndSplits(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
+        } else {
+            writeTargetFiles(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
+        }
+        delete[] uniqKmerIdx;
     }
     delete[] tempChecker;
     delete[] completionChecker;
     writeTaxonomyDB();
     writeDbParameters();
+    LocalUtil::writeMappingFile(this->protIdx2taxId, this->protIdx2taxIdFileName);
+    LocalUtil::writeMappingFile(this->protIdx2unirefId, this->protIdx2unirefIdFileName);
+    LocalUtil::writeMappingFile_text(this->protIdx2taxId, this->protIdx2taxIdFileName_debug);
+    LocalUtil::writeMappingFile_text(this->protIdx2unirefId, this->protIdx2unirefIdFileName_debug);
 }
 
 
@@ -267,7 +272,7 @@ size_t FuncIndexer::fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
 
 int FuncIndexer::getProteinId(Buffer<ExtractedMetamer> &kmerBuffer) {
     Buffer<ProtMatch> matchBuffer(par.bufferSize);
-    if (kmerMatcher->matchAAKmers(& kmerBuffer, & matchBuffer, dbDir)) {
+    if (kmerMatcher->matchAAKmers(& kmerBuffer, & matchBuffer, lastProtIdx, dbDir)) {
         cout << "Number of matches: " << matchBuffer.startIndexOfReserve << endl;
         SORT_PARALLEL(matchBuffer.buffer, matchBuffer.buffer + matchBuffer.startIndexOfReserve, 
         [] (const ProtMatch & a, const ProtMatch & b) {
@@ -406,7 +411,7 @@ void FuncIndexer::mapQueryProt2TargetProt(Buffer<ProtMatch> & protMatch) {
         // cdsId2protId[it.first] = bestProt;
         // For debugging
         queryCdsList[it.first].assigend_uniref_idx = bestProt;
-        queryCdsList[it.first].assigend_uniref_id = uniRefIdMap[bestProt];
+        // queryCdsList[it.first].assigend_uniref_id = uniRefIdMap[bestProt];
         queryCdsList[it.first].score = maxScore;
     }
 }
@@ -535,7 +540,7 @@ void FuncIndexer::reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t 
     }
 
     SeqIterator seqIterator(par);
-    cout << "Before reducing redundancy: " << kmerBuffer.startIndexOfReserve << endl;
+    
     // for(size_t i = 0; i < kmerBuffer.startIndexOfReserve ; i++){
     //     if(kmerBuffer.buffer[i].speciesId == 0){
     //         cout << i << " " << kmerBuffer.buffer[i].metamerF.metamer << " " << kmerBuffer.buffer[i].speciesId << " " << kmerBuffer.buffer[i].metamerF.protId << " " << kmerBuffer.buffer[i].metamerF.seqId << endl;
@@ -557,8 +562,7 @@ void FuncIndexer::reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t 
     //     cout << i << " "; seqIterator.printKmerInDNAsequence(kmerBuffer.buffer[i].metamerF.metamer);
     //     cout << " " << kmerBuffer.buffer[i].speciesId << " " << kmerBuffer.buffer[i].metamerF.protId << " " << kmerBuffer.buffer[i].metamerF.seqId << endl;
     // }
-
-    cout << kmerBuffer.startIndexOfReserve - startIdx << endl;
+    cout << "K-mer counts before reducing redundancy: " << kmerBuffer.startIndexOfReserve - startIdx << endl;
 
     ExtractedMetamer * lookingKmer = nullptr;
     size_t lookingIndex = 0;
@@ -567,7 +571,6 @@ void FuncIndexer::reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t 
 
     lookingKmer = & kmerBuffer.buffer[startIdx];
     lookingIndex = startIdx;
-    // cout << "Unique k-mers:" << endl;
     for (size_t i = startIdx + 1; i < kmerBuffer.startIndexOfReserve; i++) {
         taxIds.clear();
         taxIds.push_back(protIdx2taxId[lookingKmer->metamer.id]);
@@ -585,8 +588,6 @@ void FuncIndexer::reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t 
             protIdx2taxId[lookingKmer->metamer.id] = taxonomy->LCA(taxIds)->taxId;
         } 
         uniqeKmerIdx[uniqKmerCnt] = lookingIndex;
-        // cout << uniqKmerCnt << " " << lookingIndex << " "; seqIterator.printKmerInDNAsequence(lookingKmer->metamerF.metamer);
-        // cout << " " << lookingKmer->speciesId << " " << lookingKmer->metamerF.protId << " " << lookingKmer->metamerF.seqId << endl;
         uniqKmerCnt ++;
         if (isEnd) break;
         lookingKmer = & kmerBuffer.buffer[i];
@@ -595,11 +596,120 @@ void FuncIndexer::reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t 
 
     if (!((kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 2].metamer.metamer == kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].metamer.metamer)
         && (kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 2].speciesId == kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].speciesId)
-        && (kmerBuffer.buffer[kmerBuffer.startIndexOfReserve- 2].unirefId == kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].unirefId))) {
+        && (kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 2].unirefId == kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].unirefId))) {
         uniqeKmerIdx[uniqKmerCnt] = kmerBuffer.startIndexOfReserve - 1;
         uniqKmerCnt ++;
     }
-    cout << "After reducing redundancy: " << uniqKmerCnt << endl;
+    cout << "K-mer counts after reducing redundancy: " << uniqKmerCnt << endl;
+}
+
+void FuncIndexer::writeTargetFilesAndSplits(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqKmerIdx, size_t & uniqKmerCnt){
+    string diffIdxFileName = dbDir + "/diffIdx";
+    string infoFileName = dbDir + "/info";
+    string splitFileName = dbDir + "/split";
+
+    // Make splits
+    FILE * diffIdxSplitFile = fopen(splitFileName.c_str(), "wb");
+    DiffIdxSplit splitList[par.splitNum];
+    memset(splitList, 0, sizeof(DiffIdxSplit) * par.splitNum);
+    size_t splitWidth = uniqKmerCnt / par.splitNum;
+    size_t remainder = uniqKmerCnt % par.splitNum;
+    size_t splitCnt = 1;
+    size_t start = 0;
+    for (size_t i = 1; i < (size_t) par.splitNum; i++) {
+        start = start + splitWidth;
+        if (remainder > 0) {
+            start++;
+            remainder--;
+        }
+        for (size_t j = start; j + 1 < start + splitWidth; j++) {
+            if (AminoAcidPart(kmerBuffer.buffer[uniqKmerIdx[j]].metamer.metamer) 
+                != AminoAcidPart(kmerBuffer.buffer[uniqKmerIdx[j + 1]].metamer.metamer)) {
+                splitList[splitCnt].ADkmer = kmerBuffer.buffer[uniqKmerIdx[j + 1]].metamer.metamer;
+                cout << splitList[splitCnt].ADkmer << endl;
+                splitCnt++;
+                break;
+            }
+        }
+    }
+
+    FILE * diffIdxFile = fopen(diffIdxFileName.c_str(), "wb");
+    FILE * infoFile = fopen(infoFileName.c_str(), "wb");
+    if (diffIdxFile == nullptr || infoFile == nullptr){
+        cout<<"Cannot open the file for writing target DB"<<endl;
+        return;
+    }
+    numOfFlush++;
+
+
+    uint16_t *diffIdxBuffer = (uint16_t *)malloc(sizeof(uint16_t) * size_t(par.bufferSize));
+    size_t localBufIdx = 0;
+    uint64_t lastKmer = 0;
+    size_t write = 0;
+
+    size_t splitIdx = 1;
+    size_t totalDiffIdx = 0;
+    for(size_t i = 0; i < uniqKmerCnt ; i++) {
+        fwrite(& kmerBuffer.buffer[uniqKmerIdx[i]].metamer.id, sizeof (TargetKmerInfo), 1, infoFile);
+        write++;
+        getDiffIdx(lastKmer, kmerBuffer.buffer[uniqKmerIdx[i]].metamer.metamer, diffIdxFile,
+                   diffIdxBuffer, this->bufferSize, localBufIdx, totalDiffIdx);
+        lastKmer = kmerBuffer.buffer[uniqKmerIdx[i]].metamer.metamer;
+        if((splitIdx < splitCnt) && (lastKmer == splitList[splitIdx].ADkmer)){
+            splitList[splitIdx].diffIdxOffset = totalDiffIdx;
+            splitList[splitIdx].infoIdxOffset = write;
+            splitIdx ++;
+        }
+    }
+    
+    cout<<"K-mer counts recorded on disk: "<< write << endl;
+
+    flushKmerBuf(diffIdxBuffer, diffIdxFile, localBufIdx);
+    printIndexSplitList(splitList);
+    fwrite(splitList, sizeof(DiffIdxSplit), par.splitNum, diffIdxSplitFile);
+
+    free(diffIdxBuffer);
+    fclose(diffIdxSplitFile);
+    fclose(diffIdxFile);
+    fclose(infoFile);
+    kmerBuffer.startIndexOfReserve = 0;
+}
+
+// This function sort the TargetKmerBuffer, do redundancy reducing task, write the differential index of them
+void FuncIndexer::writeTargetFiles(Buffer<ExtractedMetamer> &kmerBuffer,
+                                   const size_t * uniqeKmerIdx,
+                                   size_t & uniqKmerCnt){
+    string diffIdxFileName;
+    string infoFileName;
+    diffIdxFileName = dbDir + "/" + to_string(numOfFlush) + "_diffIdx";
+    infoFileName = dbDir + "/" + to_string(numOfFlush) + "_info";
+
+    FILE * diffIdxFile = fopen(diffIdxFileName.c_str(), "wb");
+    FILE * infoFile = fopen(infoFileName.c_str(), "wb");
+    if (diffIdxFile == nullptr || infoFile == nullptr){
+        cout<<"Cannot open the file for writing target DB"<<endl;
+        return;
+    }
+    numOfFlush++;
+
+    uint16_t *diffIdxBuffer = (uint16_t *)malloc(sizeof(uint16_t) * 10'000'000'000);
+    size_t localBufIdx = 0;
+    uint64_t lastKmer = 0;
+    size_t write = 0;
+
+    for(size_t i = 0; i < uniqKmerCnt ; i++) {
+        fwrite(& kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.id, sizeof (TargetKmerInfo), 1, infoFile);
+        write++;
+        getDiffIdx(lastKmer, kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.id, diffIdxFile, diffIdxBuffer, this->bufferSize, localBufIdx);
+        lastKmer = kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.metamer;
+    }
+    cout<<"K-mer counts recorded on disk: "<< write << endl;
+
+    flushKmerBuf(diffIdxBuffer, diffIdxFile, localBufIdx);
+    free(diffIdxBuffer);
+    fclose(diffIdxFile);
+    fclose(infoFile);
+    kmerBuffer.startIndexOfReserve = 0;
 }
 
 void FuncIndexer::reduceRedundancy(Buffer<TargetMetamerF> &kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt) {

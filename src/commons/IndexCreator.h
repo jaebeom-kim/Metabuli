@@ -45,7 +45,6 @@ protected:
 
     // Parameters
     int threadNum;
-    size_t bufferSize;
     int reducedAA;
     string spaceMask;
     int accessionLevel;

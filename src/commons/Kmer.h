@@ -73,7 +73,7 @@ union MetamerID {
     MetamerID() : id(0) {}
 };
 
-struct MetamerF2 {
+struct MetamerF2 { 
     MetamerF2(uint64_t metamer, uint32_t seqId, uint32_t protId) : metamer(metamer), metamerID(seqId, protId) {}
     MetamerF2(uint64_t metamer, uint64_t ids) : metamer(metamer), metamerID(ids) {}
     MetamerF2() {}
@@ -99,7 +99,7 @@ struct MetamerF2 {
     }
 };
 
-struct MetamerF {
+struct MetamerF { // Deprecated
     MetamerF(uint64_t metamer, uint32_t seqId, uint32_t protId) : metamer(metamer), seqId(seqId), protId(protId) {}
     MetamerF() {}
     uint64_t metamer;
@@ -123,7 +123,7 @@ struct ExtractedMetamer {
     uint32_t unirefId;
 };
 
-struct TargetMetamerF {
+struct TargetMetamerF { // Deprecated
     TargetMetamerF(uint64_t metamer, uint32_t seqId, uint32_t protId, TaxID taxId, uint32_t cdsPos) 
         : metamerF(metamer, seqId, protId), speciesId(taxId), cdsPos(cdsPos) {}
     MetamerF metamerF;

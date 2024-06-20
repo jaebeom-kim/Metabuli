@@ -3,8 +3,11 @@
 
 #include "Util.h"
 #include <string>
+#include <unordered_map>
 #include "common.h"
 #include "KSeqWrapper.h"
+#include <iostream>
+#include <fstream>
 
 class LocalUtil : public Util {
 public:
@@ -14,6 +17,12 @@ public:
 
     template<typename T>
     static T getQueryKmerNumber(T queryLength, int spaceNum);
+
+    template<typename K, typename V>
+    static void writeMappingFile(const std::unordered_map<K, V>, const std::string & fileName);
+
+    template<typename K, typename V>
+    static void writeMappingFile_text(const std::unordered_map<K, V>, const std::string & fileName);
 
     static void splitQueryFile(std::vector<SequenceBlock> & seqSegments, const std::string & queryPath);
 
@@ -30,5 +39,43 @@ T LocalUtil::getQueryKmerNumber(T queryLength, int spaceNum) {
     return (getMaxCoveredLength(queryLength) / 3 - kmerLength - spaceNum + 1) * 6;
 }
 
+template <typename K, typename V>
+void LocalUtil::writeMappingFile(const std::unordered_map<K, V> map, const std::string & fileName) {
+    // Write the mapping files
+    std::ofstream ofs(fileName, std::ios::binary);
+    if (!ofs) {
+        std::cerr << "Could not open " << fileName << " for writing." << std::endl;
+        return;
+    }
+
+    // Write the size of the map
+    size_t size = map.size();
+    ofs.write(reinterpret_cast<const char*>(&size), sizeof(size));
+
+    // Write each key-value pair
+    size_t keySize = sizeof(K);
+    size_t valueSize = sizeof(V);
+    for (const auto& pair : map) {
+        ofs.write(reinterpret_cast<const char*>(&pair.first), keySize);
+        ofs.write(reinterpret_cast<const char*>(&pair.second), valueSize);
+    }
+    ofs.close();
+}
+
+template <typename K, typename V>
+void LocalUtil::writeMappingFile_text(const std::unordered_map<K, V> map, const std::string & fileName) {
+    // Write the mapping files
+    std::ofstream ofs(fileName);
+    if (!ofs) {
+        std::cerr << "Could not open " << fileName << " for writing." << std::endl;
+        return;
+    }
+
+    // Write each key-value pair
+    for (const auto& pair : map) {
+        ofs << pair.first << "\t" << pair.second << std::endl;
+    }
+    ofs.close();
+}
 
 #endif //METABULI_LOCALUTIL_H

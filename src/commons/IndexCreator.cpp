@@ -19,7 +19,6 @@ extern const char *version;
 IndexCreator::IndexCreator(const LocalParameters & par) : par(par){
     // Parameters
     threadNum = par.threads;
-    bufferSize = par.bufferSize;
     reducedAA = par.reducedAA;
     spaceMask = par.spaceMask;
     accessionLevel = par.accessionLevel;
@@ -337,7 +336,7 @@ void IndexCreator::writeTargetFiles(TargetKmer * kmerBuffer, size_t & kmerNum, c
     for(size_t i = 0; i < uniqKmerCnt ; i++) {
         fwrite(& kmerBuffer[uniqeKmerIdx[i]].info, sizeof (TargetKmerInfo), 1, infoFile);
         write++;
-        getDiffIdx(lastKmer, kmerBuffer[uniqeKmerIdx[i]].ADkmer, diffIdxFile, diffIdxBuffer, this->bufferSize, localBufIdx);
+        getDiffIdx(lastKmer, kmerBuffer[uniqeKmerIdx[i]].ADkmer, diffIdxFile, diffIdxBuffer, par.bufferSize, localBufIdx);
         lastKmer = kmerBuffer[uniqeKmerIdx[i]].ADkmer;
     }
 
@@ -407,7 +406,7 @@ void IndexCreator::writeTargetFilesAndSplits(TargetKmer * kmerBuffer, size_t & k
         fwrite(& kmerBuffer[uniqKmerIdx[i]].info, sizeof (TargetKmerInfo), 1, infoFile);
         write++;
         getDiffIdx(lastKmer, kmerBuffer[uniqKmerIdx[i]].ADkmer, diffIdxFile,
-                   diffIdxBuffer, this->bufferSize, localBufIdx, totalDiffIdx);
+                   diffIdxBuffer, par.bufferSize, localBufIdx, totalDiffIdx);
         lastKmer = kmerBuffer[uniqKmerIdx[i]].ADkmer;
         if((splitIdx < splitCnt) && (lastKmer == splitList[splitIdx].ADkmer)){
             splitList[splitIdx].diffIdxOffset = totalDiffIdx;
@@ -594,7 +593,7 @@ void IndexCreator::writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_
 
 void IndexCreator::writeInfo(TargetKmerInfo * entryToWrite, FILE * infoFile, TargetKmerInfo * infoBuffer, size_t & infoBufferIdx)
 {
-    if (infoBufferIdx >= bufferSize) {
+    if (infoBufferIdx >= par.bufferSize) {
         flushInfoBuf(infoBuffer, infoFile, infoBufferIdx);
     }
     memcpy(infoBuffer + infoBufferIdx, entryToWrite, sizeof(TargetKmerInfo));

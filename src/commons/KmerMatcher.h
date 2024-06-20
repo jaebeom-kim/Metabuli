@@ -76,9 +76,17 @@ protected:
                                     TargetKmerInfo *infoBuffer,
                                     size_t &infoBufferIdx);
 
-  void moveMatches(Match *dest, Match *src, int &matchNum);
+  static uint32_t getKmerId(size_t bufferSize,
+                            FILE *kmerIdFp,
+                            uint32_t *idBuffer,
+                            size_t &idBufferIdx);  
 
-  void moveMatches(ProtMatch *dest, ProtMatch *src, int &matchNum);
+  template <typename MatchType>
+  void moveMatches(MatchType *dest, MatchType *src, int &matchNum);
+
+  // void moveMatches(Match *dest, Match *src, int &matchNum);
+
+  // void moveMatches(ProtMatch *dest, ProtMatch *src, int &matchNum);
 
   void compareDna(uint64_t query, std::vector<uint64_t> &targetKmersToCompare,
                   std::vector<size_t> &selectedMatches,
@@ -95,6 +103,8 @@ protected:
 
   static bool compareMatches(const Match &a, const Match &b);
 
+  static bool compareMatchF(const MatchF &a, const MatchF &b);
+
   void loadTaxIdList(const LocalParameters & par);
 
 public:
@@ -106,16 +116,21 @@ public:
                   Buffer<Match> *matchBuffer,
                   const string &db = string());
 
+  bool matchMetamers(Buffer<QueryKmer> *queryKmerBuffer,
+                     Buffer<MatchF> *matchBuffer);
+
   bool matchAAKmers(Buffer<TargetMetamerF> *queryKmerBuffer,
                     Buffer<ProtMatch> *matchBuffer,
                     const string &db = string());
 
   bool matchAAKmers(Buffer<ExtractedMetamer> *queryKmerBuffer,
                     Buffer<ProtMatch> *matchBuffer,
-                    const string &db = string(),
-                    uint32_t lastProtIdx = 0);
+                    uint32_t lastProtIdx,
+                    const string &db = string());
                 
   void sortMatches(Buffer<Match> *matchBuffer);
+
+  void sortMatches(Buffer<MatchF> *matchBuffer);
 
   static uint64_t getNextTargetKmer(uint64_t lookingTarget,
                                     const uint16_t *diffIdxBuffer,
@@ -154,6 +169,17 @@ inline TargetKmerInfo KmerMatcher::getKmerInfo(size_t bufferSize,
                (int)(infoBufferIdx - bufferSize));
   }
   return infoBuffer[infoBufferIdx];
+}
+
+inline uint32_t KmerMatcher::getKmerId(size_t bufferSize,
+                                       FILE *kmerIdFp,
+                                       uint32_t *idBuffer,
+                                       size_t &idBufferIdx) {
+  if (unlikely(idBufferIdx >= bufferSize)) {
+    loadBuffer(kmerIdFp, idBuffer, idBufferIdx, bufferSize,
+               (int)(idBufferIdx - bufferSize));
+  }
+  return idBuffer[idBufferIdx];
 }
 
 inline uint8_t KmerMatcher::getHammingDistanceSum(uint64_t kmer1,

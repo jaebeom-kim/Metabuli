@@ -1,47 +1,11 @@
-#include "Classifier.h"
-#include "FileUtil.h"
-#include "QueryIndexer.h"
-#include "common.h"
+#include "FuncClassifier.h"
 
-Classifier::Classifier(LocalParameters & par, bool function) : par(par){
-    // Load parameters
-    dbDir = par.filenames[1 + (par.seqMode == 2)];
-    matchPerKmer = par.matchPerKmer;
-    loadDbParameters(par);
 
-    cout << "DB name: " << par.dbName << endl;
-    cout << "DB creation date: " << par.dbDate << endl;
-    
-    // Taxonomy
-    taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
-
-    // Agents
-    queryIndexer = new QueryIndexer(par);
-    kmerExtractor = new KmerExtractor(par);
-    if (par.reducedAA) {
-        kmerMatcher = new ReducedKmerMatcher(par, taxonomy);
-    } else {
-        kmerMatcher = new KmerMatcher(par, taxonomy);
-    }
-    if (!function) {
-        taxonomer = new Taxonomer(par, taxonomy);
-    }
-    reporter = new Reporter(par, taxonomy);
-}
-
-Classifier::~Classifier() {
-    delete taxonomy;
-    delete queryIndexer;
-    delete kmerExtractor;
-    delete kmerMatcher;
-    delete taxonomer;
-    delete reporter;
-}
-
-void Classifier::startClassify(const LocalParameters &par) {
+void FuncClassifier::startClassify() {
     Buffer<QueryKmer> queryKmerBuffer;
-    Buffer<Match> matchBuffer;
+    Buffer<MatchF> matchBuffer;
     vector<Query> queryList;
+    vector<Result> resultList;
     size_t numOfTatalQueryKmerCnt = 0;
     reporter->openReadClassificationFile();
 
@@ -81,9 +45,11 @@ void Classifier::startClassify(const LocalParameters &par) {
         }
 
         for (size_t splitIdx = 0; splitIdx < queryReadSplit.size(); splitIdx++) {
-            // Allocate memory for query list
             queryList.clear();
             queryList.resize(queryReadSplit[splitIdx].end - queryReadSplit[splitIdx].start);
+
+            resultList.clear();
+            resultList.resize(queryReadSplit[splitIdx].end - queryReadSplit[splitIdx].start);
 
             // Allocate memory for query k-mer buffer
             queryKmerBuffer.reallocateMemory(queryReadSplit[splitIdx].kmerCnt);
@@ -111,11 +77,11 @@ void Classifier::startClassify(const LocalParameters &par) {
                                              kseq2); // sync kseq1 and kseq2
             
             // Search matches between query and target k-mers
-            if (kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer)) {
+            if (kmerMatcher->matchMetamers(&queryKmerBuffer, &matchBuffer)) {
                 kmerMatcher->sortMatches(&matchBuffer);
                 
                 // Classify queries based on the matches.
-                taxonomer->assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                taxonomer->assignTaxonomyAndFunction(matchBuffer, queryList, resultList);
 
                 // Write classification results
                 reporter->writeReadClassification(queryList);
@@ -155,3 +121,4 @@ void Classifier::startClassify(const LocalParameters &par) {
     // Memory deallocation
     free(matchBuffer.buffer);
 }
+

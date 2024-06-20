@@ -16,6 +16,7 @@ struct ProtMatch {
     uint32_t targetProtId;
 };
 
+
 struct Match { // 24 byte
     Match(){}
     Match(QueryKmerInfo qInfo,
@@ -23,10 +24,10 @@ struct Match { // 24 byte
           TaxID speciesId,
           uint32_t dnaEncoding,
           uint16_t eachHamming,
-          uint8_t hamming,
+          uint8_t totalHammingDist,
           bool redundancy):
           qInfo(qInfo), targetId(targetId), speciesId(speciesId), dnaEncoding(dnaEncoding),
-          rightEndHamming(eachHamming), hamming(hamming), redundancy(redundancy) { }
+          rightEndHamming(eachHamming), hamming(totalHammingDist), redundancy(redundancy) { }
 
     QueryKmerInfo qInfo; // 8
     TaxID targetId; // 4 taxonomy id infact
@@ -102,6 +103,24 @@ struct Match { // 24 byte
         }
         return sum;
     }
+};
+
+struct MatchF { // F stands for Function
+    MatchF(){}
+    MatchF(QueryKmerInfo qInfo,
+           uint32_t targetId,
+           TaxID speciesId,
+           uint32_t dnaEncoding,
+           uint16_t hammingDistAtEachPos,
+           uint8_t totalHammingDist):
+             qInfo(qInfo), targetKmerId(targetId), speciesId(speciesId), dnaEncoding(dnaEncoding),
+             hammingDistAtEachPos(hammingDistAtEachPos), totalHammingDist(totalHammingDist) { }
+    QueryKmerInfo qInfo;           // 8
+    uint32_t targetKmerId;         // 4 
+    TaxID speciesId;               // 4
+    uint32_t dnaEncoding;          // 4
+    uint16_t hammingDistAtEachPos; // 2
+    uint8_t totalHammingDist;      // 1
 };
 
 struct MatchBlock {

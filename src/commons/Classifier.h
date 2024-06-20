@@ -38,6 +38,7 @@ using namespace std;
 class Classifier {
 protected:
     // Parameters
+    const LocalParameters &par;
     string dbDir;
     size_t matchPerKmer;
 
@@ -52,7 +53,7 @@ protected:
 public:
     void startClassify(const LocalParameters &par);
 
-    explicit Classifier(LocalParameters & par);
+    explicit Classifier(LocalParameters & par, bool function = false);
 
     virtual ~Classifier();
 

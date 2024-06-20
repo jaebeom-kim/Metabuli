@@ -47,7 +47,7 @@ struct MatchPath {
 
 
 class Taxonomer {
-private:
+protected:
     NcbiTaxonomy * taxonomy;
 
     // spaced k-mer

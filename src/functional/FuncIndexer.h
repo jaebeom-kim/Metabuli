@@ -32,24 +32,21 @@ struct ProtScore {
     float score;
 };
 
-// struct cds2protScore {
-//     cds2protScore(const std::string &cdsId, uint32_t protIdx, float score)
-//         : cdsId(cdsId), protIdx(protIdx), score(score) {}
-//     cds2protScore() = default;
-//     std::string cdsId;
-//     uint32_t protIdx;
-//     float score;
-// };
-
 class FuncIndexer : public IndexCreator {
 protected:
+    // Inputs
     const LocalParameters &par;
     string protDBFileName;
     string protDbSplitFileName;
     string protIdMapFileName;
 
-    KmerMatcher *kmerMatcher;
+    // Outputs
+    string protIdx2taxIdFileName;
+    string protIdx2unirefIdFileName;
+    string protIdx2taxIdFileName_debug;
+    string protIdx2unirefIdFileName_debug;
 
+    KmerMatcher *kmerMatcher;
     uint32_t lastProtIdx;
     std::unordered_map<string, vector<CDSinfo>> cdsInfoMap;
     std::unordered_map<uint32_t, string> uniRefIdMap;
@@ -81,6 +78,10 @@ protected:
     void reduceRedundancy(Buffer<TargetMetamerF> &kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
 
     void reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
+
+    void writeTargetFilesAndSplits(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
+
+    void writeTargetFiles(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
 
     uint32_t chooseBestProtein(size_t start, size_t end, const Buffer<ProtMatch> & protMatch);
 

@@ -2,6 +2,7 @@
 #include "FileMerger.h"
 #include "IndexCreator.h"
 #include "Kmer.h"
+#include "LocalUtil.h"
 #include "common.h"
 #include "printBinary.h"
 #include <cstddef>
@@ -27,6 +28,7 @@ ProteinDbIndexer::~ProteinDbIndexer() {
 
 void ProteinDbIndexer::index() {
     splitFasta(par.proteinDB.c_str(), this->sequenceBlocks);
+    // LocalUtil::writeMappingFile(proteinId2Index, dbDir + "/prtIdMap.mtbl");
     writePrtIdMap();
     size_t numOfSplits = sequenceBlocks.size();
     bool * splitChecker = new bool[numOfSplits];
