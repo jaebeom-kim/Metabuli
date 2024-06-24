@@ -20,7 +20,8 @@
 #include "SubstitutionMatrix.h"
 #include "tantan.h"
 #include "LocalUtil.h"
-#include "ProteinDbIndexer.h"
+// #include "ProteinDbIndexer.h"
+
 
 
 #ifdef OPENMP

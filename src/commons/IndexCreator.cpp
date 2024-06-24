@@ -10,7 +10,6 @@
 #include <utility>
 #include <vector>
 #include "NcbiTaxonomy.cpp"
-#include "ProteinDbIndexer.h"
 #include "SeqIterator.h"
 #include "common.h"
 
@@ -70,11 +69,11 @@ IndexCreator::~IndexCreator() {
 }
 
 void IndexCreator::createIndex() {
-    if (!par.proteinDB.empty()) {
-        cout << "here" << endl;
-        ProteinDbIndexer indexer(par);
-        indexer.index();
-    }
+    // if (!par.proteinDB.empty()) {
+    //     cout << "here" << endl;
+    //     ProteinDbIndexer indexer(par);
+    //     indexer.index();
+    // }
     // if (!par.cdsInfo.empty()) {
     //     loadCdsInfo(par.cdsInfo);
     // }

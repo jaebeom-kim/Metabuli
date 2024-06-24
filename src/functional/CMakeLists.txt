@@ -3,4 +3,10 @@ set(functional_source_files
         functional/FuncIndexer.h
 	functional/ProteinDbIndexer.cpp
         functional/ProteinDbIndexer.h
+        functional/FuncClassifier.cpp
+        functional/FuncClassifier.h
+        functional/FuncTaxonomer.cpp
+        functional/FuncTaxonomer.h
+        functional/ProteinDbSearcher.cpp
+        functional/ProteinDbSearcher.h
         PARENT_SCOPE)

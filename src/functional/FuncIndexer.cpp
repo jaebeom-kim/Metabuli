@@ -1,5 +1,4 @@
 #include "FuncIndexer.h"
-#include "IndexCreator.h"
 #include "Kmer.h"
 #include "KmerMatcher.h"
 #include "LocalUtil.h"
@@ -7,11 +6,14 @@
 #include "NcbiTaxonomy.h"
 #include "ProteinDbIndexer.h"
 #include "SeqIterator.h"
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <iterator>
+#include <ostream>
 
-FuncIndexer::FuncIndexer(const LocalParameters &par) : IndexCreator(par), par(par) {
+FuncIndexer::FuncIndexer(const LocalParameters &par) : IndexCreator(par) {
     protDBFileName = par.proteinDB + "/protein.mtbl";
     protDbSplitFileName = par.proteinDB + "/prot_split.mtbl";
     protIdMapFileName = par.proteinDB + "/prtIdMap.mtbl";
@@ -94,10 +96,14 @@ void FuncIndexer::createIndex() {
         cout<<"Time spent for reducing redundancy: "<<(double) (reduction - sort) << endl;
         
         // Write the k-mers to the database
+        writeTargetFilesInText(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
+        testDeltaIndexing(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
         if(processedSplitCnt == fnaSplits.size() && numOfFlush == 0){
             writeTargetFilesAndSplits(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
+            writeTargetFilesAndSplits2(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
         } else {
             writeTargetFiles(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
+            writeTargetFiles2(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
         }
         delete[] uniqKmerIdx;
     }
@@ -653,7 +659,7 @@ void FuncIndexer::writeTargetFilesAndSplits(Buffer<ExtractedMetamer> &kmerBuffer
         fwrite(& kmerBuffer.buffer[uniqKmerIdx[i]].metamer.id, sizeof (TargetKmerInfo), 1, infoFile);
         write++;
         getDiffIdx(lastKmer, kmerBuffer.buffer[uniqKmerIdx[i]].metamer.metamer, diffIdxFile,
-                   diffIdxBuffer, this->bufferSize, localBufIdx, totalDiffIdx);
+                   diffIdxBuffer, par.bufferSize, localBufIdx, totalDiffIdx);
         lastKmer = kmerBuffer.buffer[uniqKmerIdx[i]].metamer.metamer;
         if((splitIdx < splitCnt) && (lastKmer == splitList[splitIdx].ADkmer)){
             splitList[splitIdx].diffIdxOffset = totalDiffIdx;
@@ -675,7 +681,74 @@ void FuncIndexer::writeTargetFilesAndSplits(Buffer<ExtractedMetamer> &kmerBuffer
     kmerBuffer.startIndexOfReserve = 0;
 }
 
-// This function sort the TargetKmerBuffer, do redundancy reducing task, write the differential index of them
+void FuncIndexer::writeTargetFilesAndSplits2(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqKmerIdx, size_t & uniqKmerCnt){
+    string diffIdxFileName = dbDir + "/deltaIdx.mtbl";
+    string splitFileName = dbDir + "/deltaIdxSplits.mtbl";
+
+    // Make splits
+    FILE * diffIdxSplitFile = fopen(splitFileName.c_str(), "wb");
+    DiffIdxSplit splitList[par.splitNum];
+    memset(splitList, 0, sizeof(DiffIdxSplit) * par.splitNum);
+    size_t splitWidth = uniqKmerCnt / par.splitNum;
+    size_t remainder = uniqKmerCnt % par.splitNum;
+    size_t splitCnt = 1;
+    size_t start = 0;
+    for (size_t i = 1; i < (size_t) par.splitNum; i++) {
+        start = start + splitWidth;
+        if (remainder > 0) {
+            start++;
+            remainder--;
+        }
+        for (size_t j = start; j + 1 < start + splitWidth; j++) {
+            if (AminoAcidPart(kmerBuffer.buffer[uniqKmerIdx[j]].metamer.metamer) 
+                != AminoAcidPart(kmerBuffer.buffer[uniqKmerIdx[j + 1]].metamer.metamer)) {
+                splitList[splitCnt].ADkmer = kmerBuffer.buffer[uniqKmerIdx[j + 1]].metamer.metamer;
+                cout << splitList[splitCnt].ADkmer << endl;
+                splitCnt++;
+                break;
+            }
+        }
+    }
+
+    FILE * diffIdxFile = fopen(diffIdxFileName.c_str(), "wb");
+    if (diffIdxFile == nullptr){
+        cout<<"Cannot open the file for writing target DB"<<endl;
+        return;
+    }
+    numOfFlush++;
+
+
+    uint16_t *diffIdxBuffer = (uint16_t *)malloc(sizeof(uint16_t) * size_t(par.bufferSize));
+    size_t localBufIdx = 0;
+    Metamer previousMetamer;
+    size_t write = 0;
+
+    size_t splitIdx = 1;
+    size_t totalDiffIdx = 0;
+    for(size_t i = 0; i < uniqKmerCnt ; i++) {
+        write++;
+        fillDeltaIndexing(previousMetamer, kmerBuffer.buffer[uniqKmerIdx[i]].metamer, diffIdxFile,
+                   diffIdxBuffer, par.bufferSize, localBufIdx, totalDiffIdx);
+        previousMetamer = kmerBuffer.buffer[uniqKmerIdx[i]].metamer;
+        if((splitIdx < splitCnt) && (previousMetamer.metamer == splitList[splitIdx].ADkmer)){
+            splitList[splitIdx].diffIdxOffset = totalDiffIdx;
+            splitList[splitIdx].infoIdxOffset = write;
+            splitIdx ++;
+        }
+    }
+    
+    cout<<"K-mer counts recorded on disk: "<< write << endl;
+
+    flushKmerBuf(diffIdxBuffer, diffIdxFile, localBufIdx);
+    printIndexSplitList(splitList);
+    fwrite(splitList, sizeof(DiffIdxSplit), par.splitNum, diffIdxSplitFile);
+
+    free(diffIdxBuffer);
+    fclose(diffIdxSplitFile);
+    fclose(diffIdxFile);
+    kmerBuffer.startIndexOfReserve = 0;
+}
+
 void FuncIndexer::writeTargetFiles(Buffer<ExtractedMetamer> &kmerBuffer,
                                    const size_t * uniqeKmerIdx,
                                    size_t & uniqKmerCnt){
@@ -700,7 +773,7 @@ void FuncIndexer::writeTargetFiles(Buffer<ExtractedMetamer> &kmerBuffer,
     for(size_t i = 0; i < uniqKmerCnt ; i++) {
         fwrite(& kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.id, sizeof (TargetKmerInfo), 1, infoFile);
         write++;
-        getDiffIdx(lastKmer, kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.id, diffIdxFile, diffIdxBuffer, this->bufferSize, localBufIdx);
+        getDiffIdx(lastKmer, kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.id, diffIdxFile, diffIdxBuffer, par.bufferSize, localBufIdx);
         lastKmer = kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.metamer;
     }
     cout<<"K-mer counts recorded on disk: "<< write << endl;
@@ -710,6 +783,80 @@ void FuncIndexer::writeTargetFiles(Buffer<ExtractedMetamer> &kmerBuffer,
     fclose(diffIdxFile);
     fclose(infoFile);
     kmerBuffer.startIndexOfReserve = 0;
+}
+
+void FuncIndexer::writeTargetFiles2(Buffer<ExtractedMetamer> &kmerBuffer,
+                                    const size_t * uniqeKmerIdx,
+                                    size_t & uniqKmerCnt){
+    string diffIdxFileName = dbDir + "/" + to_string(numOfFlush) + "_diffIdx";
+    FILE * diffIdxFile = fopen(diffIdxFileName.c_str(), "wb");
+    if (diffIdxFile == nullptr){
+        cout<<"Cannot open the file for writing target DB"<<endl;
+        return;
+    }
+    numOfFlush++;
+
+    uint16_t *diffIdxBuffer = (uint16_t *)malloc(sizeof(uint16_t) * 10'000'000'000);
+    size_t localBufIdx = 0;
+    size_t write = 0;
+    Metamer previousMetamer = Metamer();
+
+    for(size_t i = 0; i < uniqKmerCnt ; i++) {
+        write++;
+        fillDeltaIndexing(previousMetamer, kmerBuffer.buffer[uniqeKmerIdx[i]].metamer, diffIdxFile, diffIdxBuffer, par.bufferSize, localBufIdx);
+        previousMetamer = kmerBuffer.buffer[uniqeKmerIdx[i]].metamer;
+    }
+    cout<<"K-mer counts recorded on disk: "<< write << endl;
+
+    flushKmerBuf(diffIdxBuffer, diffIdxFile, localBufIdx);
+    free(diffIdxBuffer);
+    fclose(diffIdxFile);
+    kmerBuffer.startIndexOfReserve = 0;
+}
+
+void FuncIndexer::fillDeltaIndexing(const Metamer & previousMetamer,
+                                    const Metamer & currentMetamer,
+                                    FILE* handleKmerTable,
+                                    uint16_t * deltaIndexBuffer,
+                                    size_t bufferSize,
+                                    size_t & localBufIdx) {
+    bitset<96> diff = Metamer::substract(currentMetamer, previousMetamer);                               
+    // uint64_t kmerdiff = entryToWrite - lastKmer;
+    uint16_t buffer[7];
+    // uint16_t buffer[5];
+    int idx = 5;
+    buffer[6] = SET_END_FLAG(static_cast<uint16_t>((diff & bitset<96>(0x7FFF)).to_ulong()));
+    // buffer[6] = SET_END_FLAG(GET_15_BITS(kmerdiff));
+    diff >>= 15U;
+    while (diff.any()) {
+        uint16_t toWrite = GET_15_BITS(static_cast<uint16_t>((diff & bitset<96>(0x7FFF)).to_ulong()));
+        diff >>= 15U;
+        buffer[idx] = toWrite;
+        idx--;
+    }
+    writeDiffIdx(deltaIndexBuffer, handleKmerTable, (buffer + idx + 1), (6 - idx), localBufIdx, bufferSize);
+}
+
+void FuncIndexer::fillDeltaIndexing(const Metamer & previousMetamer,
+                                    const Metamer & currentMetamer,
+                                    FILE* handleKmerTable,
+                                    uint16_t * deltaIndexBuffer,
+                                    size_t bufferSize,
+                                    size_t & localBufIdx,
+                                    size_t & totalBufferIdx) {
+    bitset<96> diff = Metamer::substract(currentMetamer, previousMetamer);                               
+    uint16_t buffer[7];
+    int idx = 5;
+    buffer[6] = SET_END_FLAG(static_cast<uint16_t>((diff & bitset<96>(0x7FFF)).to_ulong()));
+    diff >>= 15U;
+    while (diff.any()) {
+        uint16_t toWrite = GET_15_BITS(static_cast<uint16_t>((diff & bitset<96>(0x7FFF)).to_ulong()));
+        diff >>= 15U;
+        buffer[idx] = toWrite;
+        idx--;
+    }
+    totalBufferIdx += 6 - idx;
+    writeDiffIdx(deltaIndexBuffer, handleKmerTable, (buffer + idx + 1), (6 - idx), localBufIdx, bufferSize);
 }
 
 void FuncIndexer::reduceRedundancy(Buffer<TargetMetamerF> &kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt) {
@@ -902,4 +1049,42 @@ void FuncIndexer::loadCdsInfo(const string & cdsInfoFileList) {
         EXIT(EXIT_FAILURE);
     }
     lastProtIdx = prtId - 1;
+}
+
+// This function write the target DB in text format for debugging
+void FuncIndexer::writeTargetFilesInText(Buffer<ExtractedMetamer> &kmerBuffer,
+                                         const size_t * uniqeKmerIdx,
+                                         size_t & uniqKmerCnt) {
+    string textDbFileName = dbDir + "/textDb";
+    ofstream textDb(textDbFileName);
+    if (!textDb) {
+        cout << "Cannot open the file for writing target DB" << endl;
+        return;
+    }
+    for (size_t i = 0; i < uniqKmerCnt; i++) {
+        textDb << bitset<64>(kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.metamer) << " "
+               << kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.id << endl;
+            //    << kmerBuffer.buffer[uniqeKmerIdx[i]].speciesId << " "
+            //    << kmerBuffer.buffer[uniqeKmerIdx[i]].unirefId << endl;
+    }
+    textDb.close();
+}
+
+void FuncIndexer::testDeltaIndexing(const Buffer<ExtractedMetamer> & kmerBuffer,
+                                    const size_t * uniqueKmerIdx,
+                                    size_t uniqueKmerCnt) {
+    string deltaFileName = dbDir + "/delta.debug";
+    ofstream deltaFile(deltaFileName);
+    if (!deltaFile) {
+        cout << "Cannot open the file for writing delta" << endl;
+        return;
+    }
+    Metamer previousMetamer(0, 0);
+    for (size_t i = 0; i < uniqueKmerCnt; i++) {
+        bitset<96> delta = Metamer::substract(kmerBuffer.buffer[uniqueKmerIdx[i]].metamer, previousMetamer);
+        Metamer currentMetamer = previousMetamer.add(delta);
+        deltaFile << bitset<64>(currentMetamer.metamer) << " "
+                  << currentMetamer.id << endl;
+    }
+    deltaFile.close();
 }

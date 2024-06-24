@@ -17,5 +17,6 @@ extern int databaseReport(int argc, const char **argv, const Command& command);
 extern int mapping2taxon(int argc, const char **argv, const Command& command);
 extern int build_uniref(int argc, const char **argv, const Command& command);
 extern int expand_diffidx(int argc, const char **argv, const Command& command);
+extern int expand_diffidx_func(int argc, const char **argv, const Command& command);
 
 #endif //ADCLASSIFIER2_LOCALCOMMANDDECLARATIONS_H

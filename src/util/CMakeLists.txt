@@ -9,4 +9,5 @@ set(util_source_files
         util/mapping2taxon.cpp
         util/gradeByCladeSize.cpp
         util/expand_diffidx.cpp
+        util/expand_diffidx_func.cpp
         PARENT_SCOPE)

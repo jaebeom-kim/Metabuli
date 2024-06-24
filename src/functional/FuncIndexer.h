@@ -35,7 +35,6 @@ struct ProtScore {
 class FuncIndexer : public IndexCreator {
 protected:
     // Inputs
-    const LocalParameters &par;
     string protDBFileName;
     string protDbSplitFileName;
     string protIdMapFileName;
@@ -81,7 +80,30 @@ protected:
 
     void writeTargetFilesAndSplits(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
 
+    void writeTargetFilesAndSplits2(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
+
     void writeTargetFiles(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
+
+    void writeTargetFiles2(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
+
+    void fillDeltaIndexing(const Metamer & previousMetamer,
+                           const Metamer & currentMetamer,
+                           FILE* handleKmerTable,
+                           uint16_t * deltaIndexBuffer,
+                           size_t bufferSize,
+                           size_t & localBufIdx);
+
+    void fillDeltaIndexing(const Metamer & previousMetamer,
+                           const Metamer & currentMetamer,
+                           FILE* handleKmerTable,
+                           uint16_t * deltaIndexBuffer,
+                           size_t bufferSize,
+                           size_t & localBufIdx,
+                           size_t & totalBufferIdx);
+
+    void writeTargetFilesInText(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
+
+    void testDeltaIndexing(const Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t uniqKmerCnt);
 
     uint32_t chooseBestProtein(size_t start, size_t end, const Buffer<ProtMatch> & protMatch);
 
@@ -92,6 +114,8 @@ protected:
     static bool sortExtractedMetamer(const ExtractedMetamer &a, const ExtractedMetamer &b);
 
     void loadCdsInfo(const string & cdsInfoFileList);
+
+    
 public:
     FuncIndexer(const LocalParameters &par);
     ~FuncIndexer();

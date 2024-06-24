@@ -29,12 +29,11 @@ void FuncTaxonomer::assignTaxonomyAndFunction(const Buffer<MatchF> & matchList,
     {
 #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < blockIdx; ++i) {
-            chooseBestTaxon(matchBlocks[i].id,
-                            matchBlocks[i].start,
-                            matchBlocks[i].end,
-                            matchList,
-                            queryList,
-                            par);
+            // chooseBestTaxon(matchBlocks[i].id,
+            //                 matchBlocks[i].start,
+            //                 matchBlocks[i].end,
+            //                 matchList,
+            //                 queryList);
         }
     }
 
