@@ -125,6 +125,14 @@ std::vector<Command> commands = {
                     "<i:mapping file> <i: taxonomy directory> ",
                     CITATION_SPACEPHARER,
                     {{"mapping file", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile},
+                     {"taxonomy directory", DbType::ACCESS_MODE_OUTPUT, DbType::NEED_DATA, &DbValidator::directory}}},
+        {"ncbi2gtdb", ncbi2gtdb, &localPar.mapping2taxon, COMMAND_EXPERT,
+                    "It takes a mapping file (ncbi-to-gtdb is 1-to-N) and generates a 1-to-1 (LCA of N) mapping file",
+                nullptr,
+                    "Jaebeom Kim <jbeom0731@gmail.com>",
+                    "<i:mapping file> <i: taxonomy directory> ",
+                    CITATION_SPACEPHARER,
+                    {{"mapping file", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile},
                      {"taxonomy directory", DbType::ACCESS_MODE_OUTPUT, DbType::NEED_DATA, &DbValidator::directory}}}
 
 };

@@ -39,6 +39,12 @@ int build(int argc, const char **argv, const Command &command){
     if (!par.proteinDB.empty()) {
         FuncIndexer funcIndexer(par);
         funcIndexer.createIndex();
+        if (funcIndexer.getNumOfFlush() == 1) {
+            cerr << "Index creation completed." << endl;
+        } else {
+            
+        }
+
         return 0;
     }
 

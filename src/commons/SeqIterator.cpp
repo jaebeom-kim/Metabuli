@@ -1,5 +1,6 @@
 #include "SeqIterator.h"
 #include "Kmer.h"
+#include "ProdigalWrapper.h"
 #include <cstdint>
 
 const string SeqIterator::atcg = "................................................................"
@@ -593,12 +594,14 @@ int SeqIterator::computeMetamerF(const char * seq, // Reference sequence
     return 0;
 }
 
-int SeqIterator::computeMetamerF(const char * seq, // Reference sequence
-                                 int frame, // 0-2
+int SeqIterator::computeMetamerF(const char * seq,                     // Reference sequence
+                                 int frame,                            // 0-2
                                  Buffer<ExtractedMetamer> & kmerBuffer,
                                  size_t & posToWrite,
                                  int taxIdAtRank,
-                                 uint32_t protId) {
+                                 uint32_t protId,
+                                 uint32_t unirefId)                    // Checker for CDS k-mers
+{
     uint64_t tempKmer = 0;
     uint32_t aaLen = aaFrames[0].size();
     int checkN;
@@ -613,10 +616,10 @@ int SeqIterator::computeMetamerF(const char * seq, // Reference sequence
             tempKmer += aaFrames[0][kmerCnt + i] * powers[i];
         }
         if (checkN == 1) {
-            kmerBuffer.buffer[posToWrite] = {UINT64_MAX, UINT32_MAX, taxIdAtRank, kmerCnt * 3};
+            kmerBuffer.buffer[posToWrite] = {UINT64_MAX, UINT32_MAX, taxIdAtRank, kmerCnt * 3, 0};
         } else {
             addDNAInfo_TargetKmer(tempKmer, seq, kmerCnt, frame);
-            kmerBuffer.buffer[posToWrite] = {tempKmer, protId, taxIdAtRank, kmerCnt * 3};
+            kmerBuffer.buffer[posToWrite] = {tempKmer, protId, taxIdAtRank, kmerCnt * 3, unirefId};
             // printKmerInDNAsequence(tempKmer); cout << endl;
         }
         posToWrite ++;
@@ -1094,6 +1097,78 @@ void SeqIterator::devideToCdsAndNonCds(const char * seq,
             for (size_t k = cdsInfo[i].loc[j].first - 1; k < cdsInfo[i].loc[j].second; k++) {
                 checker[k] = false;
             }
+        }
+    }
+
+    size_t len;
+    size_t i = 0;
+    while (i < seqLen) {
+        len = 0;
+        while (i < seqLen && checker[i]) {
+            i++;
+            len++;
+        }
+        if (len > 32) {
+            nonCds.emplace_back(string(seq + i - len, len));
+        }
+        i ++;
+    }
+}
+
+void SeqIterator::devideToCdsAndNonCds(const char * seq,
+                                       size_t seqLen,
+                                       ProdigalWrapper * prodigal,
+                                       vector<string> & cds, 
+                                       vector<string> & nonCds) {
+    if (prodigal->ng == 0) {
+        nonCds.emplace_back(string(seq));
+        return;
+    }
+
+    vector<pair<size_t, size_t>> cdsLoc;
+
+    for (int geneCnt = 0; geneCnt < prodigal->ng; geneCnt++) {
+       if (prodigal->nodes[prodigal->genes[geneCnt].start_ndx].strand == 1) {
+            size_t begin = prodigal->genes[geneCnt].begin - 1;
+            size_t end = prodigal->genes[geneCnt].end - 1;
+            cdsLoc.emplace_back(begin, end);
+            int k = 0;
+            while (k < 7 && begin >= 3) {
+                begin -= 3;
+                k++;
+            }
+            k = 0;
+            
+            while (k < 7 && end + 3 < seqLen) {
+                end += 3;
+                k++;
+            }
+            cds.emplace_back(string(seq + begin, end - begin + 1));
+        } else {
+            size_t begin = prodigal->genes[geneCnt].begin - 1;
+            size_t end = prodigal->genes[geneCnt].end - 1;
+            cdsLoc.emplace_back(begin, end);
+            int k = 0;
+            while (k < 7 && begin >= 3) {
+                begin -= 3;
+                k++;
+            }
+            k = 0;
+            while (k < 7 && end + 3 < seqLen) {
+                end += 3;
+                k++;
+            }
+            string tmp = string(seq + begin, end - begin + 1);
+            cds.emplace_back(reverseComplement(tmp));
+        }
+    }
+
+    // Get non-CDS that are not in the CDS list
+    bool * checker = new bool[seqLen];
+    memset(checker, true, seqLen * sizeof(bool));
+    for (size_t i = 0; i < cdsLoc.size(); i++) {
+        for (size_t j = cdsLoc[i].first; j < cdsLoc[i].second; j++) {
+            checker[j] = false;
         }
     }
 

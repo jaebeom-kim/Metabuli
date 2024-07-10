@@ -11,7 +11,9 @@
 #include "common.h"
 #include "unordered_map"
 #include <string>
+#include <unordered_map>
 #include <vector>
+#include <unordered_set>
 
 #define BufferSize 16'777'216 // 16 * 1024 * 1024 // 16 M
 
@@ -62,7 +64,7 @@ protected:
                                // search begins.
   };
 
-  size_t AminoAcidPart(size_t kmer) const { return (kmer)&dnaEncodingMasker;}
+  size_t AminoAcidPart(size_t kmer) const { return kmer & dnaEncodingMasker;}
 
   size_t getAAofAAkmer(size_t kmer) const { return ((kmer & protIdMasker) >> 4);}
 
@@ -119,13 +121,11 @@ public:
   bool matchMetamers(Buffer<QueryKmer> *queryKmerBuffer,
                      Buffer<MatchF> *matchBuffer);
 
-  bool matchAAKmers(Buffer<TargetMetamerF> *queryKmerBuffer,
-                    Buffer<ProtMatch> *matchBuffer,
-                    const string &db = string());
-
   bool matchAAKmers(Buffer<ExtractedMetamer> *queryKmerBuffer,
                     Buffer<ProtMatch> *matchBuffer,
-                    uint32_t lastProtIdx,
+                    const unordered_map<uint32_t, int> & unirefIdx2taxId,
+                    const unordered_map<TaxID, unordered_set<TaxID>> & spTaxId2UniRefTaxIds,
+                    const unordered_map<int, int> & ncbi2gtdb,
                     const string &db = string());
                 
   void sortMatches(Buffer<Match> *matchBuffer);
@@ -139,6 +139,10 @@ public:
   static Metamer getNextTargetKmer(const Metamer & lookingTarget,
                                     const uint16_t *diffIdxBuffer,
                                     size_t &diffBufferIdx, size_t &totalPos);
+
+    static Metamer getNextTargetKmer(const Metamer & lookingTarget,
+                                    const uint16_t *diffIdxBuffer,
+                                    size_t &diffBufferIdx);
 
   // Getters
   size_t getTotalMatchCnt() const { return totalMatchCnt; }
@@ -179,6 +183,24 @@ inline Metamer KmerMatcher::getNextTargetKmer(const Metamer & lookingTarget,
     diffIn96bit <<= 15u;
     fragment = diffIdxBuffer[diffBufferIdx++];
     totalPos++;
+  }
+  fragment &= ~check;      // not; 8.47 %
+  diffIn96bit |= fragment; // or : 23.6%
+  return lookingTarget.add(diffIn96bit);
+}
+
+inline Metamer KmerMatcher::getNextTargetKmer(const Metamer & lookingTarget,
+                                              const uint16_t *deltaBuffer,
+                                              size_t & deltaBufferIdx) {
+  uint16_t fragment;
+  uint16_t check = 32768; // 2^15
+  bitset<96> diffIn96bit;
+  // uint64_t diffIn64bit = 0;
+  fragment = deltaBuffer[deltaBufferIdx++];
+  while (!(fragment & check)) { // 27 %
+    diffIn96bit |= fragment;
+    diffIn96bit <<= 15u;
+    fragment = deltaBuffer[deltaBufferIdx++];
   }
   fragment &= ~check;      // not; 8.47 %
   diffIn96bit |= fragment; // or : 23.6%

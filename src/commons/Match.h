@@ -7,11 +7,11 @@
 #include "BitManipulateMacros.h"
 
 
-struct ProtMatch {
+struct ProtMatch { // 12 byte
     ProtMatch(uint32_t queryProtId, uint32_t queryProtPos, uint32_t targetProtId) 
         : queryProtId(queryProtId), queryProtPos(queryProtPos), targetProtId(targetProtId) {}
     ProtMatch(){}
-    uint32_t queryProtId; // CDS id
+    uint32_t queryProtId; // coding 'region id'
     uint32_t queryProtPos;
     uint32_t targetProtId;
 };

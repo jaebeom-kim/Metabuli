@@ -229,6 +229,13 @@ LocalParameters::LocalParameters() :
                    typeid(std::string),
                    (void *) &proteinDB,
                    "^.*$"),
+        NCBI2GTDB(NCBI2GTDB_ID,
+                  "--ncbi2gtdb",
+                  "NCBI to GTDB mapping file",
+                  "NCBI to GTDB mapping file",
+                  typeid(std::string),
+                  (void *) &ncbi2gtdb,
+                  "^.*$"),
         TEST_RANK(TEST_RANK_ID,
                   "--test-rank",
                   ".",
@@ -323,6 +330,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&DB_DATE);
     build.push_back(&CDS_INFO);
     build.push_back(&PROTEIN_DB);
+    build.push_back(&NCBI2GTDB);
 
     //classify
     classify.push_back(&PARAM_THREADS);

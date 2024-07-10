@@ -18,7 +18,7 @@ struct Split{
 };
    
 struct CDSinfo{
-    uint32_t protId; //4,294,967,295
+    uint32_t protId; //4,294,967,295 counted from 0
     int frame;
     bool isComplement;
     std::vector<std::pair<size_t, size_t>> loc;
@@ -88,10 +88,8 @@ struct Buffer {
     };
 
     void reallocateMemory(size_t sizeOfBuffer) {
-        if (sizeOfBuffer > bufferSize) {
-            buffer = (T *) realloc(buffer, sizeof(T) * sizeOfBuffer);
-            bufferSize = sizeOfBuffer;
-        }
+        buffer = (T *) realloc(buffer, sizeof(T) * sizeOfBuffer);
+        bufferSize = sizeOfBuffer;
     };
 };
 

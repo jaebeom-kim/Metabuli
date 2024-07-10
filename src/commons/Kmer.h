@@ -6,6 +6,8 @@
 #include <bitset>
 #include <sys/types.h>
 
+#define DNA_MASK 0Xffffffff
+
 struct QueryKmerInfo {
     explicit QueryKmerInfo(uint32_t seqID = 0, uint32_t pos = 0, uint8_t frame = 0 ) : pos(pos), sequenceID(seqID), frame(frame) {}
     uint64_t pos : 32;
@@ -49,6 +51,8 @@ struct DiffIdxSplit{
     size_t infoIdxOffset;
 };
 
+
+
 struct AAKmer {
     uint64_t kmer : 36;
     uint64_t id : 28;
@@ -73,32 +77,6 @@ union MetamerID {
     MetamerID(uint32_t seqID, uint32_t protID) : ids{seqID, protID} {}
     MetamerID(uint64_t id) : id(id) {}
     MetamerID() : id(0) {}
-};
-
-struct MetamerF2 { 
-    MetamerF2(uint64_t metamer, uint32_t seqId, uint32_t protId) : metamer(metamer), metamerID(seqId, protId) {}
-    MetamerF2(uint64_t metamer, uint64_t ids) : metamer(metamer), metamerID(ids) {}
-    MetamerF2() {}
-    uint64_t metamer;
-    MetamerID metamerID;
-
-    MetamerF2 substract(const MetamerF2 & other) const { // self is equal or greater than other
-        if (metamer < other.metamer) {
-            std::cerr << "MetamerF2: substract: metamer is smaller than other.metamer" << std::endl;
-        } else if (metamer == other.metamer) {
-            return MetamerF2(0, metamerID.id - other.metamerID.id);
-        } else { // metamer > other.metamer
-            if (metamerID.ids.protID > other.metamerID.ids.protID) {
-                return MetamerF2(metamer - other.metamer, metamerID.id - other.metamerID.id);
-            } else if (metamerID.ids.protID < other.metamerID.ids.protID) {
-                return MetamerF2((metamer - 1) - other.metamer, UINT64_MAX - other.metamerID.id + metamerID.id + 1); // UINT60_MAX
-            } else if (metamerID.ids.seqID < other.metamerID.ids.seqID) {
-                return MetamerF2((metamer - 1) - other.metamer, UINT64_MAX - other.metamerID.id + metamerID.id + 1);
-            } else {
-                return MetamerF2(metamer - other.metamer, metamerID.id - other.metamerID.id);
-            }
-        }
-    }
 };
 
 struct MetamerF { // Deprecated
@@ -153,26 +131,34 @@ struct Metamer {
     }
 
     Metamer add(const std::bitset<96> & diff) const {
-        // uint64_t idPart = (diff & std::bitset<96>(0xFFFFFFFF)).to_ullong();
         uint64_t idSum = this->id + (diff & std::bitset<96>(0xFFFFFFFF)).to_ullong();
         uint64_t metamerSum = this->metamer + (diff >> 32).to_ullong() + (idSum >> 32);
         idSum &= 0xFFFFFFFF;
         return Metamer(metamerSum, idSum);
-
-        // uint64_t idPart = (diff & std::bitset<96>(0xFFFFFFFF)).to_ullong();
-        // uint64_t idSum = this->id + idPart;
-        // uint64_t metamerSum = this->metamer + (diff >> 32).to_ullong();
-        // if (idSum > UINT32_MAX) {
-        //     metamerSum++;
-        //     idSum -= UINT32_MAX + 1;
-        // }
-        // return Metamer(metamerSum, idSum);
     }
 
+    bool operator < (const Metamer & other) const {
+        if (metamer != other.metamer) {
+            return metamer < other.metamer;
+        }
+        return id < other.id;
+    }
+
+    bool operator == (const Metamer & other) const {
+        return metamer == other.metamer && id == other.id;
+    }
+};
+
+struct DeltaIdxOffset{
+    DeltaIdxOffset(Metamer metamer, size_t offset) : metamer(metamer), offset(offset) { }
+    DeltaIdxOffset() {};
+    Metamer metamer;
+    size_t offset;
 };
 
 struct ExtractedMetamer {
-    ExtractedMetamer(uint64_t metamer, uint32_t id, TaxID speciesId, uint32_t cdsPos) : metamer(metamer, id), speciesId(speciesId), cdsPos(cdsPos), unirefId(0) {}
+    ExtractedMetamer(uint64_t metamer, uint32_t id, TaxID speciesId, uint32_t cdsPos, uint32_t unirefId) 
+     : metamer(metamer, id), speciesId(speciesId), cdsPos(cdsPos), unirefId(unirefId) {}
     Metamer metamer;
     TaxID speciesId;
     uint32_t cdsPos;

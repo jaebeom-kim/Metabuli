@@ -9,15 +9,26 @@
 #include "common.h"
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 
 struct QueryCDS {
-    QueryCDS(uint32_t cds_protein_id, int cdsIdx, int cdsLength, const string & assigend_uniref_id, uint32_t assigend_uniref_idx, float score)
-        : cds_protein_id(cds_protein_id), cdsIdx(cdsIdx), cdsLength(cdsLength), assigend_uniref_id(assigend_uniref_id), assigend_uniref_idx(assigend_uniref_idx), score(score) {}
-    QueryCDS(uint32_t cds_protein_id, int cdsIdx, int cdsLength)
-        : cds_protein_id(cds_protein_id), cdsIdx(cdsIdx), cdsLength(cdsLength) {}
+    QueryCDS(uint32_t codingRegionId, int cdsLength, const string & assigend_uniref_id, uint32_t assigend_uniref_idx, float score)
+        : codingRegionId(codingRegionId), cdsLength(cdsLength), assigend_uniref_id(assigend_uniref_id), assigend_uniref_idx(assigend_uniref_idx), score(score) {}
+    QueryCDS(uint32_t codingRegionId, int cdsLength)
+        : codingRegionId(codingRegionId), cdsLength(cdsLength) {}
     QueryCDS() = default;
-    uint32_t cds_protein_id;
-    int cdsIdx;
+    uint32_t codingRegionId;
+    int cdsLength;
+    string assigend_uniref_id;
+    uint32_t assigend_uniref_idx;
+    float score;
+};
+
+struct QueryCodingRegionInfo {
+    QueryCodingRegionInfo(uint32_t codingRegionId, int cdsLength)
+        : codingRegionId(codingRegionId), cdsLength(cdsLength) {}
+    QueryCodingRegionInfo() = default;
+    uint32_t codingRegionId;
     int cdsLength;
     string assigend_uniref_id;
     uint32_t assigend_uniref_idx;
@@ -38,32 +49,52 @@ protected:
     string protDBFileName;
     string protDbSplitFileName;
     string protIdMapFileName;
+    string unirefIdx2taxIdFileName;
+    string ncbi2gtdbFileName;
 
     // Outputs
     string protIdx2taxIdFileName;
     string protIdx2unirefIdFileName;
     string protIdx2taxIdFileName_debug;
     string protIdx2unirefIdFileName_debug;
+    // string diffIdxFileName;
+    // string infoFileName;
+    // string deltaIdxFileName;
 
     KmerMatcher *kmerMatcher;
     uint32_t lastProtIdx;
+    std::unordered_map<TaxID, TaxID> taxId2speciesId;
+    std::unordered_set<uint32_t> codingRegionIdSet;
     std::unordered_map<string, vector<CDSinfo>> cdsInfoMap;
     std::unordered_map<uint32_t, string> uniRefIdMap;
     std::unordered_map<uint32_t, string> protIdMap;
-    std::vector<QueryCDS> queryCdsList;
+    std::unordered_map<uint32_t, QueryCodingRegionInfo> queryCodingRegionMap;
     std::unordered_map<uint32_t, int> cds2lengthMap;
     std::unordered_map<uint32_t, std::vector<ProtScore>> query2targetProtScMap;
-    std::unordered_map<uint32_t, TaxID> protIdx2taxId;
-    std::unordered_map<uint32_t, uint32_t> protIdx2unirefId;
+    std::unordered_map<uint32_t, TaxID> regionId2taxId;
+    std::unordered_map<uint32_t, uint32_t> regionId2unirefId;
+    std::unordered_map<uint32_t, int> unirefIdx2taxId;
+    std::unordered_map<TaxID, TaxID> ncbi2gtdb;
+    std::unordered_map<TaxID, std::unordered_set<TaxID>> spTaxId2UniRefTaxIds;
+    std::unordered_set<TaxID> speciesTaxIds;
+    std::unordered_set<TaxID> unirefTaxIds;
+
 
 
     void loadProtIdMap();
+
+    void makeSpTaxId2UniRefTaxIds();
 
     size_t fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
                                 bool * tempChecker,
                                 size_t &processedSplitCnt,
                                 uint32_t & nonCdsIdx);
     
+    size_t fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &kmerBuffer,
+                                            bool * tempChecker,
+                                            size_t &processedSplitCnt,
+                                            uint32_t & nonCdsIdx);
+
     int getProteinId(Buffer<ExtractedMetamer> &kmerBuffer);
 
     int getProteinId(Buffer<TargetMetamerF> &kmerBuffer);
@@ -85,6 +116,10 @@ protected:
     void writeTargetFiles(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
 
     void writeTargetFiles2(Buffer<ExtractedMetamer> &kmerBuffer, const size_t * uniqeKmerIdx, size_t & uniqKmerCnt);
+
+    void mergeDeltaIndexFiles();
+
+    size_t getSmallestMetamer(const Metamer * lookingMetamers, size_t fileCnt); 
 
     void fillDeltaIndexing(const Metamer & previousMetamer,
                            const Metamer & currentMetamer,
@@ -114,6 +149,8 @@ protected:
     static bool sortExtractedMetamer(const ExtractedMetamer &a, const ExtractedMetamer &b);
 
     void loadCdsInfo(const string & cdsInfoFileList);
+
+    void generateTaxId2SpeciesIdMap();
 
     
 public:

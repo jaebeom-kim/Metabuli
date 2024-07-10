@@ -69,6 +69,7 @@ public:
     PARAMETER(DB_DATE)
     PARAMETER(CDS_INFO)
     PARAMETER(PROTEIN_DB)
+    PARAMETER(NCBI2GTDB)
 
     // Test parameters
     PARAMETER(TEST_RANK)
@@ -121,6 +122,7 @@ public:
     int accessionLevel;
     std::string cdsInfo;
     std::string proteinDB;
+    std::string ncbi2gtdb;
 
     // Test parameters
     std::string testRank;

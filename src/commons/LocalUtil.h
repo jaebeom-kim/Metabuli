@@ -21,8 +21,13 @@ public:
     template<typename K, typename V>
     static void writeMappingFile(const std::unordered_map<K, V> & map, const std::string & fileName);
 
+    template <typename K, typename V>
+    static void loadMappingFile(const std::string& fileName, std::unordered_map<K, V>& map);
+
     template<typename K, typename V>
     static void writeMappingFile_text(const std::unordered_map<K, V> & map, const std::string & fileName);
+
+    static void loadMappingFile_text(const std::string& fileName, std::unordered_map<int, int>& map);
 
     static void splitQueryFile(std::vector<SequenceBlock> & seqSegments, const std::string & queryPath);
 
@@ -63,6 +68,32 @@ void LocalUtil::writeMappingFile(const std::unordered_map<K, V> & map, const std
 }
 
 template <typename K, typename V>
+void LocalUtil::loadMappingFile(const std::string &fileName, std::unordered_map<K, V> &map) {
+    std::ifstream ifs(fileName, std::ios::binary);
+    if (!ifs) {
+        std::cerr << "Could not open " << fileName << " for reading." << std::endl;
+        return;
+    }
+
+    size_t size;
+    ifs.read(reinterpret_cast<char*>(&size), sizeof(size));
+    std::cout << size << std::endl;
+
+    K key;
+    V value;
+    size_t keySize = sizeof(K);
+    size_t valueSize = sizeof(V);
+
+    for (size_t i = 0; i < size; ++i) {
+        ifs.read(reinterpret_cast<char*>(&key), keySize);
+        ifs.read(reinterpret_cast<char*>(&value), valueSize);
+        map[key] = value;
+    }
+
+    ifs.close();
+}
+
+template <typename K, typename V>
 void LocalUtil::writeMappingFile_text(const std::unordered_map<K, V> & map, const std::string & fileName) {
     // Write the mapping files
     std::ofstream ofs(fileName);
@@ -77,5 +108,8 @@ void LocalUtil::writeMappingFile_text(const std::unordered_map<K, V> & map, cons
     }
     ofs.close();
 }
+
+
+
 
 #endif //METABULI_LOCALUTIL_H

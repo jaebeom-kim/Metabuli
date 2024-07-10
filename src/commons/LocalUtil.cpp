@@ -52,6 +52,23 @@ int LocalUtil::getFirstWhiteSpacePos(const std::string &str) {
     return str.size();
 }
 
+void LocalUtil::loadMappingFile_text(const std::string &fileName, std::unordered_map<int, int> & map) {
+    std::ifstream ifs(fileName);
+    if (!ifs) {
+        std::cerr << "Could not open " << fileName << " for reading." << std::endl;
+        return;
+    }
+
+    int key;
+    int value;
+
+    while (ifs >> key >> value) {
+        map[key] = value;
+    }
+
+    ifs.close();
+}
+
 // std::string LocalUtil::getAccessionFromHeader(const std::string &header) {
 //     int pos = getFirstWhiteSpacePos(header);
 //     std::string accession = header.substr(0, pos);

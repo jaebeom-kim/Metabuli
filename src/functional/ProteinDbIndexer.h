@@ -12,8 +12,11 @@
 #include "KmerBuffer.h"
 #include "KSeqWrapper.h"
 #include "FileUtil.h"
+#include "NcbiTaxonomy.h"
 
-class ProteinDbIndexer{
+// ProteinDbIndexer makes a protein database index file from a protein database file.
+// It is mainly tuned for UniRef database.
+class ProteinDbIndexer {
 private:
     // Parameters
     const LocalParameters &par;
@@ -28,12 +31,13 @@ private:
     std::string proteinIndexSplitFileName;
 
     // Internal
+    NcbiTaxonomy * taxonomy;
     uint64_t mask_getId;
     uint64_t mask_getAA;
     Buffer<uint64_t> * aaKmerBuffer;
     std::vector<SequenceBlock> sequenceBlocks;
     std::unordered_map<string, size_t> proteinId2Index;
-    std::unordered_map<size_t, int> proteinIndex2taxonomyId;
+    std::unordered_map<uint32_t, int> proteinIndex2taxonomyId;
     int flushCnt;
 
     // Outputs
@@ -53,12 +57,14 @@ private:
     size_t getSmallestKmer(const uint64_t lookingKmers[], size_t fileCnt); 
     void writePrtIdMap();
     TaxID getTaxIdFromComment(const std::string & header);
+    void inspectTaxonomy();
 
 public:
     ProteinDbIndexer(const LocalParameters &par);
     ~ProteinDbIndexer();
     void splitProteinFile();
     void index();
+
 
 };
 #endif //METABULI_PROTEINDBINDEXER_H

@@ -10,4 +10,5 @@ set(util_source_files
         util/gradeByCladeSize.cpp
         util/expand_diffidx.cpp
         util/expand_diffidx_func.cpp
+        util/ncbi2gtdb.cpp
         PARENT_SCOPE)

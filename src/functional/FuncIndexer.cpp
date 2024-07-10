@@ -4,6 +4,7 @@
 #include "LocalUtil.h"
 #include "Match.h"
 #include "NcbiTaxonomy.h"
+#include "ProdigalWrapper.h"
 #include "ProteinDbIndexer.h"
 #include "SeqIterator.h"
 #include <cstddef>
@@ -12,6 +13,9 @@
 #include <fstream>
 #include <iterator>
 #include <ostream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 FuncIndexer::FuncIndexer(const LocalParameters &par) : IndexCreator(par) {
     protDBFileName = par.proteinDB + "/protein.mtbl";
@@ -21,12 +25,14 @@ FuncIndexer::FuncIndexer(const LocalParameters &par) : IndexCreator(par) {
     protIdx2unirefIdFileName = dbDir + "/id2uniref.mtbl";
     protIdx2taxIdFileName_debug = dbDir + "/id2taxonomy_debug.mtbl";
     protIdx2unirefIdFileName_debug = dbDir + "/id2uniref_debug.mtbl";
+    unirefIdx2taxIdFileName = par.proteinDB + "/unirefIdx2taxId.mtbl";
+    ncbi2gtdbFileName = par.ncbi2gtdb;
 
     // loadProtIdMap();
     kmerMatcher = new KmerMatcher(par, taxonomy);
-
-    queryCdsList.resize(par.bufferSize / 50);
-    
+    LocalUtil::loadMappingFile<uint32_t, int>(unirefIdx2taxIdFileName, unirefIdx2taxId);
+    LocalUtil::loadMappingFile_text(ncbi2gtdbFileName, ncbi2gtdb);
+    // LocalUtil::writeMappingFile_text<uint32_t, int>(unirefIdx2taxId, dbDir + "/unirefIdx2taxId_debug.mtbl");  
 }
 
 FuncIndexer::~FuncIndexer() {
@@ -41,8 +47,11 @@ void FuncIndexer::createIndex() {
         makeBlocksForParallelProcessing();
     }
     writeTaxIdList();
-    
-    loadCdsInfo(par.cdsInfo);
+    generateTaxId2SpeciesIdMap();
+    makeSpTaxId2UniRefTaxIds();
+    if (!par.cdsInfo.empty()) {
+        loadCdsInfo(par.cdsInfo);   
+    }
     uint32_t nonCdsIdx = lastProtIdx + 1;
     
     // Process the splits until all are processed
@@ -53,17 +62,21 @@ void FuncIndexer::createIndex() {
     // fill_n(completionChecker, fnaSplits.size(), false);
     size_t totalProcessedSplitCnt = 0;
     Buffer<ExtractedMetamer> metamerBuffer(par.bufferSize);
+    uint32_t regionId = 0;
 #ifdef OPENMP
     omp_set_num_threads(par.threads);
 #endif
     while(totalProcessedSplitCnt < fnaSplits.size()) {
-        queryCdsList.clear();
-        queryCdsList.resize(par.bufferSize / 50);
+        // queryCdsList.clear();
+        // queryCdsList.resize(par.bufferSize / 50);
 
         size_t processedSplitCnt = 0;
         memset(metamerBuffer.buffer, 0, metamerBuffer.bufferSize * sizeof(ExtractedMetamer));
-        fillTargetKmerBuffer(metamerBuffer, tempChecker, processedSplitCnt, nonCdsIdx);
-
+        if (!par.cdsInfo.empty()) {
+            fillTargetKmerBuffer(metamerBuffer, tempChecker, processedSplitCnt, nonCdsIdx);
+        } else {
+            fillTargetKmerBufferUsingProdigal(metamerBuffer, tempChecker, processedSplitCnt, regionId);
+        }
         // Sort the k-mers
         time_t start = time(nullptr);
         SORT_PARALLEL(metamerBuffer.buffer,
@@ -74,13 +87,16 @@ void FuncIndexer::createIndex() {
         time_t sort = time(nullptr);
         cout << "Sort time: " << sort - start << endl;
         
+        
         // Search protein database to label the k-mers
         if (getProteinId(metamerBuffer)) {
             memcpy(completionChecker, tempChecker, fnaSplits.size() * sizeof(bool));
             totalProcessedSplitCnt += processedSplitCnt;
         } else {
+            cout << "Searching protein database failed. Reducing buffer size by half and retrying." << endl;
             memcpy(tempChecker, completionChecker, fnaSplits.size() * sizeof(bool));
             metamerBuffer.reallocateMemory(metamerBuffer.bufferSize / 2);
+            metamerBuffer.startIndexOfReserve = 0;
             continue;
         }
 
@@ -96,8 +112,8 @@ void FuncIndexer::createIndex() {
         cout<<"Time spent for reducing redundancy: "<<(double) (reduction - sort) << endl;
         
         // Write the k-mers to the database
-        writeTargetFilesInText(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
-        testDeltaIndexing(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
+        // writeTargetFilesInText(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
+        // testDeltaIndexing(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
         if(processedSplitCnt == fnaSplits.size() && numOfFlush == 0){
             writeTargetFilesAndSplits(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
             writeTargetFilesAndSplits2(metamerBuffer, uniqKmerIdx, uniqKmerCnt);
@@ -107,14 +123,16 @@ void FuncIndexer::createIndex() {
         }
         delete[] uniqKmerIdx;
     }
+
+    mergeDeltaIndexFiles();
     delete[] tempChecker;
     delete[] completionChecker;
     writeTaxonomyDB();
     writeDbParameters();
-    LocalUtil::writeMappingFile(this->protIdx2taxId, this->protIdx2taxIdFileName);
-    LocalUtil::writeMappingFile(this->protIdx2unirefId, this->protIdx2unirefIdFileName);
-    LocalUtil::writeMappingFile_text(this->protIdx2taxId, this->protIdx2taxIdFileName_debug);
-    LocalUtil::writeMappingFile_text(this->protIdx2unirefId, this->protIdx2unirefIdFileName_debug);
+    LocalUtil::writeMappingFile(this->regionId2taxId, this->protIdx2taxIdFileName);
+    LocalUtil::writeMappingFile(this->regionId2unirefId, this->protIdx2unirefIdFileName);
+    // LocalUtil::writeMappingFile_text(this->protIdx2taxId, this->protIdx2taxIdFileName_debug);
+    // LocalUtil::writeMappingFile_text(this->protIdx2unirefId, this->protIdx2unirefIdFileName_debug);
 }
 
 
@@ -122,9 +140,9 @@ size_t FuncIndexer::fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
                                          bool * tempChecker,
                                          size_t &processedSplitCnt,
                                          uint32_t & nonCdsIdx) {
-    uint32_t cdsCnt = 1;
+    // uint32_t cdsCnt = 1;
     int hasOverflow = 0;
-#pragma omp parallel default(none), shared(kmerBuffer, tempChecker, processedSplitCnt, hasOverflow, cout, cdsCnt, nonCdsIdx)
+#pragma omp parallel default(none), shared(kmerBuffer, tempChecker, processedSplitCnt, hasOverflow, cout, nonCdsIdx)
     {
         ProbabilityMatrix probMatrix(*subMat);
         SeqIterator seqIterator(par);
@@ -202,8 +220,9 @@ size_t FuncIndexer::fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
                                 //     }
                                 //     cout << endl;
                                 // }
-                                uint32_t cdsId = __sync_fetch_and_add(&cdsCnt, 1);
-                                queryCdsList[cdsId] = QueryCDS(cdsInfoMap[string(seq->name.s)][j].protId, cdsId, cds[j].size());
+                                // uint32_t cdsId = __sync_fetch_and_add(&cdsCnt, 1);
+                                queryCodingRegionMap[cdsInfoMap[string(seq->name.s)][j].protId] = QueryCodingRegionInfo(cdsInfoMap[string(seq->name.s)][j].protId, cds[j].size());
+                                // queryCdsList[cdsId] = QueryCDS(cdsInfoMap[string(seq->name.s)][j].protId, cds[j].size());
                                 // queryCdsList.emplace_back(cdsInfoMap[string(seq->name.s)][j].proteinId, cdsId, cds[j].size());
                                 seqIterator.computeMetamerF(
                                     cds[j].c_str(), // DNA sequence string
@@ -211,47 +230,48 @@ size_t FuncIndexer::fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
                                     kmerBuffer,       // extracted k-mer buffer
                                     posToWrite,       // position to write
                                     fnaSplits[i].speciesID,
-                                    cdsInfoMap[string(seq->name.s)][j].protId);
+                                    cdsInfoMap[string(seq->name.s)][j].protId,
+                                    1);
                             }
 
                             // Translate non-CDS and extract metamers
                             for (size_t j = 0; j < nonCds.size(); j++) {
                                 uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
-                                protIdx2taxId[nonCdsId] = currentTaxId;
+                                regionId2taxId[nonCdsId] = currentTaxId;
                                 if (observedNonCDSKmers.empty()) {
                                     seqIterator.translate(nonCds[j]);
-                                    seqIterator.computeMetamerF(nonCds[j].c_str(), 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId);
+                                    seqIterator.computeMetamerF(nonCds[j].c_str(), 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
                                     seqIterator.getMinHashList(observedNonCDSKmerHashes, nonCds[j].c_str());
                                 } else {
                                     int frame = selectReadingFrame(observedNonCDSKmerHashes, nonCds[j].c_str(), seqIterator);
                                     if (frame < 3) { // Forward
                                         seqIterator.translate(nonCds[j], frame);
-                                        seqIterator.computeMetamerF(nonCds[j].c_str(), frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId);
+                                        seqIterator.computeMetamerF(nonCds[j].c_str(), frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
                                     } else { // Reverse complement
                                         reverseComplementStr.clear();
                                         reverseComplementStr = seqIterator.reverseComplement(nonCds[j]);
                                         seqIterator.translate(reverseComplementStr, frame - 3);
-                                        seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId);
+                                        seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
                                     }
                                 }
                             }
                         } else { // CDS not provided
                             // Translate the whole sequence
                             uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
-                            protIdx2taxId[nonCdsId] = currentTaxId;
+                            regionId2taxId[nonCdsId] = currentTaxId;
                             if (observedNonCDSKmers.empty()) {
                                 seqIterator.translate(seq->seq.s);
                                 seqIterator.getMinHashList(observedNonCDSKmerHashes, seq->seq.s);
-                                seqIterator.computeMetamerF(seq->seq.s, 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId);                                    
+                                seqIterator.computeMetamerF(seq->seq.s, 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);                                    
                             } else {
                                 int frame = selectReadingFrame(observedNonCDSKmerHashes, seq->seq.s, seqIterator);
                                 if (frame < 3) { // Forward
                                     seqIterator.translate(seq->seq.s, frame);
-                                    seqIterator.computeMetamerF(seq->seq.s, frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId);
+                                    seqIterator.computeMetamerF(seq->seq.s, frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
                                 } else { // Reverse complement
                                     reverseComplement = seqIterator.reverseComplement(seq->seq.s, seq->seq.l);
                                     seqIterator.translate(reverseComplement,  frame - 3);
-                                    seqIterator.computeMetamerF(reverseComplement, frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId);
+                                    seqIterator.computeMetamerF(reverseComplement, frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
                                     free(reverseComplement);
                                 }
                             }                     
@@ -276,9 +296,161 @@ size_t FuncIndexer::fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
     return 0;
 }
 
+size_t FuncIndexer::fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &kmerBuffer,
+                                                      bool * tempChecker,
+                                                      size_t &processedSplitCnt,
+                                                      uint32_t & regionId) {
+    cout << "Using Prodigal to extract CDS" << endl;
+    int hasOverflow = 0;
+#pragma omp parallel default(none), shared(kmerBuffer, tempChecker, processedSplitCnt, hasOverflow, cout, regionId)
+    {
+        ProbabilityMatrix probMatrix(*subMat);
+        SeqIterator seqIterator(par);
+        size_t posToWrite;
+        priority_queue<uint64_t> observedNonCDSKmerHashes;
+        // char *reverseComplement;
+        string reverseComplementStr;
+        kseq_buffer_t buffer;
+        kseq_t *seq;
+        vector<uint64_t> observedNonCDSKmers;
+        std::unordered_map<uint32_t, int> localRegionId2taxId;
+        // std::unordered_set<uint32_t> localCodingRegionIdSet;
+#pragma omp for schedule(dynamic, 1)
+        for (size_t i = 0; i < fnaSplits.size(); i++) {
+            if (!tempChecker[i] && !hasOverflow) {
+                tempChecker[i] = true;
+                observedNonCDSKmers.clear();
+
+                // Estimate the number of k-mers to be extracted from current split
+                size_t totalLength = 0;
+                for (size_t p = 0; p < fnaSplits[i].cnt; p++) {
+                    totalLength += fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + p].length;
+                }
+                size_t estimatedKmerCnt = (totalLength + totalLength / 10) / 3;
+                ProdigalWrapper * prodigal = new ProdigalWrapper();
+                // Process current split if buffer has enough space.
+                posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
+                if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
+                    struct MmapedData<char> fastaFile = mmapData<char>(fastaList[fnaSplits[i].file_idx].path.c_str());
+                    // Load sequence for prodigal training
+                    buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].start]),
+                              static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].length)};
+                    seq = kseq_init(&buffer);
+                    kseq_read(seq);
+                    size_t lengthOfTrainingSeq = seq->seq.l;
+
+                    // Train prodigal
+                    prodigal->is_meta = 0;
+                    if (lengthOfTrainingSeq < 100'000) {
+                        prodigal->is_meta = 1;
+                        prodigal->trainMeta(seq->seq.s);
+                    } else {
+                        prodigal->trainASpecies(seq->seq.s);
+                    }
+                    kseq_destroy(seq);
+
+                    vector<string> cds;
+                    vector<string> nonCds;
+                    // ** Use predicted CDS information **
+                    for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
+                        cds.clear();
+                        nonCds.clear();
+                        buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
+                                  static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
+                        seq = kseq_init(&buffer);
+                        kseq_read(seq);
+
+                        // Get predicted CDS
+                        prodigal->getPredictedGenes(seq->seq.s);
+
+                        // Mask low complexity regions
+                        char *maskedSeq = nullptr;
+                        if (par.maskMode) {
+                            maskedSeq = new char[seq->seq.l + 1];
+                            SeqIterator::maskLowComplexityRegions(seq->seq.s, maskedSeq, probMatrix, par.maskProb, subMat);
+                        } else {
+                            maskedSeq = seq->seq.s;
+                        }
+
+                        TaxID currentTaxId = foundAcc2taxid[string(seq->name.s)];
+                        seqIterator.devideToCdsAndNonCds(
+                            maskedSeq, seq->seq.l,
+                            prodigal, cds, nonCds);
+                        
+                        uint32_t localRegionId = __sync_fetch_and_add(&regionId, cds.size() + nonCds.size());
+
+                        for (size_t j = 0; j < cds.size(); j++) {
+                            seqIterator.translate(cds[j]);
+                            localRegionId2taxId[localRegionId] = currentTaxId;
+                            // localCodingRegionIdSet.insert(localRegionId);
+                            // codingRegionIdSet.insert(localRegionId);
+                            queryCodingRegionMap[localRegionId] = QueryCodingRegionInfo(localRegionId, cds[j].size());
+                            // queryCdsList[localRegionId] = QueryCDS(cdsInfoMap[string(seq->name.s)][j].protId, cds[j].size());
+                            seqIterator.computeMetamerF(cds[j].c_str(),         // DNA sequence string
+                                                      0,                      // frame
+                                                          kmerBuffer,             // extracted k-mer buffer
+                                                          posToWrite,             // position to write
+                                                fnaSplits[i].speciesID, 
+                                                     localRegionId,
+                                                     1);
+                            localRegionId++;
+                        }
+                        
+                        for (size_t j = 0; j < nonCds.size(); j++) {
+                            // uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
+                            localRegionId2taxId[localRegionId] = currentTaxId;
+                            if (observedNonCDSKmers.empty()) {
+                                seqIterator.translate(nonCds[j]);
+                                seqIterator.computeMetamerF(nonCds[j].c_str(), 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
+                                seqIterator.getMinHashList(observedNonCDSKmerHashes, nonCds[j].c_str());
+                            } else {
+                                int frame = selectReadingFrame(observedNonCDSKmerHashes, nonCds[j].c_str(), seqIterator);
+                                if (frame < 3) { // Forward
+                                    seqIterator.translate(nonCds[j], frame);
+                                    seqIterator.computeMetamerF(nonCds[j].c_str(), frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
+                                } else { // Reverse complement
+                                    reverseComplementStr.clear();
+                                    reverseComplementStr = seqIterator.reverseComplement(nonCds[j]);
+                                    seqIterator.translate(reverseComplementStr, frame - 3);
+                                    seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
+                                }
+                            }
+                            localRegionId++;
+                        }
+                        if (par.maskMode) { delete[] maskedSeq;}
+                        kseq_destroy(seq);
+                    }
+                    __sync_fetch_and_add(&processedSplitCnt, 1);
+#ifdef OPENMP
+                    cout << omp_get_thread_num() << " Processed " << i << "th splits (" << processedSplitCnt << ")" << endl;
+#endif
+                    munmap(fastaFile.data, fastaFile.fileSize + 1);
+                } else {
+                    // Withdraw the reservation if the buffer is full.
+                    tempChecker[i] = false;
+                    __sync_fetch_and_add(&hasOverflow, 1);
+                    __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
+                }
+                delete prodigal;
+            }
+        }
+        // Write the local regionId2taxId to the global regionId2taxId
+#pragma omp critical
+        {
+            for (auto & it : localRegionId2taxId) {
+                regionId2taxId[it.first] = it.second;
+            }
+            // for (auto & it : localCodingRegionIdSet) {
+            //     codingRegionIdSet.insert(it);
+            // }
+        }
+    }
+    return 0;
+}
+
 int FuncIndexer::getProteinId(Buffer<ExtractedMetamer> &kmerBuffer) {
     Buffer<ProtMatch> matchBuffer(par.bufferSize);
-    if (kmerMatcher->matchAAKmers(& kmerBuffer, & matchBuffer, lastProtIdx, dbDir)) {
+    if (kmerMatcher->matchAAKmers(& kmerBuffer, & matchBuffer, unirefIdx2taxId, spTaxId2UniRefTaxIds, ncbi2gtdb, par.proteinDB)) {
         cout << "Number of matches: " << matchBuffer.startIndexOfReserve << endl;
         SORT_PARALLEL(matchBuffer.buffer, matchBuffer.buffer + matchBuffer.startIndexOfReserve, 
         [] (const ProtMatch & a, const ProtMatch & b) {
@@ -369,7 +541,6 @@ int FuncIndexer::getProteinId(Buffer<ExtractedMetamer> &kmerBuffer) {
 
 void FuncIndexer::mapQueryProt2TargetProt(Buffer<ProtMatch> & protMatch) {
     // Divide ProtMatches into blocks for multi threading
-    size_t seqNum = queryCdsList.size();
     vector<ProtMatchBlock> matchBlocks;
     size_t matchIdx = 0;
     uint32_t currentQueryProtIdx;
@@ -396,7 +567,7 @@ void FuncIndexer::mapQueryProt2TargetProt(Buffer<ProtMatch> & protMatch) {
     // }
 
     // Process each block
-#pragma omp parallel default(none), shared(cout, matchBlocks, protMatch, seqNum)
+#pragma omp parallel default(none), shared(cout, matchBlocks, protMatch)
     {
 #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < matchBlocks.size(); ++i) {
@@ -413,12 +584,14 @@ void FuncIndexer::mapQueryProt2TargetProt(Buffer<ProtMatch> & protMatch) {
                 bestProt = it.second[i].targetProtIdx;
             }
         }
-        protIdx2unirefId[it.first] = bestProt;
+        regionId2unirefId[it.first] = bestProt;
         // cdsId2protId[it.first] = bestProt;
         // For debugging
-        queryCdsList[it.first].assigend_uniref_idx = bestProt;
+        queryCodingRegionMap[it.first].assigend_uniref_idx = bestProt;
+        queryCodingRegionMap[it.first].score = maxScore;
+        // queryCdsList[it.first].assigend_uniref_idx = bestProt;
         // queryCdsList[it.first].assigend_uniref_id = uniRefIdMap[bestProt];
-        queryCdsList[it.first].score = maxScore;
+        // queryCdsList[it.first].score = maxScore;
     }
 }
 
@@ -429,7 +602,7 @@ void FuncIndexer::labelExtractedMetamerWithUniRefId(Buffer<ExtractedMetamer> &km
 #pragma omp for schedule(dynamic, 10000)
         for (size_t i = 0; i < kmerBuffer.startIndexOfReserve; i++) {
             if (kmerBuffer.buffer[i].metamer.id > lastProtIdx) {
-                kmerBuffer.buffer[i].unirefId = protIdx2unirefId[kmerBuffer.buffer[i].metamer.id];
+                kmerBuffer.buffer[i].unirefId = regionId2unirefId[kmerBuffer.buffer[i].metamer.id];
             }
         }
     }
@@ -453,7 +626,7 @@ void FuncIndexer::labelKmerWithProtId(Buffer<TargetMetamerF> &kmerBuffer, const 
 ProtScore FuncIndexer::scoreProteinMatches(size_t start, size_t end, const Buffer<ProtMatch> & protMatch) {
     uint32_t protId = protMatch.buffer[start].targetProtId;
     float score = 0;
-    float len = (float) queryCdsList[protMatch.buffer[start].queryProtId].cdsLength;
+    float len = (float) queryCodingRegionMap[protMatch.buffer[start].queryProtId].cdsLength;
     vector<const ProtMatch *> consecutiveMatches;
     consecutiveMatches.reserve(protMatch.startIndexOfReserve);
     for (size_t i = start; i + 1 < end; i++) {
@@ -579,11 +752,11 @@ void FuncIndexer::reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t 
     lookingIndex = startIdx;
     for (size_t i = startIdx + 1; i < kmerBuffer.startIndexOfReserve; i++) {
         taxIds.clear();
-        taxIds.push_back(protIdx2taxId[lookingKmer->metamer.id]);
+        taxIds.push_back(regionId2taxId[lookingKmer->metamer.id]);
         while((lookingKmer->metamer.metamer == kmerBuffer.buffer[i].metamer.metamer)
               && (lookingKmer->speciesId == kmerBuffer.buffer[i].speciesId)
               && (lookingKmer->unirefId == kmerBuffer.buffer[i].unirefId)){
-            taxIds.push_back(protIdx2taxId[kmerBuffer.buffer[i].metamer.id]);
+            taxIds.push_back(regionId2taxId[kmerBuffer.buffer[i].metamer.id]);
             i++;
             if (i == kmerBuffer.startIndexOfReserve) {
                 isEnd = true;
@@ -591,7 +764,7 @@ void FuncIndexer::reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t 
             }
         }
         if(taxIds.size() > 1) {
-            protIdx2taxId[lookingKmer->metamer.id] = taxonomy->LCA(taxIds)->taxId;
+            regionId2taxId[lookingKmer->metamer.id] = taxonomy->LCA(taxIds)->taxId;
         } 
         uniqeKmerIdx[uniqKmerCnt] = lookingIndex;
         uniqKmerCnt ++;
@@ -687,8 +860,8 @@ void FuncIndexer::writeTargetFilesAndSplits2(Buffer<ExtractedMetamer> &kmerBuffe
 
     // Make splits
     FILE * diffIdxSplitFile = fopen(splitFileName.c_str(), "wb");
-    DiffIdxSplit splitList[par.splitNum];
-    memset(splitList, 0, sizeof(DiffIdxSplit) * par.splitNum);
+    DeltaIdxOffset * offsetList = new DeltaIdxOffset[par.splitNum];
+    memset(offsetList, 0, sizeof(DiffIdxSplit) * par.splitNum);
     size_t splitWidth = uniqKmerCnt / par.splitNum;
     size_t remainder = uniqKmerCnt % par.splitNum;
     size_t splitCnt = 1;
@@ -702,8 +875,8 @@ void FuncIndexer::writeTargetFilesAndSplits2(Buffer<ExtractedMetamer> &kmerBuffe
         for (size_t j = start; j + 1 < start + splitWidth; j++) {
             if (AminoAcidPart(kmerBuffer.buffer[uniqKmerIdx[j]].metamer.metamer) 
                 != AminoAcidPart(kmerBuffer.buffer[uniqKmerIdx[j + 1]].metamer.metamer)) {
-                splitList[splitCnt].ADkmer = kmerBuffer.buffer[uniqKmerIdx[j + 1]].metamer.metamer;
-                cout << splitList[splitCnt].ADkmer << endl;
+                offsetList[splitCnt].metamer = kmerBuffer.buffer[uniqKmerIdx[j + 1]].metamer;
+                // cout << offsetList[splitCnt].ADkmer << endl;
                 splitCnt++;
                 break;
             }
@@ -721,29 +894,27 @@ void FuncIndexer::writeTargetFilesAndSplits2(Buffer<ExtractedMetamer> &kmerBuffe
     uint16_t *diffIdxBuffer = (uint16_t *)malloc(sizeof(uint16_t) * size_t(par.bufferSize));
     size_t localBufIdx = 0;
     Metamer previousMetamer;
-    size_t write = 0;
-
     size_t splitIdx = 1;
     size_t totalDiffIdx = 0;
     for(size_t i = 0; i < uniqKmerCnt ; i++) {
-        write++;
         fillDeltaIndexing(previousMetamer, kmerBuffer.buffer[uniqKmerIdx[i]].metamer, diffIdxFile,
                    diffIdxBuffer, par.bufferSize, localBufIdx, totalDiffIdx);
         previousMetamer = kmerBuffer.buffer[uniqKmerIdx[i]].metamer;
-        if((splitIdx < splitCnt) && (previousMetamer.metamer == splitList[splitIdx].ADkmer)){
-            splitList[splitIdx].diffIdxOffset = totalDiffIdx;
-            splitList[splitIdx].infoIdxOffset = write;
+        if((splitIdx < splitCnt) && (previousMetamer.metamer == offsetList[splitIdx].metamer.metamer)){
+            offsetList[splitIdx].offset = totalDiffIdx;
+            // splitList[splitIdx].infoIdxOffset = write;
             splitIdx ++;
         }
     }
     
-    cout<<"K-mer counts recorded on disk: "<< write << endl;
+    cout<<"K-mer counts recorded on disk: "<< uniqKmerCnt << endl;
 
     flushKmerBuf(diffIdxBuffer, diffIdxFile, localBufIdx);
-    printIndexSplitList(splitList);
-    fwrite(splitList, sizeof(DiffIdxSplit), par.splitNum, diffIdxSplitFile);
+    // printIndexSplitList(splitList);
+    fwrite(offsetList, sizeof(DeltaIdxOffset), par.splitNum, diffIdxSplitFile);
 
     free(diffIdxBuffer);
+    free(offsetList);
     fclose(diffIdxSplitFile);
     fclose(diffIdxFile);
     kmerBuffer.startIndexOfReserve = 0;
@@ -788,7 +959,7 @@ void FuncIndexer::writeTargetFiles(Buffer<ExtractedMetamer> &kmerBuffer,
 void FuncIndexer::writeTargetFiles2(Buffer<ExtractedMetamer> &kmerBuffer,
                                     const size_t * uniqeKmerIdx,
                                     size_t & uniqKmerCnt){
-    string diffIdxFileName = dbDir + "/" + to_string(numOfFlush) + "_diffIdx";
+    string diffIdxFileName = dbDir + "/" + to_string(numOfFlush) + "_deltaIdx.mtbl";
     FILE * diffIdxFile = fopen(diffIdxFileName.c_str(), "wb");
     if (diffIdxFile == nullptr){
         cout<<"Cannot open the file for writing target DB"<<endl;
@@ -973,7 +1144,7 @@ void FuncIndexer::loadCdsInfo(const string & cdsInfoFileList) {
                             } else if (feature == "protein_id") {
                                 // cout << "Protein ID: " << value << "\t" << frame << endl;
                                 protIdMap[prtId] = value; // protein idx to string protein id
-                                protIdx2taxId[prtId] = taxonomyId;
+                                // regionId2taxId[prtId] = taxonomyId;
                                 cdsInfoMap[accession].emplace_back(CDSinfo(prtId++, frame));
                             } else if (feature == "location") {
                                 // cout << "Location: " << value << endl;
@@ -1064,8 +1235,6 @@ void FuncIndexer::writeTargetFilesInText(Buffer<ExtractedMetamer> &kmerBuffer,
     for (size_t i = 0; i < uniqKmerCnt; i++) {
         textDb << bitset<64>(kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.metamer) << " "
                << kmerBuffer.buffer[uniqeKmerIdx[i]].metamer.id << endl;
-            //    << kmerBuffer.buffer[uniqeKmerIdx[i]].speciesId << " "
-            //    << kmerBuffer.buffer[uniqeKmerIdx[i]].unirefId << endl;
     }
     textDb.close();
 }
@@ -1087,4 +1256,247 @@ void FuncIndexer::testDeltaIndexing(const Buffer<ExtractedMetamer> & kmerBuffer,
                   << currentMetamer.id << endl;
     }
     deltaFile.close();
+}
+
+void FuncIndexer::mergeDeltaIndexFiles(){
+    string mergedFileName = dbDir + "/deltaIdx.mtbl";
+    string splitFileName = dbDir + "/deltaIdxSplits.mtbl";
+    FILE * mergedFile = fopen(mergedFileName.c_str(), "wb");
+    FILE * idxSplitFile = fopen(splitFileName.c_str(), "wb");
+
+    // Buffer
+    uint16_t * kmerBuffer = (uint16_t *)malloc(sizeof(uint16_t) * par.bufferSize);
+    size_t kmerBufferIdx = 0;
+    size_t totalBufferIdx = 0;
+
+    // Prepare files to merge
+    size_t numOfKmerBeforeMerge = 0;
+    Metamer * lookingMetamers = new Metamer[numOfFlush];
+    auto * maxIdxOfEachFiles = new size_t[numOfFlush];
+    struct MmapedData<uint16_t> * deltaIdxList = new struct MmapedData<uint16_t>[numOfFlush];
+    // struct MmapedData<size_t> * kmerCntFileList = new struct MmapedData<size_t>[numOfFlush];
+    size_t * currPositions = new size_t[numOfFlush];
+    memset(currPositions, 0, numOfFlush * sizeof(size_t));
+
+    for (size_t file = 0; file < numOfFlush; file++) {
+        deltaIdxList[file] = mmapData<uint16_t>((dbDir + "/" + to_string(file) + "_deltaIdx.mtbl").c_str());
+        // kmerCntFileList[file] = mmapData<size_t>((dbDir + "/" + to_string(file) + "_protein_kmer_num.mtbl").c_str());
+        maxIdxOfEachFiles[file] = deltaIdxList[file].fileSize / sizeof(uint16_t);
+        numOfKmerBeforeMerge += maxIdxOfEachFiles[file];
+    }    
+    cout << "Number of k-mers before merge: " << numOfKmerBeforeMerge << endl;
+    
+    // Temporary offsets
+    size_t splitWidth = numOfKmerBeforeMerge / par.splitNum;
+    size_t remainder = numOfKmerBeforeMerge % par.splitNum;
+    size_t * tempOffsetList = new size_t[par.splitNum + 1];
+    tempOffsetList[0] = 0;
+    for (size_t i = 1; i < (size_t) par.splitNum; i++) {
+        tempOffsetList[i] = tempOffsetList[i - 1] + splitWidth;
+        if (remainder > 0) {
+            tempOffsetList[i]++;
+            remainder--;
+        }
+    }
+    tempOffsetList[par.splitNum] = UINT64_MAX;
+
+    // Index splits to fill in
+    DeltaIdxOffset * offsetList = new DeltaIdxOffset[par.splitNum];
+    // ProtIdxSplit splitList[par.splitNum];
+    memset(offsetList, 0, sizeof(DeltaIdxOffset) * par.splitNum);
+
+    // Get the first k-mer of each ProtSplitFile
+    for(size_t file = 0; file < numOfFlush; file++){
+        Metamer previousMetamer(0, 0);
+        lookingMetamers[file] = KmerMatcher::getNextTargetKmer(previousMetamer, deltaIdxList[file].data, currPositions[file]);
+    }
+    size_t idxOfMin = getSmallestMetamer(lookingMetamers, numOfFlush);
+    Metamer entry(0, 0);
+    size_t remainedFiles = numOfFlush;
+    size_t splitCnt = 0;
+    Metamer lastWrittenMetamer(0, 0);
+    size_t offsetListIdx = 0;
+    bool check = false;
+    bool end = false;
+    size_t processedKmers = 0;
+    vector<TaxID> taxIds;
+    while(true) {
+        // Update the entry
+        entry = lookingMetamers[idxOfMin];
+
+        // Update looking metamers
+        if (currPositions[idxOfMin] == maxIdxOfEachFiles[idxOfMin]) {
+            lookingMetamers[idxOfMin] = Metamer(UINT64_MAX, UINT32_MAX);
+            remainedFiles--;
+            if(remainedFiles == 0) break;
+        } else {
+            lookingMetamers[idxOfMin] = KmerMatcher::getNextTargetKmer(entry, deltaIdxList[idxOfMin].data, currPositions[idxOfMin]);
+        }
+
+        // Find the smallest k-mer
+        idxOfMin = getSmallestMetamer(lookingMetamers, numOfFlush);
+        // Metamer smallestMetamer = lookingMetamers[idxOfMin];
+
+        // Scan redundancy
+        taxIds.clear();
+        taxIds.push_back(regionId2taxId[entry.id]);
+        while(entry.metamer == lookingMetamers[idxOfMin].metamer
+           && taxId2speciesId[regionId2taxId[entry.id]] == taxId2speciesId[regionId2taxId[lookingMetamers[idxOfMin].id]]
+           && regionId2unirefId[entry.id] == regionId2unirefId[lookingMetamers[idxOfMin].id]) {
+            taxIds.push_back(regionId2taxId[lookingMetamers[idxOfMin].id]);
+            if (currPositions[idxOfMin] == maxIdxOfEachFiles[idxOfMin]) {
+                lookingMetamers[idxOfMin] = Metamer(UINT64_MAX, UINT32_MAX);
+                remainedFiles--;
+                if(remainedFiles == 0) {
+                    end = true;
+                    break;
+                }
+            } else {
+                lookingMetamers[idxOfMin] = KmerMatcher::getNextTargetKmer(lookingMetamers[idxOfMin], deltaIdxList[idxOfMin].data, currPositions[idxOfMin]);
+            }
+            idxOfMin = getSmallestMetamer(lookingMetamers, numOfFlush);
+        }
+        if(taxIds.size() > 1) {
+            regionId2taxId[entry.id] = taxonomy->LCA(taxIds)->taxId;
+        }
+
+        fillDeltaIndexing(lastWrittenMetamer,
+                          entry,
+                          mergedFile, kmerBuffer,
+                          par.bufferSize,
+                          kmerBufferIdx,
+                          totalBufferIdx);
+        
+        // Check if offset is reached
+        if (processedKmers == tempOffsetList[offsetListIdx]) {
+            if (processedKmers == 0) {
+                offsetList[splitCnt++] = {entry, totalBufferIdx};
+                offsetListIdx++;
+            } else {
+                check = true;
+                offsetListIdx++;
+            }
+        }
+        processedKmers++;
+
+        // If new offset is reached and new AA is seen, it is time to split
+        if (check && ((lastWrittenMetamer.metamer & DNA_MASK) != (entry.metamer & DNA_MASK))) {
+            offsetList[splitCnt++] = {entry, totalBufferIdx};
+            check = false;
+        }
+
+        // // Update looking k-mers
+        // if (currPositions[idxOfMin] == maxIdxOfEachFiles[idxOfMin]) {
+        //     lookingMetamers[idxOfMin] = Metamer(UINT64_MAX, UINT32_MAX);
+        //     remainedFiles--;
+        //     if(remainedFiles == 0) break;
+        // } else {
+        //     lookingMetamers[idxOfMin] = KmerMatcher::getNextTargetKmer(smallestMetamer, deltaIdxList[idxOfMin].data, currPositions[idxOfMin]);
+        // }
+        lastWrittenMetamer = entry;
+    }
+
+    // flush buffer
+    IndexCreator::flushKmerBuf(kmerBuffer, mergedFile, kmerBufferIdx);
+
+    // write split
+    fwrite(offsetList, sizeof(DeltaIdxOffset), par.splitNum, idxSplitFile);
+    free(kmerBuffer);
+    fclose(mergedFile);
+    fclose(idxSplitFile);
+ 
+    for(size_t file = 0; file < numOfFlush; file++){
+        munmap(deltaIdxList[file].data, deltaIdxList[file].fileSize + 1);
+    }
+
+    delete[] tempOffsetList;
+    delete[] deltaIdxList;
+    delete[] lookingMetamers;
+    delete[] currPositions;
+    delete[] maxIdxOfEachFiles;
+}
+
+size_t FuncIndexer::getSmallestMetamer(const Metamer * lookingMetamers, size_t numOfFiles) {
+    size_t idxOfMin = 0;
+    for (size_t i = 1; i < numOfFiles; i++) {
+        if (lookingMetamers[i] < lookingMetamers[idxOfMin]) {
+            idxOfMin = i;
+        }
+    }
+    return idxOfMin;
+}
+
+void FuncIndexer::generateTaxId2SpeciesIdMap() {
+    for (size_t i = 0; i < taxIdList.size(); i ++) {
+        TaxonNode const * taxon = taxonomy->taxonNode(taxIdList[i]);
+        TaxID speciesId = taxonomy->getTaxIdAtRank(taxIdList[i], "species");
+        speciesTaxIds.insert(speciesId);
+        while (taxon->taxId != speciesId) {
+            taxId2speciesId[taxon->taxId] = speciesId;
+            taxon = taxonomy->taxonNode(taxon->parentTaxId);
+        }
+        taxId2speciesId[taxon->taxId] = speciesId;
+        taxId2speciesId[taxIdList[i]] = speciesId; 
+    }
+
+}
+
+void FuncIndexer::makeSpTaxId2UniRefTaxIds(){
+    // Load observed species taxonomy IDs
+    vector<TaxID> observedSpTaxIds;
+    observedSpTaxIds.reserve(speciesTaxIds.size());
+    for(auto & entry : speciesTaxIds){
+        observedSpTaxIds.push_back(entry);
+    }
+
+    // Load observed UniRef taxonomy IDs
+    for(auto & entry : unirefIdx2taxId){
+        unirefTaxIds.insert(entry.second);
+    }
+    vector<TaxID> observedUniRefTaxIds;
+    observedUniRefTaxIds.reserve(unirefTaxIds.size());
+    for(auto & entry : unirefTaxIds){
+        observedUniRefTaxIds.push_back(entry);
+    }
+
+    cout << "Number of observed species: " << observedSpTaxIds.size() << endl;
+    cout << "Number of observed UniRef Taxonomy IDs: " << observedUniRefTaxIds.size() << endl;
+    
+    // Species taxonomy IDs are NCBI's
+    if (par.ncbi2gtdb.empty()) {
+        // Map species taxonomy IDs to corresponding UniRef Taxonomy IDs
+        for (size_t i = 0; i < observedSpTaxIds.size(); i++) {
+            for (size_t j = 0; j < observedUniRefTaxIds.size(); j++) {
+                if (taxonomy->IsAncestor(observedSpTaxIds[i], observedUniRefTaxIds[j])
+                 || taxonomy->IsAncestor(observedUniRefTaxIds[j], observedSpTaxIds[i])) {
+                    spTaxId2UniRefTaxIds[observedSpTaxIds[i]].insert(observedUniRefTaxIds[j]);
+                }
+            }
+        }
+    } 
+    // Species taxonomy IDs are GTDB's
+    else {
+        // Convert UniRef Taxonomy IDs to GTDB Taxonomy IDs
+        unordered_set<TaxID> uniRefGtdbTaxIds;
+        for (size_t i = 0; i < observedUniRefTaxIds.size(); i++) {
+            if (ncbi2gtdb.find(observedUniRefTaxIds[i]) != ncbi2gtdb.end()) {
+                uniRefGtdbTaxIds.insert(ncbi2gtdb.at(observedUniRefTaxIds[i]));
+            }
+        }
+        vector<TaxID> observedUniRefGtdbTaxIds;
+        observedUniRefGtdbTaxIds.reserve(uniRefGtdbTaxIds.size());
+        for(auto & entry : uniRefGtdbTaxIds){
+            observedUniRefGtdbTaxIds.push_back(entry);
+        }
+
+        // Map species taxonomy IDs to corresponding UniRef GTDB Taxonomy IDs
+        for (size_t i = 0; i < observedSpTaxIds.size(); i++) {
+            for (size_t j = 0; j < observedUniRefGtdbTaxIds.size(); j++) {
+                if (taxonomy->IsAncestor(observedSpTaxIds[i], observedUniRefGtdbTaxIds[j])
+                 || taxonomy->IsAncestor(observedUniRefGtdbTaxIds[j], observedSpTaxIds[i])) {
+                    spTaxId2UniRefTaxIds[observedSpTaxIds[i]].insert(observedUniRefGtdbTaxIds[j]);
+                }
+            }
+        }
+    }
 }

@@ -21,6 +21,9 @@ ProteinDbIndexer::ProteinDbIndexer(const LocalParameters &par) : par(par){
     prtId2taxIdFileName = dbDir + "/unirefIdx2taxId.mtbl";
     bufferSize = par.bufferSize;
     flushCnt = 0;
+
+    // Read taxonomy
+    taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
     
 }
 
@@ -32,7 +35,8 @@ void ProteinDbIndexer::index() {
     splitFasta(par.proteinDB.c_str(), this->sequenceBlocks);
     // LocalUtil::writeMappingFile(proteinId2Index, dbDir + "/prtIdMap.mtbl");
     writePrtIdMap();
-    LocalUtil::writeMappingFile(proteinIndex2taxonomyId, prtId2taxIdFileName);
+    LocalUtil::writeMappingFile<uint32_t, int>(proteinIndex2taxonomyId, prtId2taxIdFileName);
+    LocalUtil::writeMappingFile_text(proteinIndex2taxonomyId, prtId2taxIdFileName + ".txt");
     
     size_t numOfSplits = sequenceBlocks.size();
     bool * splitChecker = new bool[numOfSplits];
@@ -634,4 +638,17 @@ void ProteinDbIndexer::writePrtIdMap() {
     prtIdMapFile.close();
 }
 
+// void ProteinDbIndexer::inspectTaxonomy() {
+//     size_t speciesCnt = 0;
+//     size_t leafCnt = 0;
+//     size_t genusOrHigherCnt = 0;
+//     for (auto & kv : proteinIndex2taxonomyId) {
+//         TaxID taxID = kv.second;
+//         const TaxonNode * node = taxonomy->taxonNode(taxID);
+//         taxonomy->getString(node->rankIdx)
 
+//         // Check if it is a leaf
+
+
+//     }
+// }
