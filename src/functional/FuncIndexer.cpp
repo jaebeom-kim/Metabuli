@@ -1442,6 +1442,8 @@ void FuncIndexer::generateTaxId2SpeciesIdMap() {
 }
 
 void FuncIndexer::makeSpTaxId2UniRefTaxIds(){
+    // Temporary map
+    unordered_map<TaxID, unordered_set<TaxID> > tempSpTaxId2UniRefTaxIds; 
     // Load observed species taxonomy IDs
     vector<TaxID> observedSpTaxIds;
     observedSpTaxIds.reserve(speciesTaxIds.size());
@@ -1469,7 +1471,7 @@ void FuncIndexer::makeSpTaxId2UniRefTaxIds(){
             for (size_t j = 0; j < observedUniRefTaxIds.size(); j++) {
                 if (taxonomy->IsAncestor(observedSpTaxIds[i], observedUniRefTaxIds[j])
                  || taxonomy->IsAncestor(observedUniRefTaxIds[j], observedSpTaxIds[i])) {
-                    spTaxId2UniRefTaxIds[observedSpTaxIds[i]].insert(observedUniRefTaxIds[j]);
+                    tempSpTaxId2UniRefTaxIds[observedSpTaxIds[i]].insert(observedUniRefTaxIds[j]);
                 }
             }
         }
@@ -1494,9 +1496,40 @@ void FuncIndexer::makeSpTaxId2UniRefTaxIds(){
             for (size_t j = 0; j < observedUniRefGtdbTaxIds.size(); j++) {
                 if (taxonomy->IsAncestor(observedSpTaxIds[i], observedUniRefGtdbTaxIds[j])
                  || taxonomy->IsAncestor(observedUniRefGtdbTaxIds[j], observedSpTaxIds[i])) {
-                    spTaxId2UniRefTaxIds[observedSpTaxIds[i]].insert(observedUniRefGtdbTaxIds[j]);
+                    tempSpTaxId2UniRefTaxIds[observedSpTaxIds[i]].insert(observedUniRefGtdbTaxIds[j]);
                 }
             }
         }
     }
+    // For each species taxonomy ID, select one or two most specific UniRef Taxonomy IDs
+    for (auto & curSp2UnirefIds : tempSpTaxId2UniRefTaxIds) {
+        int mostSpecificIdx = INT32_MAX;
+        TaxID mostSpecific = INT32_MAX;
+        TaxID parent = 0;
+    
+        for (auto & currentUniRefTaxId : curSp2UnirefIds.second) {
+            const TaxonNode * currentTaxon = taxonomy->taxonNode(currentUniRefTaxId);
+            // Include children of the current species
+            if (taxonomy->IsAncestor2(curSp2UnirefIds.first, currentUniRefTaxId)) {
+                spTaxId2UniRefTaxIds[curSp2UnirefIds.first].insert(currentUniRefTaxId);
+                continue;
+            }
+            int currRankIdx = taxonomy->findRankIndex(taxonomy->getString(currentTaxon->rankIdx));
+            if (currRankIdx < mostSpecificIdx) {
+                mostSpecificIdx = currRankIdx;
+                mostSpecific = currentUniRefTaxId;
+                parent = currentTaxon->parentTaxId;
+            } 
+                // else if (currRankIdx < secondMostSpecific) {
+                //     secondMostSpecific = currentUniRefTaxId;
+                // }
+        }
+        spTaxId2UniRefTaxIds[curSp2UnirefIds.first].insert(mostSpecific);
+        spTaxId2UniRefTaxIds[curSp2UnirefIds.first].insert(parent);
+        // Print
+        // for (auto & entry : spTaxId2UniRefTaxIds[curSp2UnirefIds.first]) {
+        //     cout << "Species Taxonomy ID: " << curSp2UnirefIds.first << " UniRef Taxonomy ID: " << entry << endl;
+        // }
+        // cout << endl;
+    } 
 }

@@ -1066,6 +1066,9 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDelta
                                     localMatches[matchCnt++] = {queryKmerList[j].metamer.id,
                                                                queryKmerList[j].cdsPos, // cdsId
                                                                targetKmerId}; // protId
+                                    cout << "Query Taxonomy ID: " << queryKmerList[j].speciesId << endl;
+                                    cout << "Target Taxonomy ID (NCBI): " << ncbiTaxId << endl;
+                                    cout << "Target Taxonomy ID (GTDB): " << gtdbTaxId << endl;
                                     // seqIterator.printAAKmer(aaMatches[k]);
                                     // cout << " ";
                                     // seqIterator.printAAKmer(queryKmerList[j].metamer.metamer, 24);
