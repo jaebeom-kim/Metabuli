@@ -1,0 +1,432 @@
+#!/bin/sh
+#
+# This file is part of Kaiju, Copyright 2015-2023 Peter Menzel and Anders Krogh
+# Kaiju is licensed under the GPLv3, see the file LICENSE.
+#
+SCRIPTDIR=$(dirname $0)
+
+PATH=$SCRIPTDIR:$PATH
+
+GREEN='\033[0;32m' # For status echoes
+RED='\033[0;31m' # For errors
+NC='\033[0m' # No Color / Reset
+threadsBWT=5
+parallelDL=5
+parallelConversions=5
+exponentSA=3
+exponentSA_NR=5
+DL=1
+DB=
+index_only=0
+
+
+usage() {
+	echo
+	echo kaiju-makedb
+	echo Copyright 2015-2023 Peter Menzel, Anders Krogh
+	echo License GPLv3+: GNU GPL version 3 or later, http://gnu.org/licenses/gpl.html
+	echo
+	echo This program creates a index for Kaiju for a reference database.
+	echo
+	echo Select one of the available source databases using option -s:
+	echo
+	echo  " refseq: bacterial, Archaeal and viral genomes in the NCBI RefSeq database with assembly status Complete"
+	echo
+	echo  " refseq_nr: proteins from bacteria, Archaea, viruses, fungi and microbial eukaryotes from the NCBI RefSeq non-redundant proteins collection"
+	echo
+	echo  " refseq_ref: proteins from bacteria, Archaea from the NCBI RefSeq representative assemblies + viral proteins from NCBI RefSeq"
+	echo
+	echo  " progenomes: proteins in the set of representative genomes from the proGenomes v3 database and viral proteins from NCBI RefSeq"
+	echo
+	echo  " nr: NCBI BLAST non-redundant protein database \"nr\", only Archaea, bacteria, and viruses"
+	echo
+	echo  " nr_euk: nr and additionally including fungi and microbial eukaryotes"
+	echo
+	echo  " fungi: All fungi genomes from NCBI RefSeq (any assembly status)."
+	echo
+	echo  " viruses: Viral genomes from NCBI RefSeq"
+	echo
+	echo  " plasmids: Plasmid genomes from NCBI RefSeq"
+	echo
+	echo  " rvdb: Viral proteins from RVDB-prot"
+	echo
+	echo "For example: $0 -s nr will create the kaiju index file kaiju_db_nr.fmi"
+	echo
+	echo Additional options:
+	echo
+	echo  "  -t X  Set number of parallel threads for index construction to X \(default:5\)"
+	echo  "        The more threads are used, the higher the memory requirement becomes."
+	echo
+	echo  "  --no-download   Do not download files, but use the existing files in the folder."
+	echo
+	echo  "  --index-only    Only create kaiju index from kaiju_db_*.faa files, implies --no-download."
+	echo
+}
+
+while :; do
+	case $1 in
+		-h|-\?|--help)
+			usage
+			exit 1
+			;;
+		-t)
+			if [ -n "$2" ]; then
+				threadsBWT=$2
+				shift
+			else
+				printf 'ERROR: Option -t requires a non-empty integer argument.\n' >&2
+				usage
+				exit 1
+			fi
+			;;
+		-s)
+			if [ -n "$2" ]; then
+				DB=$2
+				shift
+			else
+				printf 'ERROR: Option -s requires an argument.\n' >&2
+				usage
+				exit 1
+			fi
+			;;
+		--no-download)
+			DL=0
+			;;
+		--index-only)
+			index_only=1
+			DL=0
+			;;
+		--)# End of all options.
+			shift
+			break
+			;;
+		-?*)
+			printf 'WARN: Unknown option (ignored): %s\n' "$1" >&2
+			;;
+		*)# Default case: If no more options then break out of the loop.
+			break
+	esac
+	shift
+done
+
+#check if necessary programs are in the PATH
+command -v awk >/dev/null 2>/dev/null || { echo Error: awk not found; exit 1; }
+command -v wget >/dev/null 2>/dev/null || { echo Error: wget not found; exit 1; }
+command -v curl >/dev/null 2>/dev/null || { echo Error: curl not found; exit 1; }
+command -v xargs >/dev/null 2>/dev/null || { echo Error: xargs not found; exit 1; }
+command -v tar >/dev/null 2>/dev/null || { echo Error: tar not found; exit 1; }
+command -v gunzip >/dev/null 2>/dev/null || { echo Error: gunzip not found; exit 1; }
+command -v bunzip2 >/dev/null 2>/dev/null || { echo Error: bunzip2 not found; exit 1; }
+command -v perl >/dev/null 2>/dev/null || { echo Error: perl not found; exit 1; }
+
+#test if option --show-progress is available for wget, then use it when downloading
+wgetProgress=""
+wget --help | grep -q -- --show-progress && wgetProgress='--show-progress'
+
+#check that all programs from Kaiju are usable
+command -v kaiju-gbk2faa.pl >/dev/null 2>/dev/null || { echo Error: kaiju-gbk2faa.pl not found in $PATH; exit 1; }
+command -v kaiju-mkfmi >/dev/null 2>/dev/null || { echo Error: kaiju-mkfmi not found in $PATH; exit 1; }
+command -v kaiju-mkbwt >/dev/null 2>/dev/null || { echo Error: kaiju-mkbwt not found in $PATH; exit 1; }
+command -v kaiju-convertNR >/dev/null 2>/dev/null || { echo Error: kaiju-convertNR not found in $PATH; exit 1; }
+
+[ -z "$DB" ] && { echo Error: Use option -s to select a source database; usage; exit 1; }
+[ "$DB" = "fungi" -o "$DB" = "nr" -o "$DB" = "nr_euk" -o "$DB" = "refseq" -o "$DB" = "refseq_ref" -o "$DB" = "refseq_nr" -o "$DB" = "progenomes" -o "$DB" = "viruses" -o "$DB" = "plasmids" -o "$DB" = "rvdb" ] || { echo Error: $DB is not a valid source database; usage; exit 1; }
+
+
+[ -r $SCRIPTDIR/kaiju-taxonlistEuk.tsv ] || { echo Error: File kaiju-taxonlistEuk.tsv not found in $SCRIPTDIR; exit 1; }
+[ -r $SCRIPTDIR/kaiju-excluded-accessions.txt ] || { echo Error: File kaiju-excluded-accessions.txt not found in $SCRIPTDIR; exit 1; }
+
+#test AnyUncompress usable in perl, used by kaiju-gbk2faa.pl
+`perl -e 'use IO::Uncompress::AnyUncompress qw(anyuncompress $AnyUncompressError);'`
+[ $? -ne 0 ] && { echo Error: Perl IO::Uncompress::AnyUncompress library not found; exit 1; }
+
+#good to go
+set -e
+
+#download taxdump, this is needed in all cases
+if [ $DL -eq 1 ]
+then
+	echo "${GREEN}Downloading taxdump.tar.gz${NC}"
+	wget -N -nv $wgetProgress http://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz
+fi
+[ -r taxdump.tar.gz ] || { echo Missing file taxdump.tar.gz; exit 1; }
+echo "${GREEN}Extracting taxdump.tar.gz${NC}"
+tar xf taxdump.tar.gz nodes.dmp names.dmp merged.dmp
+
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "nr_euk" ]
+then
+	mkdir -p $DB
+	if [ $DL -eq 1 ]
+	then
+		echo Downloading nr.gz
+		wget -c -nv $wgetProgress -P $DB https://ftp.ncbi.nih.gov/blast/db/FASTA/nr.gz
+		echo Downloading prot.accession2taxid.gz
+		wget -c -nv $wgetProgress -P $DB https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.gz
+	fi
+	[ -r $DB/nr.gz ] || { echo Missing file nr.gz; exit 1; }
+	[ -r $DB/prot.accession2taxid.gz ] || { echo Missing file prot.accession2taxid.gz; exit 1; }
+	if [ $index_only -eq 0 ]
+	then
+		echo Converting NR file to Kaiju database
+		gunzip -c $DB/nr.gz | kaiju-convertNR -m merged.dmp -t nodes.dmp -g $DB/prot.accession2taxid.gz -e $SCRIPTDIR/kaiju-excluded-accessions.txt -a -o $DB/kaiju_db_$DB.faa -l $SCRIPTDIR/kaiju-taxonlistEuk.tsv
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating BWT from Kaiju database
+	kaiju-mkbwt -e $exponentSA_NR -n $threadsBWT -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "nr" ]
+then
+	mkdir -p $DB
+	if [ $DL -eq 1 ]
+	then
+		echo Downloading nr.gz
+		wget -c -N -nv $wgetProgress -P $DB http://ftp.ncbi.nih.gov/blast/db/FASTA/nr.gz
+		echo Downloading prot.accession2taxid.gz
+		wget -c -N -nv $wgetProgress -P $DB http://ftp.ncbi.nlm.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.gz
+	fi
+	[ -r $DB/nr.gz ] || { echo Missing file nr.gz; exit 1; }
+	[ -r $DB/prot.accession2taxid.gz ] || { echo Missing file prot.accession2taxid.gz; exit 1; }
+	if [ $index_only -eq 0 ]
+	then
+		echo Converting NR file to Kaiju database
+		gunzip -c $DB/nr.gz | kaiju-convertNR -m merged.dmp -t nodes.dmp -g $DB/prot.accession2taxid.gz -e $SCRIPTDIR/kaiju-excluded-accessions.txt -a -o $DB/kaiju_db_$DB.faa 2>log
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating BWT from Kaiju database
+	kaiju-mkbwt -e $exponentSA_NR -n $threadsBWT -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "fungi" ]
+then
+	mkdir -p $DB/source
+	if [ $index_only -eq 0 ]
+	then
+		if [ $DL -eq 1 ]
+		then
+			echo Downloading file list for complete genomes from RefSeq
+			wget -c -N -nv -P $DB https://ftp.ncbi.nlm.nih.gov/genomes/refseq/fungi/assembly_summary.txt
+			awk 'BEGIN{FS="\t";OFS="/"} $11=="latest" && $20 ~ /^https:/ {l=split($20,a,"/");print $20,a[l]"_genomic.gbff.gz"}' $DB/assembly_summary.txt > $DB/downloadlist.txt
+			nfiles=`cat $DB/downloadlist.txt| wc -l`
+			echo Downloading $nfiles genome files from NCBI FTP server
+			cat $DB/downloadlist.txt | xargs -P $parallelDL -n 1 wget -P $DB/source -nv
+		fi
+		echo Extracting protein sequences from downloaded files
+		find $DB/source -name "*.gbff.gz" | xargs -n 1 -P $parallelConversions -IXX kaiju-gbk2faa.pl XX XX.faa
+		# on-the-fly substitution of taxon IDs found in merged.dmp by their updated IDs
+		find $DB/source -name '*.faa' -print0 | xargs -0 cat | perl -lsne 'BEGIN{open(F,$m);while(<F>){@F=split(/[\|\s]+/);$h{$F[0]}=$F[1]}}if(/(>.+)_(\d+)/){print $1,"_",defined($h{$2})?$h{$2}:$2;}else{print}' -- -m=merged.dmp  >$DB/kaiju_db_$DB.faa
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating Borrows-Wheeler transform
+	kaiju-mkbwt -n $threadsBWT -e $exponentSA -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-Index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "refseq" ]
+then
+	mkdir -p $DB/source
+	if [ $index_only -eq 0 ]
+	then
+		if [ $DL -eq 1 ]
+		then
+			echo Downloading file list for complete genomes from RefSeq
+			wget -nv -O $DB/assembly_summary.archaea.txt https://ftp.ncbi.nlm.nih.gov/genomes/refseq/archaea/assembly_summary.txt
+			wget -nv -O $DB/assembly_summary.bacteria.txt https://ftp.ncbi.nlm.nih.gov/genomes/refseq/bacteria/assembly_summary.txt
+			awk 'BEGIN{FS="\t";OFS="/"}$12=="Complete Genome" && $11=="latest" && $20 ~ /^https:/ {l=split($20,a,"/");print $20,a[l]"_genomic.gbff.gz"}' $DB/assembly_summary.bacteria.txt $DB/assembly_summary.archaea.txt > $DB/downloadlist.txt
+			nfiles=`cat $DB/downloadlist.txt| wc -l`
+			echo Downloading $nfiles genome files from NCBI FTP server
+			cat $DB/downloadlist.txt | xargs -P $parallelDL -n 1 wget -P $DB/source -nv -nc
+			echo Downloading virus genomes from RefSeq
+			#wget -N -nv $wgetProgress -P $DB/source 'ftp://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[0-9]*.genomic.gbff.gz'
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[1-9].genomic.gbff.gz' || true)
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[1-9][0-9].genomic.gbff.gz' || true)
+		fi
+		[ $(find $DB/source -type f -name "viral.*.genomic.gbff.gz" | wc -l) != 0 ] || { echo Missing file $DB/source/viral.\*.genomic.gbff.gz; exit 1;}
+		echo Extracting protein sequences from downloaded files
+		find $DB/source -name "*.gbff.gz" | xargs -n 1 -P $parallelConversions -IXX kaiju-gbk2faa.pl XX XX.faa
+		# on-the-fly substitution of taxon IDs found in merged.dmp by their updated IDs
+		find $DB/source -name '*.faa' -print0 | xargs -0 cat | perl -lsne 'BEGIN{open(F,$m);while(<F>){@F=split(/[\|\s]+/);$h{$F[0]}=$F[1]}}if(/(>.+)_(\d+)/){print $1,"_",defined($h{$2})?$h{$2}:$2;}else{print}' -- -m=merged.dmp  >$DB/kaiju_db_$DB.faa
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating Borrows-Wheeler transform
+	kaiju-mkbwt -n $threadsBWT -e $exponentSA -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-Index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "refseq_ref" ]
+then
+	mkdir -p $DB/source
+	if [ $index_only -eq 0 ]
+	then
+		if [ $DL -eq 1 ]
+		then
+			echo Downloading file list from RefSeq
+			wget -nv -O $DB/assembly_summary.archaea.txt https://ftp.ncbi.nlm.nih.gov/genomes/refseq/archaea/assembly_summary.txt
+			wget -nv -O $DB/assembly_summary.bacteria.txt https://ftp.ncbi.nlm.nih.gov/genomes/refseq/bacteria/assembly_summary.txt
+			awk 'BEGIN{FS="\t";OFS="/"}($5=="representative genome" || $5=="reference genome") && $11=="latest" && $20 ~ /^https:/ {l=split($20,a,"/");print $20,a[l]"_genomic.gbff.gz"}' $DB/assembly_summary.bacteria.txt $DB/assembly_summary.archaea.txt > $DB/downloadlist.txt
+			nfiles=`cat $DB/downloadlist.txt| wc -l`
+			echo Downloading $nfiles genome files from NCBI FTP server
+			cat $DB/downloadlist.txt | xargs -P $parallelDL -n 1 wget -P $DB/source -nv -nc
+			echo Downloading virus genomes from RefSeq
+			#wget -N -nv $wgetProgress -P $DB/source 'ftp://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[0-9]*.genomic.gbff.gz'
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[1-9].genomic.gbff.gz' || true)
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[1-9][0-9].genomic.gbff.gz' || true)
+		fi
+		[ $(find $DB/source -type f -name "viral.*.genomic.gbff.gz" | wc -l) != 0 ] || { echo Missing file $DB/source/viral.\*.genomic.gbff.gz; exit 1;}
+		echo Extracting protein sequences from downloaded files
+		find $DB/source -name "*.gbff.gz" | xargs -n 1 -P $parallelConversions -IXX kaiju-gbk2faa.pl XX XX.faa
+		# on-the-fly substitution of taxon IDs found in merged.dmp by their updated IDs
+		find $DB/source -name '*.faa' -print0 | xargs -0 cat | perl -lsne 'BEGIN{open(F,$m);while(<F>){@F=split(/[\|\s]+/);$h{$F[0]}=$F[1]}}if(/(>.+)_(\d+)/){print $1,"_",defined($h{$2})?$h{$2}:$2;}else{print}' -- -m=merged.dmp  >$DB/kaiju_db_$DB.faa
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating Borrows-Wheeler transform
+	kaiju-mkbwt -n $threadsBWT -e $exponentSA -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-Index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "refseq_nr" ]
+then
+	mkdir -p $DB
+	if [ $DL -eq 1 ]
+	then
+		echo "Downloading nonredundant protein files"
+		for i in `seq 1 999`
+		do
+			if ! wget -P $DB/source -nc -nv 'https://ftp.ncbi.nlm.nih.gov/refseq/release/complete/complete.wp_protein.'$i'.protein.faa.gz'
+			then
+				break
+			fi
+		done
+		echo Downloading prot.accession2taxid.FULL.gz
+		wget -c -N -nv $wgetProgress -P $DB http://ftp.ncbi.nlm.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.FULL.gz
+	fi
+	[ -r $DB/prot.accession2taxid.FULL.gz ] || { echo Missing file prot.accession2taxid.FULL.gz; exit 1; }
+	if [ $index_only -eq 0 ]
+	then
+		echo "Converting RefSeq non-redundant proteins to Kaiju database"
+		gunzip -c $DB/source/complete.wp_protein.*.protein.faa.gz | kaiju-convertRefSeq -l $SCRIPTDIR/kaiju-taxonlistEuk.tsv -m merged.dmp -t nodes.dmp -g $DB/prot.accession2taxid.FULL.gz -a -o $DB/kaiju_db_$DB.faa 2>log
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating BWT from Kaiju database
+	kaiju-mkbwt -e $exponentSA_NR -n $threadsBWT -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "progenomes" ]
+then
+	mkdir -p $DB/source
+	if [ $index_only -eq 0 ]
+	then
+		if [ $DL -eq 1 ]
+		then
+			echo Downloading proGenomes database
+			#wget -N -nv $wgetProgress -P $DB/source http://progenomes.embl.de/data/repGenomes/freeze12.proteins.representatives.fasta.gz
+			wget -N -nv $wgetProgress -P $DB/source https://progenomes.embl.de/data/repGenomes/progenomes3.proteins.representatives.fasta.bz2
+			echo Downloading virus genomes from RefSeq
+			#wget -N -nv $wgetProgress -P $DB/source 'ftp://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[0-9]*.genomic.gbff.gz'
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[1-9].genomic.gbff.gz' || true)
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[1-9][0-9].genomic.gbff.gz' || true)
+		fi
+		[ $(find $DB/source -type f -name "viral.*.genomic.gbff.gz" | wc -l) != 0 ] || { echo Missing file $DB/source/viral.\*.genomic.gbff.gz; exit 1;}
+		echo Extracting protein sequences from downloaded files
+		#gunzip -c $DB/source/freeze12.proteins.representatives.fasta.gz | perl -lne 'if(/>(\d+)\.(\S+)/){print ">",$2,"_",$1}else{y/BZ/DE/;s/[^ARNDCQEGHILKMFPSTWYV]//gi;print if length}' > $DB/source/representatives.proteins.faa
+		bunzip2 -c $DB/source/progenomes3.proteins.representatives.fasta.bz2 | perl -lne 'if(/>(\d+)\.(\S+)/){print ">",$2,"_",$1}else{y/BZ/DE/;s/[^ARNDCQEGHILKMFPSTWYV]//gi;print if length}' > $DB/source/representatives.proteins.faa
+		find $DB/source -name "viral.*.gbff.gz" | xargs -n 1 -P $parallelConversions -IXX kaiju-gbk2faa.pl XX XX.faa
+		# on-the-fly substitution of taxon IDs found in merged.dmp by their updated IDs
+		find $DB/source -name '*.faa' -print0 | xargs -0 cat | perl -lsne 'BEGIN{open(F,$m);while(<F>){@F=split(/[\|\s]+/);$h{$F[0]}=$F[1]}}if(/(>.+)_(\d+)/){print $1,"_",defined($h{$2})?$h{$2}:$2;}else{print}' -- -m=merged.dmp  > $DB/kaiju_db_$DB.faa
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating Borrows-Wheeler transform
+	kaiju-mkbwt -n $threadsBWT -e $exponentSA -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-Index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "viruses" ]
+then
+	mkdir -p $DB/source
+	if [ $index_only -eq 0 ]
+	then
+		if [ $DL -eq 1 ]
+		then
+			echo Downloading virus genomes from RefSeq
+			#wget -N -nv $wgetProgress -P $DB/source 'ftp://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[0-9]*.genomic.gbff.gz'
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[1-9].genomic.gbff.gz' || true)
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/viral/viral.[1-9][0-9].genomic.gbff.gz' || true)
+		fi
+		[ $(find $DB/source -type f -name "viral.*.genomic.gbff.gz" | wc -l) != 0 ] || { echo Missing file $DB/source/viral.\*.genomic.gbff.gz; exit 1;}
+		echo Extracting protein sequences from downloaded files
+		find $DB/source -name "viral.*.gbff.gz" | xargs -n 1 -P $parallelConversions -IXX kaiju-gbk2faa.pl XX XX.faa
+		find $DB/source -name '*.faa' -print0 | xargs -0 cat | perl -lsne 'BEGIN{open(F,$m);while(<F>){@F=split(/[\|\s]+/);$h{$F[0]}=$F[1]}}if(/(>.+)_(\d+)/){print $1,"_",defined($h{$2})?$h{$2}:$2;}else{print}' -- -m=merged.dmp  > $DB/kaiju_db_$DB.faa
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating Borrows-Wheeler transform
+	kaiju-mkbwt -n $threadsBWT -e $exponentSA -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-Index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "plasmids" ]
+then
+	mkdir -p $DB/source
+	if [ $index_only -eq 0 ]
+	then
+		if [ $DL -eq 1 ]
+		then
+			echo Downloading plasmid genomes from RefSeq
+			#wget -N -nv $wgetProgress -P $DB/source 'ftp://ftp.ncbi.nlm.nih.gov/refseq/release/plasmid/plasmid.[0-9]*.genomic.gbff.gz'
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/plasmid/plasmid.[1-9].genomic.gbff.gz' || true)
+			(cd $DB/source && curl --silent -f -O 'https://ftp.ncbi.nlm.nih.gov/refseq/release/plasmid/plasmid.[1-9][0-9].genomic.gbff.gz' || true)
+		fi
+		[ $(find $DB/source -type f -name "plasmid.*.genomic.gbff.gz" | wc -l) != 0 ] || { echo Missing file $DB/source/plasmid.\*.genomic.gbff.gz; exit 1; }
+		echo Extracting protein sequences from downloaded files
+		find $DB/source -name "plasmid.*.gbff.gz" | xargs -n 1 -P $parallelConversions -IXX kaiju-gbk2faa.pl XX XX.faa
+		find $DB/source -name '*.faa' -print0 | xargs -0 cat | perl -lsne 'BEGIN{open(F,$m);while(<F>){@F=split(/[\|\s]+/);$h{$F[0]}=$F[1]}}if(/(>.+)_(\d+)/){print $1,"_",defined($h{$2})?$h{$2}:$2;}else{print}' -- -m=merged.dmp  > $DB/kaiju_db_$DB.faa
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating Borrows-Wheeler transform
+	kaiju-mkbwt -n $threadsBWT -e $exponentSA -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-Index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+if [ "$DB" = "rvdb" ]
+then
+	mkdir -p $DB
+	if [ $index_only -eq 0 ]
+	then
+		fname="U-RVDBv26.0-prot.fasta.xz"
+		if [ $DL -eq 1 ]
+		then
+			echo Downloading RVDB
+			wget -c -N -nv $wgetProgress -P $DB https://rvdb-prot.pasteur.fr/files/$fname
+			echo Downloading prot.accession2taxid.gz
+			wget -c -N -nv $wgetProgress -P $DB http://ftp.ncbi.nlm.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.gz
+		fi
+		[ -r $DB/$fname ] || { echo Missing file $fname; exit 1; }
+		[ -r $DB/prot.accession2taxid.gz ] || { echo Missing file prot.accession2taxid.gz; exit 1; }
+		echo Unpacking prot.accession2taxid.gz
+		gunzip -c $DB/prot.accession2taxid.gz > $DB/prot.accession2taxid
+		echo Extracting protein sequences from $fname
+		unxz -c $DB/$fname | perl -lsne 'BEGIN{open(F,$m);while(<F>){@F=split;$h{$F[1]}=$F[2]}}if(/>[^\|]+\|[^\|]+\|([^\|]+)/){if(defined($h{$1})){print ">",$1,"_",$h{$1};}}else{print}' -- -m=$DB/prot.accession2taxid > $DB/kaiju_db_$DB.faa
+	fi
+	[ -r $DB/kaiju_db_$DB.faa ] || { echo Missing file $DB/kaiju_db_$DB.faa; exit 1; }
+	echo Creating Borrows-Wheeler transform
+	kaiju-mkbwt -n $threadsBWT -e $exponentSA -a ACDEFGHIKLMNPQRSTVWY -o $DB/kaiju_db_$DB $DB/kaiju_db_$DB.faa
+	echo Creating FM-Index
+	kaiju-mkfmi $DB/kaiju_db_$DB
+fi
+#----------------------------------------------------------------------------------------------------------------------------------
+echo Done!
+echo Kaiju only needs the files $DB/kaiju_db_$DB.fmi, nodes.dmp, and names.dmp.
+echo The remaining files can be deleted.
+

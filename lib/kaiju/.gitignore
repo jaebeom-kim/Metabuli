@@ -1,0 +1,15 @@
+*.o
+*.swp
+kaiju
+kaiju-multi
+kaijux
+kaijup
+kaiju2krona
+kaiju2table
+kaiju-mergeOutputs
+kaiju-convertNR
+kaiju-addTaxonNames
+kaiju-convertRefSeq
+mkbwt
+mkfmi
+bin/
