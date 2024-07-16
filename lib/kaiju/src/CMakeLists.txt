@@ -36,6 +36,27 @@ set(BLAST_SOURCES
     include/ncbi-blast+/algo/blast/core/blast_seg.c
 )
 
+set(BLAST_HEADERS
+    include/ncbi-blast+/algo/blast/core/pattern.h
+    include/ncbi-blast+/algo/blast/core/blast_posit.h
+    include/ncbi-blast+/algo/blast/composition_adjustment/matrix_frequency_data.h
+    include/ncbi-blast+/algo/blast/core/blast_dynarray.h
+    include/ncbi-blast+/algo/blast/core/matrix_freq_ratios.h
+    include/ncbi-blast+/algo/blast/core/blast_encoding.h
+    include/ncbi-blast+/algo/blast/core/blast_stat.h
+    include/ncbi-blast+/algo/blast/core/blast_filter.h
+    include/ncbi-blast+/algo/blast/core/blast_util.h
+    include/ncbi-blast+/algo/blast/core/blast_message.h
+    include/ncbi-blast+/algo/blast/core/blast_options.h
+    include/ncbi-blast+/algo/blast/core/ncbi_math.h
+    include/ncbi-blast+/algo/blast/core/blast_program.h
+    include/ncbi-blast+/algo/blast/core/ncbi_std.h
+    include/ncbi-blast+/algo/blast/core/blast_psi_priv.h
+    include/ncbi-blast+/util/tables/raw_scoremat.h
+    include/ncbi-blast+/algo/blast/core/blast_query_info.h
+    include/ncbi-blast+/algo/blast/core/blast_seg.h
+)
+
 set(BWT_SOURCES
     bwt/bwt.c
     bwt/compactfmi.c
@@ -43,19 +64,39 @@ set(BWT_SOURCES
     bwt/suffixArray.c
 )
 
+set(BWT_HEADERS
+    bwt/bwt.h
+    bwt/compactfmi.h
+    bwt/sequence.h
+    bwt/suffixArray.h)
+
 set(KAIJU_SOURCES
-    kaiju.cpp
     ReadItem.cpp
     Config.cpp
-    ConsumerThread.cpp
     util.cpp
+    ConsumerThread.cpp
+    ConsumerThreadp.cpp
+    ConsumerThreadx.cpp
 )
+
+set(KAIJU_HEADERS
+    ReadItem.hpp
+    Config.hpp
+    util.hpp
+    ConsumerThread.hpp
+    ConsumerThreadp.hpp
+    ConsumerThreadx.hpp
+)
+
 
 # Create the library
 add_library(kaiju_lib STATIC
     ${BLAST_SOURCES}
+    ${BLAST_HEADERS}
     ${BWT_SOURCES}
+    ${BWT_HEADERS}
     ${KAIJU_SOURCES}    
+    ${KAIJU_HEADERS}
 )
 
 # Link libraries

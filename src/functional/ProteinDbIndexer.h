@@ -64,6 +64,7 @@ public:
     ~ProteinDbIndexer();
     void splitProteinFile();
     void index();
+    void index2();
 
 
 };

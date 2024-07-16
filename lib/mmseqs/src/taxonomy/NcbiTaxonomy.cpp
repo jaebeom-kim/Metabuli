@@ -835,3 +835,23 @@ void NcbiTaxonomy::createTaxIdListAtRank(std::vector<int> &taxIdList, std::vecto
         }
     }
 }
+
+int NcbiTaxonomy::getDistance(TaxID tax1, TaxID tax2) const {
+    int nodeU = nodeId(tax1);
+    int nodeV = nodeId(tax2);
+
+    if (nodeU == nodeV) {
+        return 0;
+    }
+
+    int lca = lcaHelper(nodeU, nodeV);
+    int depthU = L[H[nodeU]];
+    int depthV = L[H[nodeV]];
+    int depthLCA = L[H[lca]];
+
+    return depthU + depthV - 2 * depthLCA;
+}
+
+int NcbiTaxonomy::getLevel(TaxID tax) const {
+    return L[H[nodeId(tax)]];
+}

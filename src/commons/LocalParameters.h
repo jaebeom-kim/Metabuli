@@ -27,6 +27,7 @@ public:
     std::vector<MMseqsParameter*> grade;
     std::vector<MMseqsParameter*> addToLibrary;
     std::vector<MMseqsParameter*> build;
+    std::vector<MMseqsParameter*> build_functional;
     std::vector<MMseqsParameter*> applyThreshold;
     std::vector<MMseqsParameter*> binning2report;
     std::vector<MMseqsParameter*> filterByGenus;
@@ -67,9 +68,11 @@ public:
     PARAMETER(ACCESSION_LEVEL)
     PARAMETER(DB_NAME)
     PARAMETER(DB_DATE)
+    //// Functional DB
     PARAMETER(CDS_INFO)
     PARAMETER(PROTEIN_DB)
     PARAMETER(NCBI2GTDB)
+    PARAMETER(KAIJU_MODE)
 
     // Test parameters
     PARAMETER(TEST_RANK)
@@ -123,6 +126,7 @@ public:
     std::string cdsInfo;
     std::string proteinDB;
     std::string ncbi2gtdb;
+    std::string kaijuMode;
 
     // Test parameters
     std::string testRank;

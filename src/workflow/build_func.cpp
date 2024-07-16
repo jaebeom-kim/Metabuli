@@ -1,9 +1,11 @@
-#include "ProteinDbIndexer.h"
+#include "FuncIndexer.h"
+#include "IndexCreator.h"
+#include "FileMerger.h"
 #include "LocalParameters.h"
 #include <Command.h>
 #include "FileUtil.h"
 
-void setDefaults_build_uniref(LocalParameters & par){
+void setDefaults_build_func(LocalParameters & par){
     par.reducedAA = 0;
     par.spaceMask = "11111111";
     par.taxonomyPath = "" ;
@@ -12,6 +14,7 @@ void setDefaults_build_uniref(LocalParameters & par){
     par.maskMode = 1;
     par.bufferSize = 1'000'000'000;
     par.accessionLevel = 0;
+    par.kaijuMode = "mem";
     // Get current date
     time_t now = time(0);
     tm *ltm = localtime(&now);
@@ -23,10 +26,10 @@ void setDefaults_build_uniref(LocalParameters & par){
     par.dbName = randStr.substr(0, 32);
 }
 
-int build_uniref(int argc, const char **argv, const Command &command){
+int build_func(int argc, const char **argv, const Command &command){
     // Load parameters
     LocalParameters &par = LocalParameters::getLocalInstance();
-    setDefaults_build_uniref(par);
+    setDefaults_build_func(par);
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
   
     // If dbDirectory does not exist, create it
@@ -34,10 +37,8 @@ int build_uniref(int argc, const char **argv, const Command &command){
         FileUtil::makeDir(par.filenames[0].c_str());
     }
 
-    // Create index
-    par.proteinDB = par.filenames[1];
-    ProteinDbIndexer idxCre(par);
-    idxCre.index2();
+    FuncIndexer funcIndexer(par);
+    funcIndexer.createIndex();
 
     return 0;
 }

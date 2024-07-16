@@ -236,6 +236,13 @@ LocalParameters::LocalParameters() :
                   typeid(std::string),
                   (void *) &ncbi2gtdb,
                   "^.*$"),
+        KAIJU_MODE(KAIJU_MODE_ID,
+                   "--kaiju-mode",
+                   "Kaiju mode: mem/greedy",
+                   "Kaiju mode: mem/greedy",
+                   typeid(std::string),
+                   (void *) &kaijuMode,
+                   "^.*$"),
         TEST_RANK(TEST_RANK_ID,
                   "--test-rank",
                   ".",
@@ -318,8 +325,7 @@ LocalParameters::LocalParameters() :
 
     // build
     build.push_back(&PARAM_THREADS);
-    build.push_back(&REDUCED_AA);
-    // build.push_back(&SPACED);
+    // build.push_back(&REDUCED_AA);
     build.push_back(&TAXONOMY_PATH);
     build.push_back(&SPLIT_NUM);
     build.push_back(&PARAM_MASK_PROBABILTY);
@@ -328,9 +334,24 @@ LocalParameters::LocalParameters() :
     build.push_back(&ACCESSION_LEVEL);
     build.push_back(&DB_NAME);
     build.push_back(&DB_DATE);
-    build.push_back(&CDS_INFO);
-    build.push_back(&PROTEIN_DB);
-    build.push_back(&NCBI2GTDB);
+    // build.push_back(&CDS_INFO);
+    // build.push_back(&PROTEIN_DB);
+    // build.push_back(&NCBI2GTDB);
+
+    build_functional.push_back(&PARAM_THREADS);
+    build_functional.push_back(&TAXONOMY_PATH);
+    build_functional.push_back(&SPLIT_NUM);
+    build_functional.push_back(&PARAM_MASK_PROBABILTY);
+    build_functional.push_back(&PARAM_MASK_RESIDUES);
+    build_functional.push_back(&BUFFER_SIZE);
+    build_functional.push_back(&ACCESSION_LEVEL);
+    build_functional.push_back(&DB_NAME);
+    build_functional.push_back(&DB_DATE);
+    build_functional.push_back(&CDS_INFO);
+    build_functional.push_back(&PROTEIN_DB);
+    build_functional.push_back(&NCBI2GTDB);
+    build_functional.push_back(&KAIJU_MODE);
+
 
     //classify
     classify.push_back(&PARAM_THREADS);

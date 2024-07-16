@@ -7,6 +7,6 @@ set(functional_source_files
         functional/FuncClassifier.h
         functional/FuncTaxonomer.cpp
         functional/FuncTaxonomer.h
-        functional/ProteinDbSearcher.cpp
-        functional/ProteinDbSearcher.h
+        functional/KaijuWrapper.cpp
+        functional/KaijuWrapper.h
         PARENT_SCOPE)

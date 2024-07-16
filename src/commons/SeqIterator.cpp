@@ -149,6 +149,29 @@ SeqIterator::SeqIterator(const LocalParameters &par) {
         // Stop
         nuc2aa[2][0][0] = 20; nuc2aa[2][3][0] = 20; nuc2aa[2][0][3] = 20;
 
+        num2aa[0] = 'A';
+        num2aa[1] = 'R';
+        num2aa[2] = 'N';
+        num2aa[3] = 'D';
+        num2aa[4] = 'C';
+        num2aa[5] = 'Q';
+        num2aa[6] = 'E';
+        num2aa[7] = 'G';
+        num2aa[8] = 'H';
+        num2aa[9] = 'I';
+        num2aa[10] = 'L';
+        num2aa[11] = 'K';
+        num2aa[12] = 'M';   
+        num2aa[13] = 'F';
+        num2aa[14] = 'P';
+        num2aa[15] = 'S';
+        num2aa[16] = 'T';
+        num2aa[17] = 'W';
+        num2aa[18] = 'Y';
+        num2aa[19] = 'V';
+        num2aa[20] = '*';
+
+
         // triplet code with N's
         for(int i = 0; i < 8; i++){
             for(int j = 0; j < 8; j++){
@@ -1132,32 +1155,32 @@ void SeqIterator::devideToCdsAndNonCds(const char * seq,
             size_t begin = prodigal->genes[geneCnt].begin - 1;
             size_t end = prodigal->genes[geneCnt].end - 1;
             cdsLoc.emplace_back(begin, end);
-            int k = 0;
-            while (k < 7 && begin >= 3) {
-                begin -= 3;
-                k++;
-            }
-            k = 0;
+            // int k = 0;
+            // while (k < 7 && begin >= 3) {
+            //     begin -= 3;
+            //     k++;
+            // }
+            // k = 0;
             
-            while (k < 7 && end + 3 < seqLen) {
-                end += 3;
-                k++;
-            }
+            // while (k < 7 && end + 3 < seqLen) {
+            //     end += 3;
+            //     k++;
+            // }
             cds.emplace_back(string(seq + begin, end - begin + 1));
         } else {
             size_t begin = prodigal->genes[geneCnt].begin - 1;
             size_t end = prodigal->genes[geneCnt].end - 1;
             cdsLoc.emplace_back(begin, end);
-            int k = 0;
-            while (k < 7 && begin >= 3) {
-                begin -= 3;
-                k++;
-            }
-            k = 0;
-            while (k < 7 && end + 3 < seqLen) {
-                end += 3;
-                k++;
-            }
+            // int k = 0;
+            // while (k < 7 && begin >= 3) {
+            //     begin -= 3;
+            //     k++;
+            // }
+            // k = 0;
+            // while (k < 7 && end + 3 < seqLen) {
+            //     end += 3;
+            //     k++;
+            // }
             string tmp = string(seq + begin, end - begin + 1);
             cds.emplace_back(reverseComplement(tmp));
         }
@@ -1805,6 +1828,14 @@ void SeqIterator::printKmerInDNAsequence(uint64_t kmer) {
             cout << dna24mer[7-i];
         }
     }
+}
+
+void SeqIterator::printTranslation(const string & dna) {
+    this->translate(dna);
+    for (size_t i = 0; i < aaFrames[0].size(); i++) {
+        cout << num2aa[aaFrames[0][i]];;
+    }
+    cout << endl;
 }
 
 void SeqIterator::printAAKmer(uint64_t kmer, int shifts) {

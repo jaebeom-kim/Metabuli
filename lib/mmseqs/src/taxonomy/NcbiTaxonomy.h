@@ -136,6 +136,8 @@ public:
         mmapData = data;
         mmapSize = size;
     }
+    int getDistance(TaxID u, TaxID v) const;
+    int getLevel(TaxID taxId) const;
 
 private:
     size_t loadNodes(std::vector<TaxonNode> &tmpNodes, const std::string &nodesFile);

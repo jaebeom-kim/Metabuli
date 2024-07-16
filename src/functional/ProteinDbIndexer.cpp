@@ -31,6 +31,14 @@ ProteinDbIndexer::~ProteinDbIndexer() {
     delete aaKmerBuffer;
 }
 
+void ProteinDbIndexer::index2() {
+    splitFasta(par.proteinDB.c_str(), this->sequenceBlocks);
+    // LocalUtil::writeMappingFile(proteinId2Index, dbDir + "/prtIdMap.mtbl");
+    writePrtIdMap();
+    LocalUtil::writeMappingFile<uint32_t, int>(proteinIndex2taxonomyId, prtId2taxIdFileName);
+    LocalUtil::writeMappingFile_text(proteinIndex2taxonomyId, prtId2taxIdFileName + ".txt");
+}
+
 void ProteinDbIndexer::index() {
     splitFasta(par.proteinDB.c_str(), this->sequenceBlocks);
     // LocalUtil::writeMappingFile(proteinId2Index, dbDir + "/prtIdMap.mtbl");
@@ -630,7 +638,7 @@ size_t ProteinDbIndexer::getSmallestKmer(const uint64_t lookingKmers[], size_t f
 }
 
 void ProteinDbIndexer::writePrtIdMap() {
-    string prtIdMapFileName = dbDir + "/prtIdMap.mtbl";
+    string prtIdMapFileName = dbDir + "/unirefId2Idx.mtbl";
     ofstream prtIdMapFile(prtIdMapFileName);
     for (auto & kv : proteinId2Index) {
         prtIdMapFile << kv.first << " " << kv.second << endl;

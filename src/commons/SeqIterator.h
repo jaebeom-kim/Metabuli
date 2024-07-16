@@ -2,6 +2,7 @@
 #define ADKMER4_KMEREXTRACTOR_H
 
 #include <iostream>
+#include <unordered_map>
 #include <vector>
 #include "Kmer.h"
 #include "printBinary.h"
@@ -49,11 +50,12 @@ class SeqIterator {
 private:
     static const string iRCT;
     static const string atcg;
-    vector<int> aaFrames[6];
     int * aa2num;
+    vector<int> aaFrames[6];
     uint64_t powers[10];
     int nuc2aa[8][8][8];
     uint64_t nuc2num[4][4][4];
+    unordered_map<int, char> num2aa;
     uint32_t * mask;
     int * mask_int;
     uint32_t spaceNum;
@@ -69,6 +71,7 @@ private:
     void addDNAInfo_TargetKmer(uint64_t &kmer, const char *seq, int kmerCnt, int frame);
 
 public:
+    
   void devideToCdsAndNonCds(const char *seq, size_t seqLen,
                             const vector<CDSinfo> &cdsInfo, vector<string> &cds,
                             vector<string> &nonCds);
@@ -92,6 +95,8 @@ public:
   bool translate(const string & cds, int frame = 0);
 
   bool translate(const char * cds, int frame = 0);
+
+  bool translate(string & aa, const string & cds);
 
   void generateIntergenicKmerList(struct _gene *genes, struct _node *nodes,
                                   int numberOfGenes,
@@ -130,6 +135,7 @@ public:
 
   void printKmerInDNAsequence(uint64_t kmer);
   void printAAKmer(uint64_t kmer, int shits = 28);
+  void printTranslation(const string & dna);
 
   explicit SeqIterator(const LocalParameters &par);
   ~SeqIterator();
