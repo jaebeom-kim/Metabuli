@@ -833,283 +833,283 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
     return true;
 }
 
-bool KmerMatcher::matchAAKmers(Buffer<ExtractedMetamer> * queryKmerBuffer,
-                               Buffer<ProtMatch> * matchBuffer,
-                               const unordered_map<uint32_t, int> & unirefIdx2taxId,
-                               const unordered_map<TaxID, unordered_set<TaxID>> & spTaxId2UniRefTaxIds,
-                               const unordered_map<int, int> & ncbi2gtdb,
-                               const string & db) {
-    cout << "Searching UniRef90 database..." << endl;
-    diffIdxSplitFileName = db + "/prot_split.mtbl";
-    targetDiffIdxFileName = db + "/protein.mtbl";
-    MmapedData<ProtIdxSplit> deltaIdxSplits = mmapData<ProtIdxSplit>(diffIdxSplitFileName.c_str(), 3);
-    size_t numOfDeltas = FileUtil::getFileSize(targetDiffIdxFileName) / sizeof(uint16_t);
+// bool KmerMatcher::matchAAKmers(Buffer<ExtractedMetamer> * queryKmerBuffer,
+//                                Buffer<ProtMatch> * matchBuffer,
+//                                const unordered_map<uint32_t, int> & unirefIdx2taxId,
+//                                const unordered_map<TaxID, unordered_set<TaxID>> & spTaxId2UniRefTaxIds,
+//                                const unordered_map<int, int> & ncbi2gtdb,
+//                                const string & db) {
+//     cout << "Searching UniRef90 database..." << endl;
+//     diffIdxSplitFileName = db + "/prot_split.mtbl";
+//     targetDiffIdxFileName = db + "/protein.mtbl";
+//     MmapedData<ProtIdxSplit> deltaIdxSplits = mmapData<ProtIdxSplit>(diffIdxSplitFileName.c_str(), 3);
+//     size_t numOfDeltas = FileUtil::getFileSize(targetDiffIdxFileName) / sizeof(uint16_t);
 
-    size_t queryKmerNum = queryKmerBuffer->startIndexOfReserve;
-    ExtractedMetamer *queryKmerList = queryKmerBuffer->buffer;
+//     size_t queryKmerNum = queryKmerBuffer->startIndexOfReserve;
+//     ExtractedMetamer *queryKmerList = queryKmerBuffer->buffer;
     
-    // Find the first index of garbage query k-mer (UINT64_MAX) and discard from there
-    for (size_t checkN = queryKmerNum - 1; checkN > 0; checkN--) {
-        if (queryKmerList[checkN].metamer.metamer != UINT64_MAX) {
-            queryKmerNum = checkN + 1;
-            break;
-        }
-    }
+//     // Find the first index of garbage query k-mer (UINT64_MAX) and discard from there
+//     for (size_t checkN = queryKmerNum - 1; checkN > 0; checkN--) {
+//         if (queryKmerList[checkN].metamer.metamer != UINT64_MAX) {
+//             queryKmerNum = checkN + 1;
+//             break;
+//         }
+//     }
     
-    // Filter out meaningless target splits
-    size_t numOfDiffIdxSplits = deltaIdxSplits.fileSize / sizeof(ProtIdxSplit);
-    size_t numOfDiffIdxSplits_use = numOfDiffIdxSplits;
-    for (size_t i = 1; i < numOfDiffIdxSplits; i++) {
-        if (deltaIdxSplits.data[i].idxOffset == 0) {
-            deltaIdxSplits.data[i] = {0, 0};
-            numOfDiffIdxSplits_use--;
-        }
-    }
+//     // Filter out meaningless target splits
+//     size_t numOfDiffIdxSplits = deltaIdxSplits.fileSize / sizeof(ProtIdxSplit);
+//     size_t numOfDiffIdxSplits_use = numOfDiffIdxSplits;
+//     for (size_t i = 1; i < numOfDiffIdxSplits; i++) {
+//         if (deltaIdxSplits.data[i].idxOffset == 0) {
+//             deltaIdxSplits.data[i] = {0, 0};
+//             numOfDiffIdxSplits_use--;
+//         }
+//     }
 
-    // Divide query k-mer list into blocks for multi threading.
-    // Each split has start and end points of query list + proper offset point of target k-mer list
-    std::vector<QueryKmerSplit<ProtIdxSplit>> querySplits;
-    uint64_t queryAA;
-    size_t quotient = queryKmerNum / threads;
-    size_t remainder = queryKmerNum % threads;
-    size_t startIdx = 0;
-    size_t endIdx = 0; // endIdx is inclusive
-    for (size_t i = 0; i < threads; i++) {
-        endIdx = startIdx + quotient - 1;
-        if (remainder > 0) {
-            endIdx++;
-            remainder--;
-        }
-        bool needLastTargetBlock = true;
-        queryAA = AminoAcidPart(queryKmerList[startIdx].metamer.metamer);
-        for (size_t j = 0; j < numOfDiffIdxSplits_use; j ++) {
-            if (queryAA <= (deltaIdxSplits.data[j].kmer & protIdMasker >> 4)) {
-                j = j - (j != 0);
-                querySplits.emplace_back(startIdx, endIdx, endIdx - startIdx + 1, deltaIdxSplits.data[j]);
-                needLastTargetBlock = false;
-                break;
-            }
-        }
-        if (needLastTargetBlock) {
-            querySplits.emplace_back(startIdx, endIdx, endIdx - startIdx + 1, deltaIdxSplits.data[numOfDiffIdxSplits_use - 2]); // error
-        }
-        startIdx = endIdx + 1;
-    }
+//     // Divide query k-mer list into blocks for multi threading.
+//     // Each split has start and end points of query list + proper offset point of target k-mer list
+//     std::vector<QueryKmerSplit<ProtIdxSplit>> querySplits;
+//     uint64_t queryAA;
+//     size_t quotient = queryKmerNum / threads;
+//     size_t remainder = queryKmerNum % threads;
+//     size_t startIdx = 0;
+//     size_t endIdx = 0; // endIdx is inclusive
+//     for (size_t i = 0; i < threads; i++) {
+//         endIdx = startIdx + quotient - 1;
+//         if (remainder > 0) {
+//             endIdx++;
+//             remainder--;
+//         }
+//         bool needLastTargetBlock = true;
+//         queryAA = AminoAcidPart(queryKmerList[startIdx].metamer.metamer);
+//         for (size_t j = 0; j < numOfDiffIdxSplits_use; j ++) {
+//             if (queryAA <= (deltaIdxSplits.data[j].kmer & protIdMasker >> 4)) {
+//                 j = j - (j != 0);
+//                 querySplits.emplace_back(startIdx, endIdx, endIdx - startIdx + 1, deltaIdxSplits.data[j]);
+//                 needLastTargetBlock = false;
+//                 break;
+//             }
+//         }
+//         if (needLastTargetBlock) {
+//             querySplits.emplace_back(startIdx, endIdx, endIdx - startIdx + 1, deltaIdxSplits.data[numOfDiffIdxSplits_use - 2]); // error
+//         }
+//         startIdx = endIdx + 1;
+//     }
 
-    if (querySplits.size() != threads) {
-        threads = querySplits.size();
-    }
+//     if (querySplits.size() != threads) {
+//         threads = querySplits.size();
+//     }
 
-    bool *splitCheckList = (bool *) malloc(sizeof(bool) * threads);
-    std::fill_n(splitCheckList, threads, false);
-    size_t completedSplitCnt = 0;
+//     bool *splitCheckList = (bool *) malloc(sizeof(bool) * threads);
+//     std::fill_n(splitCheckList, threads, false);
+//     size_t completedSplitCnt = 0;
 
-    time_t beforeSearch = time(nullptr);
+//     time_t beforeSearch = time(nullptr);
 
-    while (completedSplitCnt < threads) {
-        bool hasOverflow = false;
-#pragma omp parallel default(none), shared(completedSplitCnt, splitCheckList, hasOverflow, \
-querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDeltas, targetInfoFileName, spTaxId2UniRefTaxIds, unirefIdx2taxId, ncbi2gtdb)
-        {
-            SeqIterator seqIterator(par);
+//     while (completedSplitCnt < threads) {
+//         bool hasOverflow = false;
+// #pragma omp parallel default(none), shared(completedSplitCnt, splitCheckList, hasOverflow, \
+// querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDeltas, targetInfoFileName, spTaxId2UniRefTaxIds, unirefIdx2taxId, ncbi2gtdb)
+//         {
+//             SeqIterator seqIterator(par);
 
-            FILE * deltaIdxFp = fopen(targetDiffIdxFileName.c_str(), "rb");
+//             FILE * deltaIdxFp = fopen(targetDiffIdxFileName.c_str(), "rb");
 
-            // Target K-mer buffer
-            uint16_t * deltaBuffer = (uint16_t *) malloc(sizeof(uint16_t) * (BufferSize + 1)); // size = 32 Mb
-            size_t deltaBufferIdx = 0;
+//             // Target K-mer buffer
+//             uint16_t * deltaBuffer = (uint16_t *) malloc(sizeof(uint16_t) * (BufferSize + 1)); // size = 32 Mb
+//             size_t deltaBufferIdx = 0;
 
-            //query variables
-            MetamerF currentMetamer;
-            uint64_t currentQueryAA = UINT64_MAX;
+//             //query variables
+//             MetamerF currentMetamer;
+//             uint64_t currentQueryAA = UINT64_MAX;
             
-            //target variables
-            size_t totalDeltaPos = 0;
-            std::vector<uint64_t> aaMatches; //vector for candidate target k-mer, some of which are selected after based on hamming distance
-            uint64_t currentTargetKmer;
+//             //target variables
+//             size_t totalDeltaPos = 0;
+//             std::vector<uint64_t> aaMatches; //vector for candidate target k-mer, some of which are selected after based on hamming distance
+//             uint64_t currentTargetKmer;
 
-            //Match buffer for each thread
-            int localBufferSize = 3'000'000; 
-            auto *localMatches = new ProtMatch[localBufferSize]; // 12 * 3'000'000 = 36 Mb
-            int matchCnt = 0;
-            size_t posToWrite;
+//             //Match buffer for each thread
+//             int localBufferSize = 3'000'000; 
+//             auto *localMatches = new ProtMatch[localBufferSize]; // 12 * 3'000'000 = 36 Mb
+//             int matchCnt = 0;
+//             size_t posToWrite;
 
-            int currMatchNum;
-#pragma omp for schedule(dynamic, 1)
-            for (size_t i = 0; i < querySplits.size(); i++) {
-                if (hasOverflow || splitCheckList[i]) {
-                    continue;
-                }
+//             int currMatchNum;
+// #pragma omp for schedule(dynamic, 1)
+//             for (size_t i = 0; i < querySplits.size(); i++) {
+//                 if (hasOverflow || splitCheckList[i]) {
+//                     continue;
+//                 }
 
-                currentTargetKmer = querySplits[i].diffIdxSplit.kmer;
-                deltaBufferIdx = querySplits[i].diffIdxSplit.idxOffset;
-                totalDeltaPos = deltaBufferIdx;
+//                 currentTargetKmer = querySplits[i].diffIdxSplit.kmer;
+//                 deltaBufferIdx = querySplits[i].diffIdxSplit.idxOffset;
+//                 totalDeltaPos = deltaBufferIdx;
                 
-                fseek(deltaIdxFp, 2 * (long) (deltaBufferIdx), SEEK_SET);
-                loadBuffer(deltaIdxFp, deltaBuffer, deltaBufferIdx, BufferSize);
+//                 fseek(deltaIdxFp, 2 * (long) (deltaBufferIdx), SEEK_SET);
+//                 loadBuffer(deltaIdxFp, deltaBuffer, deltaBufferIdx, BufferSize);
             
-                currentQueryAA = UINT64_MAX;
+//                 currentQueryAA = UINT64_MAX;
 
-                for (size_t j = querySplits[i].start; j < querySplits[i].end + 1; j++) {
-                    // Skip metamers from non-CDS
-                    if (queryKmerList[j].unirefId == 0) {
-                        continue;
-                    }
+//                 for (size_t j = querySplits[i].start; j < querySplits[i].end + 1; j++) {
+//                     // Skip metamers from non-CDS
+//                     if (queryKmerList[j].unirefId == 0) {
+//                         continue;
+//                     }
 
-                    // Reuse the amino acid matches 
-                    if (currentQueryAA == AminoAcidPart(queryKmerList[j].metamer.metamer)) {
-                        // If local buffer is full, copy them to the shared buffer.
-                        currMatchNum = aaMatches.size();
-                        if (matchCnt + currMatchNum > localBufferSize) {
-                            // Check if the shared buffer is full.
-                            posToWrite = matchBuffer->reserveMemory(matchCnt);
-                            if (posToWrite + matchCnt >= matchBuffer->bufferSize) { // full
-                                hasOverflow = true;
-                                __sync_fetch_and_sub(&matchBuffer->startIndexOfReserve, matchCnt);
-                                break;
-                            } else { // not full -> copy matches to the shared buffer
-                                moveMatches(matchBuffer->buffer + posToWrite, localMatches, matchCnt);
-                            }
-                        }
-                        if (ncbi2gtdb.empty()) {
-                            for (int k = 0; k < currMatchNum; k++) {
-                                uint32_t targetKmerId = getIdOfAAkmer(aaMatches[k]);
-                                TaxID ncbiTaxId = unirefIdx2taxId.at(targetKmerId);
-                                if (spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).find(ncbiTaxId) 
-                                 != spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).end()) {
-                                    localMatches[matchCnt++] = {queryKmerList[j].metamer.id,
-                                                               queryKmerList[j].cdsPos, // cdsId
-                                                               targetKmerId}; // protId
-                                }
-                            }
-                        } else {
-                            for (int k = 0; k < currMatchNum; k++) {
-                                uint32_t targetKmerId = getIdOfAAkmer(aaMatches[k]);
-                                TaxID ncbiTaxId = unirefIdx2taxId.at(targetKmerId);
-                                if (ncbi2gtdb.find(ncbiTaxId) != ncbi2gtdb.end()) {
-                                    TaxID gtdbTaxId = ncbi2gtdb.at(ncbiTaxId);
-                                    if (spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).find(gtdbTaxId) 
-                                     != spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).end()) {
-                                        localMatches[matchCnt++] = {queryKmerList[j].metamer.id,
-                                                                   queryKmerList[j].cdsPos, // cdsId
-                                                                   targetKmerId}; // protId
-                                    }
-                                }
-                            }
-                        }
-                        continue;
-                    }
-                    aaMatches.clear();
+//                     // Reuse the amino acid matches 
+//                     if (currentQueryAA == AminoAcidPart(queryKmerList[j].metamer.metamer)) {
+//                         // If local buffer is full, copy them to the shared buffer.
+//                         currMatchNum = aaMatches.size();
+//                         if (matchCnt + currMatchNum > localBufferSize) {
+//                             // Check if the shared buffer is full.
+//                             posToWrite = matchBuffer->reserveMemory(matchCnt);
+//                             if (posToWrite + matchCnt >= matchBuffer->bufferSize) { // full
+//                                 hasOverflow = true;
+//                                 __sync_fetch_and_sub(&matchBuffer->startIndexOfReserve, matchCnt);
+//                                 break;
+//                             } else { // not full -> copy matches to the shared buffer
+//                                 moveMatches(matchBuffer->buffer + posToWrite, localMatches, matchCnt);
+//                             }
+//                         }
+//                         if (ncbi2gtdb.empty()) {
+//                             for (int k = 0; k < currMatchNum; k++) {
+//                                 uint32_t targetKmerId = getIdOfAAkmer(aaMatches[k]);
+//                                 TaxID ncbiTaxId = unirefIdx2taxId.at(targetKmerId);
+//                                 if (spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).find(ncbiTaxId) 
+//                                  != spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).end()) {
+//                                     localMatches[matchCnt++] = {queryKmerList[j].metamer.id,
+//                                                                queryKmerList[j].cdsPos, // cdsId
+//                                                                targetKmerId}; // protId
+//                                 }
+//                             }
+//                         } else {
+//                             for (int k = 0; k < currMatchNum; k++) {
+//                                 uint32_t targetKmerId = getIdOfAAkmer(aaMatches[k]);
+//                                 TaxID ncbiTaxId = unirefIdx2taxId.at(targetKmerId);
+//                                 if (ncbi2gtdb.find(ncbiTaxId) != ncbi2gtdb.end()) {
+//                                     TaxID gtdbTaxId = ncbi2gtdb.at(ncbiTaxId);
+//                                     if (spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).find(gtdbTaxId) 
+//                                      != spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).end()) {
+//                                         localMatches[matchCnt++] = {queryKmerList[j].metamer.id,
+//                                                                    queryKmerList[j].cdsPos, // cdsId
+//                                                                    targetKmerId}; // protId
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                         continue;
+//                     }
+//                     aaMatches.clear();
                     
-                    // Get next query, and start to find matches
-                    currentQueryAA = AminoAcidPart(queryKmerList[j].metamer.metamer);
+//                     // Get next query, and start to find matches
+//                     currentQueryAA = AminoAcidPart(queryKmerList[j].metamer.metamer);
 
-                    // Skip target k-mers that are not matched in amino acid level
-                    while (totalDeltaPos != numOfDeltas
-                           && (currentQueryAA > getAAofAAkmer(currentTargetKmer))) {
-                        if (unlikely(BufferSize < deltaBufferIdx + 7)){
-                            loadBuffer(deltaIdxFp, deltaBuffer, deltaBufferIdx, BufferSize, ((int)(BufferSize - deltaBufferIdx)) * -1 );
-                        }
-                        currentTargetKmer = getNextTargetKmer(currentTargetKmer, deltaBuffer,
-                                                              deltaBufferIdx, totalDeltaPos);
-                    }
+//                     // Skip target k-mers that are not matched in amino acid level
+//                     while (totalDeltaPos != numOfDeltas
+//                            && (currentQueryAA > getAAofAAkmer(currentTargetKmer))) {
+//                         if (unlikely(BufferSize < deltaBufferIdx + 7)){
+//                             loadBuffer(deltaIdxFp, deltaBuffer, deltaBufferIdx, BufferSize, ((int)(BufferSize - deltaBufferIdx)) * -1 );
+//                         }
+//                         currentTargetKmer = getNextTargetKmer(currentTargetKmer, deltaBuffer,
+//                                                               deltaBufferIdx, totalDeltaPos);
+//                     }
 
-                    // Move to the next query k-mer if there isn't any match.
-                    if (currentQueryAA != getAAofAAkmer(currentTargetKmer)) { 
-                        continue;
-                    }
+//                     // Move to the next query k-mer if there isn't any match.
+//                     if (currentQueryAA != getAAofAAkmer(currentTargetKmer)) { 
+//                         continue;
+//                     }
 
-                    // Load target k-mers that are matched in amino acid level
-                    while (totalDeltaPos != numOfDeltas &&
-                           currentQueryAA == getAAofAAkmer(currentTargetKmer)) {
-                        aaMatches.push_back(currentTargetKmer);
-                        if (unlikely(BufferSize < deltaBufferIdx + 7)){
-                            loadBuffer(deltaIdxFp, deltaBuffer, deltaBufferIdx,
-                                       BufferSize, ((int)(BufferSize - deltaBufferIdx)) * -1 );
-                        }
-                        currentTargetKmer = getNextTargetKmer(currentTargetKmer, deltaBuffer,
-                                                              deltaBufferIdx, totalDeltaPos);
-                    }
+//                     // Load target k-mers that are matched in amino acid level
+//                     while (totalDeltaPos != numOfDeltas &&
+//                            currentQueryAA == getAAofAAkmer(currentTargetKmer)) {
+//                         aaMatches.push_back(currentTargetKmer);
+//                         if (unlikely(BufferSize < deltaBufferIdx + 7)){
+//                             loadBuffer(deltaIdxFp, deltaBuffer, deltaBufferIdx,
+//                                        BufferSize, ((int)(BufferSize - deltaBufferIdx)) * -1 );
+//                         }
+//                         currentTargetKmer = getNextTargetKmer(currentTargetKmer, deltaBuffer,
+//                                                               deltaBufferIdx, totalDeltaPos);
+//                     }
 
-                    // If local buffer is full, copy them to the shared buffer.
-                    currMatchNum = aaMatches.size();
-                    if (matchCnt + currMatchNum > localBufferSize) {
-                        // Check if the shared buffer is full.
-                        posToWrite = matchBuffer->reserveMemory(matchCnt);
-                        if (posToWrite + matchCnt >= matchBuffer->bufferSize) {
-                            hasOverflow = true;
-                            __sync_fetch_and_sub(&matchBuffer->startIndexOfReserve, matchCnt);
-                            break;
-                        } else { // not full -> copy matches to the shared buffer
-                            moveMatches(matchBuffer->buffer + posToWrite, localMatches, matchCnt);
-                        }
-                    }
-                    if (ncbi2gtdb.empty()) {
-                        for (int k = 0; k < currMatchNum; k++) {
-                            uint32_t targetKmerId = getIdOfAAkmer(aaMatches[k]);
-                            TaxID ncbiTaxId = unirefIdx2taxId.at(targetKmerId);
-                            if (spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).find(ncbiTaxId) 
-                             != spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).end()) {
-                                localMatches[matchCnt++] = {queryKmerList[j].metamer.id,
-                                                           queryKmerList[j].cdsPos, // cdsId
-                                                           targetKmerId}; // protId
-                            }
-                        }
-                    } else {
-                        for (int k = 0; k < currMatchNum; k++) {
-                            uint32_t targetKmerId = getIdOfAAkmer(aaMatches[k]);
-                            TaxID ncbiTaxId = unirefIdx2taxId.at(targetKmerId);
-                            if (ncbi2gtdb.find(ncbiTaxId) != ncbi2gtdb.end()) {
-                                TaxID gtdbTaxId = ncbi2gtdb.at(ncbiTaxId);
-                                if (spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).find(gtdbTaxId) 
-                                 != spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).end()) {
-                                    localMatches[matchCnt++] = {queryKmerList[j].metamer.id,
-                                                               queryKmerList[j].cdsPos, // cdsId
-                                                               targetKmerId}; // protId
-                                    cout << "Query Taxonomy ID: " << queryKmerList[j].speciesId << endl;
-                                    cout << "Target Taxonomy ID (NCBI): " << ncbiTaxId << endl;
-                                    cout << "Target Taxonomy ID (GTDB): " << gtdbTaxId << endl;
-                                    // seqIterator.printAAKmer(aaMatches[k]);
-                                    // cout << " ";
-                                    // seqIterator.printAAKmer(queryKmerList[j].metamer.metamer, 24);
-                                    // cout << endl;
-                                }
-                            }
-                        }
-                    }
-                } // End of one split
+//                     // If local buffer is full, copy them to the shared buffer.
+//                     currMatchNum = aaMatches.size();
+//                     if (matchCnt + currMatchNum > localBufferSize) {
+//                         // Check if the shared buffer is full.
+//                         posToWrite = matchBuffer->reserveMemory(matchCnt);
+//                         if (posToWrite + matchCnt >= matchBuffer->bufferSize) {
+//                             hasOverflow = true;
+//                             __sync_fetch_and_sub(&matchBuffer->startIndexOfReserve, matchCnt);
+//                             break;
+//                         } else { // not full -> copy matches to the shared buffer
+//                             moveMatches(matchBuffer->buffer + posToWrite, localMatches, matchCnt);
+//                         }
+//                     }
+//                     if (ncbi2gtdb.empty()) {
+//                         for (int k = 0; k < currMatchNum; k++) {
+//                             uint32_t targetKmerId = getIdOfAAkmer(aaMatches[k]);
+//                             TaxID ncbiTaxId = unirefIdx2taxId.at(targetKmerId);
+//                             if (spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).find(ncbiTaxId) 
+//                              != spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).end()) {
+//                                 localMatches[matchCnt++] = {queryKmerList[j].metamer.id,
+//                                                            queryKmerList[j].cdsPos, // cdsId
+//                                                            targetKmerId}; // protId
+//                             }
+//                         }
+//                     } else {
+//                         for (int k = 0; k < currMatchNum; k++) {
+//                             uint32_t targetKmerId = getIdOfAAkmer(aaMatches[k]);
+//                             TaxID ncbiTaxId = unirefIdx2taxId.at(targetKmerId);
+//                             if (ncbi2gtdb.find(ncbiTaxId) != ncbi2gtdb.end()) {
+//                                 TaxID gtdbTaxId = ncbi2gtdb.at(ncbiTaxId);
+//                                 if (spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).find(gtdbTaxId) 
+//                                  != spTaxId2UniRefTaxIds.at(queryKmerList[j].speciesId).end()) {
+//                                     localMatches[matchCnt++] = {queryKmerList[j].metamer.id,
+//                                                                queryKmerList[j].cdsPos, // cdsId
+//                                                                targetKmerId}; // protId
+//                                     cout << "Query Taxonomy ID: " << queryKmerList[j].speciesId << endl;
+//                                     cout << "Target Taxonomy ID (NCBI): " << ncbiTaxId << endl;
+//                                     cout << "Target Taxonomy ID (GTDB): " << gtdbTaxId << endl;
+//                                     // seqIterator.printAAKmer(aaMatches[k]);
+//                                     // cout << " ";
+//                                     // seqIterator.printAAKmer(queryKmerList[j].metamer.metamer, 24);
+//                                     // cout << endl;
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 } // End of one split
 
-                // Move matches in the local buffer to the shared buffer
-                posToWrite = matchBuffer->reserveMemory(matchCnt);
-                if (posToWrite + matchCnt >= matchBuffer->bufferSize) {
-                    hasOverflow = true;
-                    __sync_fetch_and_sub(& matchBuffer->startIndexOfReserve, matchCnt);
-                } else {
-                    moveMatches(matchBuffer->buffer + posToWrite, localMatches, matchCnt);
-                }
+//                 // Move matches in the local buffer to the shared buffer
+//                 posToWrite = matchBuffer->reserveMemory(matchCnt);
+//                 if (posToWrite + matchCnt >= matchBuffer->bufferSize) {
+//                     hasOverflow = true;
+//                     __sync_fetch_and_sub(& matchBuffer->startIndexOfReserve, matchCnt);
+//                 } else {
+//                     moveMatches(matchBuffer->buffer + posToWrite, localMatches, matchCnt);
+//                 }
 
-                // Check whether current split is completed or not
-                if (querySplits[i].start - 1 == querySplits[i].end) {
-                    splitCheckList[i] = true;
-                    __sync_fetch_and_add(&completedSplitCnt, 1);
-                }
-            } // End of omp for (Iterating for splits)
-            delete[] localMatches;
-            fclose(deltaIdxFp);
-            free(deltaBuffer);
-        } // End of omp parallel
+//                 // Check whether current split is completed or not
+//                 if (querySplits[i].start - 1 == querySplits[i].end) {
+//                     splitCheckList[i] = true;
+//                     __sync_fetch_and_add(&completedSplitCnt, 1);
+//                 }
+//             } // End of omp for (Iterating for splits)
+//             delete[] localMatches;
+//             fclose(deltaIdxFp);
+//             free(deltaBuffer);
+//         } // End of omp parallel
         
-        if (hasOverflow) {
-            return false;
-        }
-    } // end of while(completeSplitCnt < threadNum)
+//         if (hasOverflow) {
+//             return false;
+//         }
+//     } // end of while(completeSplitCnt < threadNum)
     
-    std::cout << "Time spent for the comparison: " << double(time(nullptr) - beforeSearch) << std::endl;
-    free(splitCheckList);
+//     std::cout << "Time spent for the comparison: " << double(time(nullptr) - beforeSearch) << std::endl;
+//     free(splitCheckList);
 
-    totalMatchCnt += matchBuffer->startIndexOfReserve;
-    return true;
-}
+//     totalMatchCnt += matchBuffer->startIndexOfReserve;
+//     return true;
+// }
 
 
 void KmerMatcher::sortMatches(Buffer<Match> * matchBuffer) {

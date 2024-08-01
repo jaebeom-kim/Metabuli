@@ -35,6 +35,21 @@ public:
 
     static int getFirstWhiteSpacePos(const std::string & str);
 
+    static void exportVector(const std::vector<std::string>& vec, const std::string& filename);
+    static void exportVector(const std::vector<int>& vec, const std::string& filename); 
+
+    static void importVector(const std::string& filename, std::vector<std::string>& vec);
+    static void importVector(const std::string& filename, std::vector<int>& vec);
+
+    static TaxID getTaxIdFromComment(const std::string &header) {
+        // comment format: 
+        // peptidylprolyl isomerase n=1 Tax=Triplophysa tibetana TaxID=1572043 RepID=A0A5A9P0L4_9TELE
+        size_t taxIDPos = header.find("TaxID=");
+        size_t taxIDEndPos = header.find(" ", taxIDPos);
+        return std::stoi(header.substr(taxIDPos + 6, taxIDEndPos - taxIDPos - 6));    
+    }
+
+
     // static std::string getAccessionFromHeader(const std::string & header);
 };
 

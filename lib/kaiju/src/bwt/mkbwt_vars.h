@@ -266,7 +266,7 @@ static OPT_STRUCT opt_struct[13] = {
 	{OPTTYPE_SWITCH,VARTYPE_int,(void *)&revComp,&count_revComp,"|revComp|r|","      Reverse complement sequence. Works only for DNA."},
 	{OPTTYPE_VALUE,VARTYPE_charS,(void *)&term,&count_term,"|term|t|","      Terminating symbol (only used for debugging)"},
 	{OPTTYPE_SWITCH,VARTYPE_int,(void *)&revsort,&count_revsort,"|revsort|s|","      The termination symbols sorts as reverse sequences. This will make the\n      BWT more compressible."},
-	{OPTTYPE_SWITCH,VARTYPE_int,(void *)&help,(void *)&count_help,"|help|h|","      Prints summary of options and arguments"},
+	{OPTTYPE_SWITCH,VARTYPE_int,(void *)&help, &count_help,"|help|h|","      Prints summary of options and arguments"},
 	{0,0,NULL,NULL,NULL,NULL}
 };
 

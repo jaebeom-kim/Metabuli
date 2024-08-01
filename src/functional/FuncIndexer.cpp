@@ -19,6 +19,11 @@
 #include <unordered_set>
 
 FuncIndexer::FuncIndexer(const LocalParameters &par) : IndexCreator(par) {
+
+    kaijuFmiFileName = par.filenames[3] + "/kaiju_mtbl.fmi";
+    kaijuUniRefIdsFileName = par.filenames[3] + "/kaiju_mtbl.UniRefIds";
+    kaijuUniRefTaxIdsFileName = par.filenames[3] + "/kaiju_mtbl.UniRefTaxIds";
+
     // UniRef Idx
     unirefId2IdxFileName = par.proteinDB + "/unirefId2Idx.mtbl";
     unirefIdx2taxIdFileName = par.proteinDB + "/unirefIdx2taxId.mtbl";
@@ -35,7 +40,7 @@ FuncIndexer::FuncIndexer(const LocalParameters &par) : IndexCreator(par) {
     // loadUniRefId2Idx(); // UniRef Id -> UniRef Idx
     // LocalUtil::loadMappingFile<uint32_t, int>(unirefIdx2taxIdFileName, unirefIdx2taxId); // UniRef Idx -> Taxonomy ID
     
-    kaiju = new KaijuWrapper(par);
+    kaiju = new KaijuWrapper(par, uniRefIds, uniRefTaxIds);
 }
 
 FuncIndexer::~FuncIndexer() {
@@ -43,6 +48,11 @@ FuncIndexer::~FuncIndexer() {
 }
 
 void FuncIndexer::createIndex() {
+    // Prepare Kaiju
+    kaiju->loadFMI(kaijuFmiFileName);
+    LocalUtil::importVector(kaijuUniRefIdsFileName, uniRefIds);
+    LocalUtil::importVector(kaijuUniRefTaxIdsFileName, uniRefTaxIds);
+
     // Read through FASTA files and make blocks of sequences to be processed by each thread
     if (par.accessionLevel) {
         makeBlocksForParallelProcessing_accession_level();
@@ -74,11 +84,12 @@ void FuncIndexer::createIndex() {
 
         size_t processedSplitCnt = 0;
         memset(metamerBuffer.buffer, 0, metamerBuffer.bufferSize * sizeof(ExtractedMetamer));
-        if (!par.cdsInfo.empty()) {
-            fillTargetKmerBuffer(metamerBuffer, tempChecker, processedSplitCnt, nonCdsIdx);
-        } else {
-            fillTargetKmerBufferUsingProdigal(metamerBuffer, tempChecker, processedSplitCnt, regionId);
-        }
+        fillTargetKmerBuffer(metamerBuffer, tempChecker, processedSplitCnt, regionId);
+        // if (!par.cdsInfo.empty()) {
+        //     fillTargetKmerBuffer(metamerBuffer, tempChecker, processedSplitCnt, nonCdsIdx);
+        // } else {
+        //     fillTargetKmerBufferUsingProdigal(metamerBuffer, tempChecker, processedSplitCnt, regionId);
+        // }
         totalProcessedSplitCnt += processedSplitCnt;
         
         SORT_PARALLEL(metamerBuffer.buffer,
@@ -113,167 +124,166 @@ void FuncIndexer::createIndex() {
 }
 
 
-size_t FuncIndexer::fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
-                                         bool * tempChecker,
-                                         size_t &processedSplitCnt,
-                                         uint32_t & nonCdsIdx) {
-    // uint32_t cdsCnt = 1;
-    int hasOverflow = 0;
-#pragma omp parallel default(none), shared(kmerBuffer, tempChecker, processedSplitCnt, hasOverflow, cout, nonCdsIdx)
-    {
-        ProbabilityMatrix probMatrix(*subMat);
-        SeqIterator seqIterator(par);
-        size_t posToWrite;
-        priority_queue<uint64_t> observedNonCDSKmerHashes;
-        char *reverseComplement;
-        string reverseComplementStr;
-        kseq_buffer_t buffer;
-        kseq_t *seq;
-        vector<uint64_t> observedNonCDSKmers;
-#pragma omp for schedule(dynamic, 1)
-        for (size_t i = 0; i < fnaSplits.size(); i++) {
-            if (!tempChecker[i] && !hasOverflow) {
-                tempChecker[i] = true;
-                observedNonCDSKmers.clear();
+// size_t FuncIndexer::fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
+//                                          bool * tempChecker,
+//                                          size_t &processedSplitCnt,
+//                                          uint32_t & nonCdsIdx) {
+//     // uint32_t cdsCnt = 1;
+//     int hasOverflow = 0;
+// #pragma omp parallel default(none), shared(kmerBuffer, tempChecker, processedSplitCnt, hasOverflow, cout, nonCdsIdx)
+//     {
+//         ProbabilityMatrix probMatrix(*subMat);
+//         SeqIterator seqIterator(par);
+//         size_t posToWrite;
+//         priority_queue<uint64_t> observedNonCDSKmerHashes;
+//         char *reverseComplement;
+//         string reverseComplementStr;
+//         kseq_buffer_t buffer;
+//         kseq_t *seq;
+// #pragma omp for schedule(dynamic, 1)
+//         for (size_t i = 0; i < fnaSplits.size(); i++) {
+//             if (!tempChecker[i] && !hasOverflow) {
+//                 tempChecker[i] = true;
+//                 observedNonCDSKmerHashes = priority_queue<uint64_t>();
 
-                // Estimate the number of k-mers to be extracted from current split
-                size_t totalLength = 0;
-                for (size_t p = 0; p < fnaSplits[i].cnt; p++) {
-                    totalLength += fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + p].length;
-                }
-                size_t estimatedKmerCnt = (totalLength + totalLength / 10) / 3;
+//                 // Estimate the number of k-mers to be extracted from current split
+//                 size_t totalLength = 0;
+//                 for (size_t p = 0; p < fnaSplits[i].cnt; p++) {
+//                     totalLength += fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + p].length;
+//                 }
+//                 size_t estimatedKmerCnt = (totalLength + totalLength / 10) / 3;
 
-                // Process current split if buffer has enough space.
-                posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
-                if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
-                    struct MmapedData<char> fastaFile = mmapData<char>(fastaList[fnaSplits[i].file_idx].path.c_str());
-                    vector<string> cds;
-                    vector<string> nonCds;
-                    // ** Use provided CDS information **
-                    for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
-                        buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
-                                  static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
-                        seq = kseq_init(&buffer);
-                        kseq_read(seq);
+//                 // Process current split if buffer has enough space.
+//                 posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
+//                 if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
+//                     struct MmapedData<char> fastaFile = mmapData<char>(fastaList[fnaSplits[i].file_idx].path.c_str());
+//                     vector<string> cds;
+//                     vector<string> nonCds;
+//                     // ** Use provided CDS information **
+//                     for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
+//                         buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
+//                                   static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
+//                         seq = kseq_init(&buffer);
+//                         kseq_read(seq);
                         
-                        // Mask low complexity regions
-                        char *maskedSeq = nullptr;
-                        if (par.maskMode) {
-                            maskedSeq = new char[seq->seq.l + 1];
-                            SeqIterator::maskLowComplexityRegions(seq->seq.s, maskedSeq, probMatrix, par.maskProb, subMat);
-                        } else {
-                            maskedSeq = seq->seq.s;
-                        }
+//                         // Mask low complexity regions
+//                         char *maskedSeq = nullptr;
+//                         if (par.maskMode) {
+//                             maskedSeq = new char[seq->seq.l + 1];
+//                             SeqIterator::maskLowComplexityRegions(seq->seq.s, maskedSeq, probMatrix, par.maskProb, subMat);
+//                         } else {
+//                             maskedSeq = seq->seq.s;
+//                         }
 
-                        // cout << "Processing " << seq->name.s << "\t" << seq->seq.l << "\t" << posToWrite << endl;
-                        TaxID currentTaxId = foundAcc2taxid[string(seq->name.s)];
-                        if (cdsInfoMap.find(string(seq->name.s)) != cdsInfoMap.end()) { // CDS provided
-                            cds.clear();
-                            nonCds.clear();
-                            seqIterator.devideToCdsAndNonCds(
-                                maskedSeq, seq->seq.l,
-                                cdsInfoMap[string(seq->name.s)], cds, nonCds);
+//                         // cout << "Processing " << seq->name.s << "\t" << seq->seq.l << "\t" << posToWrite << endl;
+//                         TaxID currentTaxId = foundAcc2taxid[string(seq->name.s)];
+//                         if (cdsInfoMap.find(string(seq->name.s)) != cdsInfoMap.end()) { // CDS provided
+//                             cds.clear();
+//                             nonCds.clear();
+//                             seqIterator.devideToCdsAndNonCds(
+//                                 maskedSeq, seq->seq.l,
+//                                 cdsInfoMap[string(seq->name.s)], cds, nonCds);
                             
-                            // cout << "CDS: " << endl;
-                            // for (size_t j = 0; j < cds.size(); j++) {
-                            //     cout << cdsInfoMap[string(seq->name.s)][j].proteinId << endl;
-                            //     cout << cds[j] << endl << endl;
-                            // }
+//                             // cout << "CDS: " << endl;
+//                             // for (size_t j = 0; j < cds.size(); j++) {
+//                             //     cout << cdsInfoMap[string(seq->name.s)][j].proteinId << endl;
+//                             //     cout << cds[j] << endl << endl;
+//                             // }
 
-                            // cout << "Non-CDS: " << endl;
-                            // for (size_t j = 0; j < nonCds.size(); j++) {
-                            //     cout << nonCds[j] << endl << endl;
-                            // }
+//                             // cout << "Non-CDS: " << endl;
+//                             // for (size_t j = 0; j < nonCds.size(); j++) {
+//                             //     cout << nonCds[j] << endl << endl;
+//                             // }
 
-                            // Translate CDS and extract metamers
-                            for (size_t j = 0; j < cds.size(); j++) {
-                                // if (cdsCnt == 1) {
-                                //     cout << "First CDS: " << cds[j] << endl;
-                                // }
-                                seqIterator.translate(cds[j]);
-                                // if (cdsCnt == 1) {
-                                //     for (size_t pp = 0; pp < seqIterator.aaFrames[0].size() ; pp++) {
-                                //         cout << seqIterator.aaFrames[0][pp] << " ";
-                                //     }
-                                //     cout << endl;
-                                // }
-                                // uint32_t cdsId = __sync_fetch_and_add(&cdsCnt, 1);
-                                queryCodingRegionMap[cdsInfoMap[string(seq->name.s)][j].protId] = QueryCodingRegionInfo(cdsInfoMap[string(seq->name.s)][j].protId, cds[j].size());
-                                // queryCdsList[cdsId] = QueryCDS(cdsInfoMap[string(seq->name.s)][j].protId, cds[j].size());
-                                // queryCdsList.emplace_back(cdsInfoMap[string(seq->name.s)][j].proteinId, cdsId, cds[j].size());
-                                seqIterator.computeMetamerF(
-                                    cds[j].c_str(), // DNA sequence string
-                                    0,            // frame
-                                    kmerBuffer,       // extracted k-mer buffer
-                                    posToWrite,       // position to write
-                                    fnaSplits[i].speciesID,
-                                    cdsInfoMap[string(seq->name.s)][j].protId,
-                                    1);
-                            }
+//                             // Translate CDS and extract metamers
+//                             for (size_t j = 0; j < cds.size(); j++) {
+//                                 // if (cdsCnt == 1) {
+//                                 //     cout << "First CDS: " << cds[j] << endl;
+//                                 // }
+//                                 seqIterator.translate(cds[j]);
+//                                 // if (cdsCnt == 1) {
+//                                 //     for (size_t pp = 0; pp < seqIterator.aaFrames[0].size() ; pp++) {
+//                                 //         cout << seqIterator.aaFrames[0][pp] << " ";
+//                                 //     }
+//                                 //     cout << endl;
+//                                 // }
+//                                 // uint32_t cdsId = __sync_fetch_and_add(&cdsCnt, 1);
+//                                 queryCodingRegionMap[cdsInfoMap[string(seq->name.s)][j].protId] = QueryCodingRegionInfo(cdsInfoMap[string(seq->name.s)][j].protId, cds[j].size());
+//                                 // queryCdsList[cdsId] = QueryCDS(cdsInfoMap[string(seq->name.s)][j].protId, cds[j].size());
+//                                 // queryCdsList.emplace_back(cdsInfoMap[string(seq->name.s)][j].proteinId, cdsId, cds[j].size());
+//                                 seqIterator.computeMetamerF(
+//                                     cds[j].c_str(), // DNA sequence string
+//                                     0,            // frame
+//                                     kmerBuffer,       // extracted k-mer buffer
+//                                     posToWrite,       // position to write
+//                                     fnaSplits[i].speciesID,
+//                                     cdsInfoMap[string(seq->name.s)][j].protId,
+//                                     1);
+//                             }
 
-                            // Translate non-CDS and extract metamers
-                            for (size_t j = 0; j < nonCds.size(); j++) {
-                                uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
-                                regionId2taxId[nonCdsId] = currentTaxId;
-                                if (observedNonCDSKmers.empty()) {
-                                    seqIterator.translate(nonCds[j]);
-                                    seqIterator.computeMetamerF(nonCds[j].c_str(), 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
-                                    seqIterator.getMinHashList(observedNonCDSKmerHashes, nonCds[j].c_str());
-                                } else {
-                                    int frame = selectReadingFrame(observedNonCDSKmerHashes, nonCds[j].c_str(), seqIterator);
-                                    if (frame < 3) { // Forward
-                                        seqIterator.translate(nonCds[j], frame);
-                                        seqIterator.computeMetamerF(nonCds[j].c_str(), frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
-                                    } else { // Reverse complement
-                                        reverseComplementStr.clear();
-                                        reverseComplementStr = seqIterator.reverseComplement(nonCds[j]);
-                                        seqIterator.translate(reverseComplementStr, frame - 3);
-                                        seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
-                                    }
-                                }
-                            }
-                        } else { // CDS not provided
-                            // Translate the whole sequence
-                            uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
-                            regionId2taxId[nonCdsId] = currentTaxId;
-                            if (observedNonCDSKmers.empty()) {
-                                seqIterator.translate(seq->seq.s);
-                                seqIterator.getMinHashList(observedNonCDSKmerHashes, seq->seq.s);
-                                seqIterator.computeMetamerF(seq->seq.s, 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);                                    
-                            } else {
-                                int frame = selectReadingFrame(observedNonCDSKmerHashes, seq->seq.s, seqIterator);
-                                if (frame < 3) { // Forward
-                                    seqIterator.translate(seq->seq.s, frame);
-                                    seqIterator.computeMetamerF(seq->seq.s, frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
-                                } else { // Reverse complement
-                                    reverseComplement = seqIterator.reverseComplement(seq->seq.s, seq->seq.l);
-                                    seqIterator.translate(reverseComplement,  frame - 3);
-                                    seqIterator.computeMetamerF(reverseComplement, frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
-                                    free(reverseComplement);
-                                }
-                            }                     
-                        }
-                        if (par.maskMode) { delete[] maskedSeq;}
-                        kseq_destroy(seq);
-                    }
-                    __sync_fetch_and_add(&processedSplitCnt, 1);
-#ifdef OPENMP
-                    cout << omp_get_thread_num() << " Processed " << i << "th splits (" << processedSplitCnt << ")" << endl;
-#endif
-                    munmap(fastaFile.data, fastaFile.fileSize + 1);
-                } else {
-                    // Withdraw the reservation if the buffer is full.
-                    tempChecker[i] = false;
-                    __sync_fetch_and_add(&hasOverflow, 1);
-                    __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
-                }
-            }
-        }
-    }
-    return 0;
-}
+//                             // Translate non-CDS and extract metamers
+//                             for (size_t j = 0; j < nonCds.size(); j++) {
+//                                 uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
+//                                 regionId2taxId[nonCdsId] = currentTaxId;
+//                                 if (observedNonCDSKmerHashes.empty()) {
+//                                     seqIterator.translate(nonCds[j]);
+//                                     seqIterator.computeMetamerF(nonCds[j].c_str(), 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
+//                                     seqIterator.getMinHashList(observedNonCDSKmerHashes, nonCds[j].c_str());
+//                                 } else {
+//                                     int frame = selectReadingFrame(observedNonCDSKmerHashes, nonCds[j].c_str(), seqIterator);
+//                                     if (frame < 3) { // Forward
+//                                         seqIterator.translate(nonCds[j], frame);
+//                                         seqIterator.computeMetamerF(nonCds[j].c_str(), frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
+//                                     } else { // Reverse complement
+//                                         reverseComplementStr.clear();
+//                                         reverseComplementStr = seqIterator.reverseComplement(nonCds[j]);
+//                                         seqIterator.translate(reverseComplementStr, frame - 3);
+//                                         seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
+//                                     }
+//                                 }
+//                             }
+//                         } else { // CDS not provided
+//                             // Translate the whole sequence
+//                             uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
+//                             regionId2taxId[nonCdsId] = currentTaxId;
+//                             if (observedNonCDSKmerHashes.empty()) {
+//                                 seqIterator.translate(seq->seq.s);
+//                                 seqIterator.getMinHashList(observedNonCDSKmerHashes, seq->seq.s);
+//                                 seqIterator.computeMetamerF(seq->seq.s, 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);                                    
+//                             } else {
+//                                 int frame = selectReadingFrame(observedNonCDSKmerHashes, seq->seq.s, seqIterator);
+//                                 if (frame < 3) { // Forward
+//                                     seqIterator.translate(seq->seq.s, frame);
+//                                     seqIterator.computeMetamerF(seq->seq.s, frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
+//                                 } else { // Reverse complement
+//                                     reverseComplement = seqIterator.reverseComplement(seq->seq.s, seq->seq.l);
+//                                     seqIterator.translate(reverseComplement,  frame - 3);
+//                                     seqIterator.computeMetamerF(reverseComplement, frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, nonCdsId, 0);
+//                                     free(reverseComplement);
+//                                 }
+//                             }                     
+//                         }
+//                         if (par.maskMode) { delete[] maskedSeq;}
+//                         kseq_destroy(seq);
+//                     }
+//                     __sync_fetch_and_add(&processedSplitCnt, 1);
+// #ifdef OPENMP
+//                     cout << omp_get_thread_num() << " Processed " << i << "th splits (" << processedSplitCnt << ")" << endl;
+// #endif
+//                     munmap(fastaFile.data, fastaFile.fileSize + 1);
+//                 } else {
+//                     // Withdraw the reservation if the buffer is full.
+//                     tempChecker[i] = false;
+//                     __sync_fetch_and_add(&hasOverflow, 1);
+//                     __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
+//                 }
+//             }
+//         }
+//     }
+//     return 0;
+// }
 
-size_t FuncIndexer::fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &kmerBuffer,
+size_t FuncIndexer::fillTargetKmerBuffer(Buffer<ExtractedMetamer> &kmerBuffer,
                                                       bool * tempChecker,
                                                       size_t &processedSplitCnt,
                                                       uint32_t & regionId) {
@@ -284,19 +294,24 @@ size_t FuncIndexer::fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &
         ProbabilityMatrix probMatrix(*subMat);
         SeqIterator seqIterator(par);
         size_t posToWrite;
-        priority_queue<uint64_t> observedNonCDSKmerHashes;
-        // char *reverseComplement;
         string reverseComplementStr;
         kseq_buffer_t buffer;
         kseq_t *seq;
-        vector<uint64_t> observedNonCDSKmers;
         std::unordered_map<uint32_t, int> localRegionId2taxId;
+        vector<string> cds;
+        vector<string> nonCds;
+        vector<string> masked_cds;
+        vector<string> masked_nonCds;
+        vector<int> startCodonPos;
+        vector<int> cdsLength;
+        bool trained = false;
+        unordered_set<uint64_t> intergenicKmerList;
+
 #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < fnaSplits.size(); i++) {
             if (!tempChecker[i] && !hasOverflow) {
                 tempChecker[i] = true;
-                observedNonCDSKmers.clear();
-
+                intergenicKmerList.clear();
                 // Estimate the number of k-mers to be extracted from current split
                 size_t totalLength = 0;
                 for (size_t p = 0; p < fnaSplits[i].cnt; p++) {
@@ -304,45 +319,27 @@ size_t FuncIndexer::fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &
                 }
                 size_t estimatedKmerCnt = (totalLength + totalLength / 10) / 3;
                 ProdigalWrapper * prodigal = new ProdigalWrapper();
+                trained = false;
+
                 // Process current split if buffer has enough space.
                 posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
                 if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
+                    cout << "new split" << endl;
                     struct MmapedData<char> fastaFile = mmapData<char>(fastaList[fnaSplits[i].file_idx].path.c_str());
-                    // Load sequence for prodigal training
-                    buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].start]),
-                              static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].length)};
-                    seq = kseq_init(&buffer);
-                    kseq_read(seq);
-                    size_t lengthOfTrainingSeq = seq->seq.l;
-
-                    // Train prodigal
-                    prodigal->is_meta = 0;
-                    if (lengthOfTrainingSeq < 100'000) {
-                        prodigal->is_meta = 1;
-                        prodigal->trainMeta(seq->seq.s);
-                    } else {
-                        prodigal->trainASpecies(seq->seq.s);
-                    }
-                    kseq_destroy(seq);
-
-                    vector<string> cds;
-                    vector<string> nonCds;
-                    vector<string> masked_cds;
-                    vector<string> masked_nonCds;
-                    // ** Use predicted CDS information **
+                    intergenicKmerList.clear();                    
                     for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
                         cds.clear();
                         nonCds.clear();
                         masked_cds.clear();
                         masked_nonCds.clear();
+                        startCodonPos.clear();
+                        cdsLength.clear();
 
+                        // Load a sequence
                         buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
                                   static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
                         seq = kseq_init(&buffer);
                         kseq_read(seq);
-
-                        // Get predicted CDS
-                        prodigal->getPredictedGenes(seq->seq.s);
 
                         // Mask low complexity regions
                         char *maskedSeq = nullptr;
@@ -355,60 +352,85 @@ size_t FuncIndexer::fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &
 
                         TaxID currentTaxId = foundAcc2taxid[string(seq->name.s)];
 
-                        seqIterator.devideToCdsAndNonCds(
-                            seq->seq.s, seq->seq.l,
-                            prodigal, cds, nonCds);
+                        // CDS provided
+                        if (cdsInfoMap.find(string(seq->name.s)) != cdsInfoMap.end()) { 
+                            seqIterator.devideToCdsAndNonCds(seq->seq.s, maskedSeq,
+                                                             seq->seq.l,
+                                                             cdsInfoMap[string(seq->name.s)],
+                                                             cds, masked_cds,
+                                                             nonCds, masked_nonCds,
+                                                             startCodonPos, cdsLength);
+                        } 
+                        // CDS not provided -> Prodigal
+                        else {
+                            // Train prodigal
+                            if (!trained) {
+                                kseq_buffer_t train_buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].start]),
+                                                              static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].length)};
+                                kseq_t * train_seq = kseq_init(&train_buffer);
+                                kseq_read(train_seq);
+                                prodigal->is_meta = 0;
+                                if (train_seq->seq.l < 100'000) {
+                                    prodigal->is_meta = 1;
+                                    prodigal->trainMeta(train_seq->seq.s);
+                                } else {
+                                    prodigal->trainASpecies(train_seq->seq.s);
+                                }
+                                kseq_destroy(train_seq);
+                                trained = true;
+                            }
+                            // Get predicted CDS
+                            prodigal->getPredictedGenes(seq->seq.s);
 
-                        seqIterator.devideToCdsAndNonCds(
-                            maskedSeq, seq->seq.l,
-                            prodigal, masked_cds, masked_nonCds);
-                        
+                            seqIterator.devideToCdsAndNonCds(seq->seq.s, maskedSeq,
+                                                             seq->seq.l,
+                                                             prodigal,
+                                                             cds, masked_cds,
+                                                             nonCds, masked_nonCds,
+                                                             startCodonPos, cdsLength);
+                        }
+
                         uint32_t localRegionId = __sync_fetch_and_add(&regionId, cds.size() + nonCds.size());
-
+                       
                         for (size_t j = 0; j < cds.size(); j++) {
-                            // Get UniRef ID of the CDS
-                            // cout << ">" << localRegionId << endl;
-                            // cout << cds[j] << endl;
-                            // cout << ">" << localRegionId << "_aa" <<endl;
-                            // seqIterator.printTranslation(cds[j]);
-                            uint32_t uniRefId = getUniRefIdx(cds[j], currentTaxId);
+                            uint32_t uniRefId = getUniRefIdx(cds[j].substr(startCodonPos[j], cdsLength[j]), currentTaxId);
                             seqIterator.translate(masked_cds[j]);
                             localRegionId2taxId[localRegionId] = currentTaxId;
                             queryCodingRegionMap[localRegionId] = QueryCodingRegionInfo(localRegionId, cds[j].size());
-                            seqIterator.computeMetamerF(cds[j].c_str(),         // DNA sequence string
-                                                      0,                      // frame
-                                                          kmerBuffer,             // extracted k-mer buffer
-                                                          posToWrite,             // position to write
+                            seqIterator.computeMetamerF(masked_cds[j].c_str(),    // DNA sequence string
+                                                      0,                        // frame
+                                                          kmerBuffer,               // extracted k-mer buffer
+                                                          posToWrite,               // position to write
                                                 fnaSplits[i].speciesID, 
                                                      localRegionId,
                                                      uniRefId);
                             localRegionId++;
                         }
-                        
+
                         for (size_t j = 0; j < nonCds.size(); j++) {
-                            // uint32_t nonCdsId = __sync_fetch_and_add(&nonCdsIdx, 1);
+                            if (masked_nonCds[j].size() < 24) {
+                                continue;
+                            }
                             localRegionId2taxId[localRegionId] = currentTaxId;
-                            if (observedNonCDSKmers.empty()) {
-                                seqIterator.translate(masked_nonCds[j]);
-                                seqIterator.computeMetamerF(masked_nonCds[j].c_str(), 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
-                                seqIterator.getMinHashList(observedNonCDSKmerHashes, masked_nonCds[j].c_str());
-                            } else {
-                                int frame = selectReadingFrame(observedNonCDSKmerHashes, masked_nonCds[j].c_str(), seqIterator);
-                                if (frame < 3) { // Forward
-                                    seqIterator.translate(masked_nonCds[j], frame);
-                                    seqIterator.computeMetamerF(masked_nonCds[j].c_str(), frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
-                                } else { // Reverse complement
-                                    reverseComplementStr.clear();
-                                    reverseComplementStr = seqIterator.reverseComplement(masked_nonCds[j]);
-                                    seqIterator.translate(reverseComplementStr, frame - 3);
-                                    seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
-                                }
+                            int frame = selectReadingFrame(intergenicKmerList, nonCds[j]);
+                            if (frame < 3) { // Forward
+                                seqIterator.translate(masked_nonCds[j], frame);
+                                seqIterator.computeMetamerF(masked_nonCds[j].c_str(), frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
+                            } else { // Reverse complement
+                                reverseComplementStr.clear();
+                                reverseComplementStr = seqIterator.reverseComplement(masked_nonCds[j]);
+                                seqIterator.translate(reverseComplementStr, frame - 3);
+                                seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
                             }
                             localRegionId++;
+                            cout << j << " " << nonCds.size() << endl;
                         }
-                        if (par.maskMode) { delete[] maskedSeq;}
+                        cout << "NonCds complete" << endl;
+                        if (par.maskMode) {
+                             delete[] maskedSeq;
+                        }
                         kseq_destroy(seq);
-                    }
+                    } // End of current fastaSplit
                     __sync_fetch_and_add(&processedSplitCnt, 1);
 #ifdef OPENMP
                     cout << omp_get_thread_num() << " Processed " << i << "th splits (" << processedSplitCnt << ")" << endl;
@@ -434,38 +456,218 @@ size_t FuncIndexer::fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &
     return 0;
 }
 
+
+// size_t FuncIndexer::fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &kmerBuffer,
+//                                                       bool * tempChecker,
+//                                                       size_t &processedSplitCnt,
+//                                                       uint32_t & regionId) {
+//     cout << "Using Prodigal to extract CDS" << endl;
+//     int hasOverflow = 0;
+// #pragma omp parallel default(none), shared(kmerBuffer, tempChecker, processedSplitCnt, hasOverflow, cout, regionId)
+//     {
+//         ProbabilityMatrix probMatrix(*subMat);
+//         SeqIterator seqIterator(par);
+//         size_t posToWrite;
+//         priority_queue<uint64_t> observedNonCDSKmerHashes;
+//         string reverseComplementStr;
+//         kseq_buffer_t buffer;
+//         kseq_t *seq;
+//         std::unordered_map<uint32_t, int> localRegionId2taxId;
+// #pragma omp for schedule(dynamic, 1)
+//         for (size_t i = 0; i < fnaSplits.size(); i++) {
+//             if (!tempChecker[i] && !hasOverflow) {
+//                 tempChecker[i] = true;
+//                 observedNonCDSKmerHashes = priority_queue<uint64_t>();
+
+//                 // Estimate the number of k-mers to be extracted from current split
+//                 size_t totalLength = 0;
+//                 for (size_t p = 0; p < fnaSplits[i].cnt; p++) {
+//                     totalLength += fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + p].length;
+//                 }
+//                 size_t estimatedKmerCnt = (totalLength + totalLength / 10) / 3;
+//                 ProdigalWrapper * prodigal = new ProdigalWrapper();
+
+//                 // Process current split if buffer has enough space.
+//                 posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
+//                 if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
+//                     struct MmapedData<char> fastaFile = mmapData<char>(fastaList[fnaSplits[i].file_idx].path.c_str());
+//                     // Load sequence for prodigal training
+//                     buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].start]),
+//                               static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].training].length)};
+//                     seq = kseq_init(&buffer);
+//                     kseq_read(seq);
+                    
+//                     size_t lengthOfTrainingSeq = seq->seq.l;
+
+//                     // Train prodigal
+//                     prodigal->is_meta = 0;
+//                     if (lengthOfTrainingSeq < 100'000) {
+//                         prodigal->is_meta = 1;
+//                         prodigal->trainMeta(seq->seq.s);
+//                     } else {
+//                         prodigal->trainASpecies(seq->seq.s);
+//                     }
+//                     kseq_destroy(seq);
+
+//                     vector<string> cds;
+//                     vector<string> nonCds;
+//                     vector<string> masked_cds;
+//                     vector<string> masked_nonCds;
+//                     // ** Use predicted CDS information **
+//                     for (size_t s_cnt = 0; s_cnt < fnaSplits[i].cnt; ++s_cnt) {
+//                         cds.clear();
+//                         nonCds.clear();
+//                         masked_cds.clear();
+//                         masked_nonCds.clear();
+
+//                         buffer = {const_cast<char *>(&fastaFile.data[fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].start]),
+//                                   static_cast<size_t>(fastaList[fnaSplits[i].file_idx].sequences[fnaSplits[i].offset + s_cnt].length)};
+//                         seq = kseq_init(&buffer);
+//                         kseq_read(seq);
+// #ifdef OPENMP
+//                         cout << omp_get_thread_num() << " processing " << seq->name.s << "\t" << seq->seq.l << "\t" << posToWrite << endl;
+// #endif
+//                         // Get predicted CDS
+//                         prodigal->getPredictedGenes(seq->seq.s);
+
+//                         // Mask low complexity regions
+//                         char *maskedSeq = nullptr;
+//                         if (par.maskMode) {
+//                             maskedSeq = new char[seq->seq.l + 1];
+//                             SeqIterator::maskLowComplexityRegions(seq->seq.s, maskedSeq, probMatrix, par.maskProb, subMat);
+//                         } else {
+//                             maskedSeq = seq->seq.s;
+//                         }
+
+//                         TaxID currentTaxId = foundAcc2taxid[string(seq->name.s)];
+
+//                         seqIterator.devideToCdsAndNonCds(
+//                             seq->seq.s, seq->seq.l,
+//                             prodigal, cds, nonCds);
+
+//                         seqIterator.devideToCdsAndNonCds(
+//                             maskedSeq, seq->seq.l,
+//                             prodigal, masked_cds, masked_nonCds);
+                        
+//                         uint32_t localRegionId = __sync_fetch_and_add(&regionId, cds.size() + nonCds.size());
+
+//                         for (size_t j = 0; j < cds.size(); j++) {
+//                             string aa;
+//                             uint32_t uniRefId = getUniRefIdx(cds[j], currentTaxId);
+//                             kaiju->translate(cds[j], aa);
+//                             cout << ">" << localRegionId << " " << uniRefId << endl;
+//                             cout << aa << endl;
+//                             // Get UniRef ID of the CDS
+//                             // cout << ">" << localRegionId << endl;
+//                             // cout << cds[j] << endl;
+//                             // cout << ">" << localRegionId << "_aa" <<endl;
+//                             // seqIterator.printTranslation(cds[j]);
+// //                             uint32_t uniRefId = getUniRefIdx(cds[j], currentTaxId);
+// // #ifdef OPENMP
+// //                             cout << omp_get_thread_num() << " mapped " << localRegionId << "th region to" << uniRefId << endl;
+// // #endif
+//                             seqIterator.translate(masked_cds[j]);
+//                             localRegionId2taxId[localRegionId] = currentTaxId;
+//                             queryCodingRegionMap[localRegionId] = QueryCodingRegionInfo(localRegionId, cds[j].size());
+//                             seqIterator.computeMetamerF(masked_cds[j].c_str(),         // DNA sequence string
+//                                                       0,                      // frame
+//                                                           kmerBuffer,             // extracted k-mer buffer
+//                                                           posToWrite,             // position to write
+//                                                 fnaSplits[i].speciesID, 
+//                                                      localRegionId,
+//                                                      uniRefId);
+//                             localRegionId++;
+//                         }
+                        
+//                         for (size_t j = 0; j < nonCds.size(); j++) {
+//                             if (masked_nonCds[j].size() < 24) {
+//                                 continue;
+//                             } 
+//                             localRegionId2taxId[localRegionId] = currentTaxId;
+//                             if (observedNonCDSKmerHashes.empty()) {
+//                                 seqIterator.translate(masked_nonCds[j]);
+//                                 seqIterator.computeMetamerF(masked_nonCds[j].c_str(), 0, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
+//                                 seqIterator.getMinHashList(observedNonCDSKmerHashes, masked_nonCds[j].c_str());
+//                             } else {
+//                                 int frame = selectReadingFrame(observedNonCDSKmerHashes, masked_nonCds[j].c_str(), seqIterator);
+//                                 if (frame < 3) { // Forward
+//                                     seqIterator.translate(masked_nonCds[j], frame);
+//                                     seqIterator.computeMetamerF(masked_nonCds[j].c_str(), frame, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
+//                                 } else { // Reverse complement
+//                                     reverseComplementStr.clear();
+//                                     reverseComplementStr = seqIterator.reverseComplement(masked_nonCds[j]);
+//                                     seqIterator.translate(reverseComplementStr, frame - 3);
+//                                     seqIterator.computeMetamerF(reverseComplementStr.c_str(), frame - 3, kmerBuffer, posToWrite, fnaSplits[i].speciesID, localRegionId, 0);
+//                                 }
+//                             }
+//                             localRegionId++;
+//                         }
+//                         if (par.maskMode) { delete[] maskedSeq;}
+//                         kseq_destroy(seq);
+//                     }
+//                     __sync_fetch_and_add(&processedSplitCnt, 1);
+// #ifdef OPENMP
+//                     cout << omp_get_thread_num() << " Processed " << i << "th splits (" << processedSplitCnt << ")" << endl;
+// #endif
+//                     munmap(fastaFile.data, fastaFile.fileSize + 1);
+//                 } else {
+//                     // Withdraw the reservation if the buffer is full.
+//                     tempChecker[i] = false;
+//                     __sync_fetch_and_add(&hasOverflow, 1);
+//                     __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
+//                 }
+//                 delete prodigal;
+//             }
+//         }
+//         // Write the local regionId2taxId to the global regionId2taxId
+// #pragma omp critical
+//         {
+//             for (auto & it : localRegionId2taxId) {
+//                 regionId2taxId[it.first] = it.second;
+//             }
+//         }
+//     }
+//     return 0;
+// }
+
+
+
 uint32_t FuncIndexer::getUniRefIdx(const string & cds, TaxID taxId) {
     std::set<char *> match_ids;
-    int len;
-    kaiju->classify_length(cds, match_ids, len);
+    kaiju->search(cds, match_ids);
+
     // // print match_ids
-    // cout <<">";
-    // for (auto & it : match_ids) {
-    //     cout << it << ",";
+    // if (!match_ids.empty()) {
+    //     cout <<">";
+    //     for (auto & it : match_ids) {
+    //         cout << it << ",";
+    //     }
+    //     cout << endl;
+    //     string seq;
+    //     kaiju->translate(cds, seq);
+    //     cout << seq << endl;
     // }
-    // cout << len << endl;
-    // string seq;
-    // kaiju->translate(cds, seq);
-    // cout << seq << endl;
     // return 0;
 
     if (match_ids.empty()) {
         return 0;
     } else if (match_ids.size() == 1) {
-        return uniRefId2Idx[*match_ids.begin()];
+        return stoi(*match_ids.begin());
+        // return uniRefId2Idx[*match_ids.begin()];
     } else {
         // Find the closest (the minimum number of edges in a taxonomy tree) UniRef ID
         map<TaxID, unordered_set<uint32_t>> taxId2UniRefIdx;
         int minDist = INT32_MAX;
         for (auto & it : match_ids) {
-            TaxID currUniRefTaxId = unirefIdx2taxId[uniRefId2Idx[it]];
+            uint32_t uniRefIdx = stoi(it);
+            TaxID currUniRefTaxId = uniRefTaxIds[uniRefIdx]; // Segment fault
             int dist = taxonomy->getDistance(currUniRefTaxId, taxId);
             if (dist < minDist) {
                 minDist = dist;
                 taxId2UniRefIdx.clear();
-                taxId2UniRefIdx[taxId].insert(uniRefId2Idx[it]);
+                taxId2UniRefIdx[taxId].insert(uniRefIdx);
             } else if (dist == minDist) {
-                taxId2UniRefIdx[taxId].insert(uniRefId2Idx[it]);
+                taxId2UniRefIdx[taxId].insert(uniRefIdx);
             } 
         }
 
@@ -532,18 +734,6 @@ uint32_t FuncIndexer::getUniRefIdx(const string & cds, TaxID taxId) {
 //     return ProtScore(protId, score / len);
 // }
 
-// inline bool FuncIndexer::sortTargetMetamerF(const TargetMetamerF & a, const TargetMetamerF & b){
-//     if (a.metamerF.metamer != b.metamerF.metamer) {
-//         return a.metamerF.metamer < b.metamerF.metamer;
-//     }
-//     if (a.speciesId != b.speciesId) {
-//         return a.speciesId < b.speciesId;
-//     }
-//     if (a.metamerF.protId != b.metamerF.protId) {
-//         return a.metamerF.protId < b.metamerF.protId;
-//     }
-//     return a.metamerF.seqId < b.metamerF.seqId;
-// }
 
 inline bool FuncIndexer::sortExtractedMetamer(const ExtractedMetamer & a, const ExtractedMetamer & b){
     if (a.metamer.metamer != b.metamer.metamer) {
@@ -559,26 +749,24 @@ inline bool FuncIndexer::sortExtractedMetamer(const ExtractedMetamer & a, const 
 }
 
 
-
-
-void FuncIndexer::loadUniRefId2Idx() {
-    // Each line: UniRef90_K0JAJ8 187136235
-    // string 2 uint32_t
-    ifstream uniRefId2IdxFile(unirefId2IdxFileName);
-    if (!uniRefId2IdxFile.is_open()) {
-        cerr << "Cannot open " << unirefId2IdxFileName << endl;
-        exit(1);
-    }
-    string line;
-    while (getline(uniRefId2IdxFile, line)) {
-        istringstream iss(line);
-        string protId;
-        uint32_t protIdx;
-        iss >> protId >> protIdx;
-        uniRefId2Idx[protId] = protIdx;
-    }
-    uniRefId2IdxFile.close();
-}
+// void FuncIndexer::loadUniRefId2Idx() {
+//     // Each line: UniRef90_K0JAJ8 187136235
+//     // string 2 uint32_t
+//     ifstream uniRefId2IdxFile(unirefId2IdxFileName);
+//     if (!uniRefId2IdxFile.is_open()) {
+//         cerr << "Cannot open " << unirefId2IdxFileName << endl;
+//         exit(1);
+//     }
+//     string line;
+//     while (getline(uniRefId2IdxFile, line)) {
+//         istringstream iss(line);
+//         string protId;
+//         uint32_t protIdx;
+//         iss >> protId >> protIdx;
+//         uniRefId2Idx[protId] = protIdx;
+//     }
+//     uniRefId2IdxFile.close();
+// }
 
 void FuncIndexer::reduceRedundancy(Buffer<ExtractedMetamer> &kmerBuffer, size_t * uniqeKmerIdx, size_t & uniqKmerCnt) {
     // Find the first index of garbage k-mer (UINT64_MAX)
@@ -1232,3 +1420,44 @@ void FuncIndexer::generateTaxId2SpeciesIdMap() {
 
 }
 
+int FuncIndexer::selectReadingFrame(unordered_set<uint64_t> & kmerSet, const string & seq) {
+    int k = 23;
+    if (kmerSet.size() == 0) {
+        char *kmer = (char *) malloc(sizeof(char) * (k + 1));
+        strncpy(kmer, seq.c_str(), k);
+        kmer[k] = '\0';
+        kmerSet.insert(XXH64(kmer, k, 0));
+        free(kmer);
+        return 0;
+    }
+
+    char *kmer = (char *) malloc(sizeof(char) * (k + 1));
+    kmer[k] = '\0';
+    
+    // 3 foward frames
+    for (int i = 0; i < 3; i++) {
+        strncpy(kmer, seq.c_str() + i, k);
+        uint64_t hash = XXH64(kmer, k, 0);
+        if (kmerSet.find(hash) != kmerSet.end()) {
+            free(kmer);
+            return i;
+        }
+    }
+
+    // 3 reverse frames
+    size_t seqLen = seq.size();
+    for (int i = 0; i < 3; i ++) {
+        // Reverse the sequence
+        for (int j = 0; j < k; j++) {
+            kmer[j] = seq[seqLen - j - 1 - i];
+        }
+        uint64_t hash = XXH64(kmer, k, 0);
+        if (kmerSet.find(hash) != kmerSet.end()) {
+            free(kmer);
+            return i + 3;
+        }
+    }
+
+    free(kmer);
+    return 0;
+}

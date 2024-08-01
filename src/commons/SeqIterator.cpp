@@ -585,44 +585,12 @@ int SeqIterator::computeMetamers(const char * seq, // Reference sequence
     return 0;
 }
 
-int SeqIterator::computeMetamerF(const char * seq, // Reference sequence
-                                 int frame, // 0-2
-                                 Buffer<TargetMetamerF> & kmerBuffer,
-                                 size_t & posToWrite,
-                                 uint32_t seqID,
-                                 int taxIdAtRank,
-                                 uint32_t cds) {
-    uint64_t tempKmer = 0;
-    uint32_t aaLen = aaFrames[0].size();
-    int checkN;
-    for (uint32_t kmerCnt = 0; kmerCnt < aaLen - kmerLength + 1; kmerCnt ++) {
-        tempKmer = 0;
-        checkN = 0;
-        for (uint32_t i = 0; i < kmerLength; i++) {
-            if (-1 == aaFrames[0][kmerCnt + i]) {
-                checkN = 1;
-                break;
-            }
-            tempKmer += aaFrames[0][kmerCnt + i] * powers[i];
-        }
-        if (checkN == 1) {
-            kmerBuffer.buffer[posToWrite] = {UINT64_MAX, UINT32_MAX, 0, taxIdAtRank, kmerCnt * 3};
-        } else {
-            addDNAInfo_TargetKmer(tempKmer, seq, kmerCnt, frame);
-            kmerBuffer.buffer[posToWrite] = {tempKmer, seqID, cds, taxIdAtRank, kmerCnt * 3};
-            // printKmerInDNAsequence(tempKmer); cout << endl;
-        }
-        posToWrite ++;
-    }
-    return 0;
-}
-
 int SeqIterator::computeMetamerF(const char * seq,                     // Reference sequence
                                  int frame,                            // 0-2
                                  Buffer<ExtractedMetamer> & kmerBuffer,
                                  size_t & posToWrite,
                                  int taxIdAtRank,
-                                 uint32_t protId,
+                                 uint32_t regionId,
                                  uint32_t unirefId)                    // Checker for CDS k-mers
 {
     uint64_t tempKmer = 0;
@@ -639,10 +607,10 @@ int SeqIterator::computeMetamerF(const char * seq,                     // Refere
             tempKmer += aaFrames[0][kmerCnt + i] * powers[i];
         }
         if (checkN == 1) {
-            kmerBuffer.buffer[posToWrite] = {UINT64_MAX, UINT32_MAX, taxIdAtRank, kmerCnt * 3, 0};
+            kmerBuffer.buffer[posToWrite] = {UINT64_MAX, UINT32_MAX, taxIdAtRank, 0};
         } else {
             addDNAInfo_TargetKmer(tempKmer, seq, kmerCnt, frame);
-            kmerBuffer.buffer[posToWrite] = {tempKmer, protId, taxIdAtRank, kmerCnt * 3, unirefId};
+            kmerBuffer.buffer[posToWrite] = {tempKmer, regionId, taxIdAtRank, unirefId};
             // printKmerInDNAsequence(tempKmer); cout << endl;
         }
         posToWrite ++;
@@ -1074,15 +1042,23 @@ void SeqIterator::maskLowComplexityRegions(const char *seq, char *maskedSeq, Pro
     }
 }
 
-void SeqIterator::devideToCdsAndNonCds(const char * seq,
+void SeqIterator::devideToCdsAndNonCds(const char *seq,
+                                       const char *maskedSeq,
                                        size_t seqLen,
-                                       const vector<CDSinfo> & cdsInfo,
-                                       vector<string> & cds, 
-                                       vector<string> & nonCds) {
+                                       const vector<CDSinfo> &cdsInfo, 
+                                       vector<string> &cds,
+                                       vector<string> &maskedCds,
+                                       vector<string> &nonCds,
+                                       vector<string> &maskedNonCds,
+                                       vector<int> & startCodonPos,
+                                       vector<int> & lengths) {
     string tmp;
+    string tmpMasked;
     for (size_t i = 0; i < cdsInfo.size(); i++) {
         tmp.clear();
         size_t locNum = cdsInfo[i].loc.size();
+        int currStartCodonPos = 0;
+        int extend = 0;
         for (size_t j = 0; j < locNum; j++) {
             // Extend 21 bases to both sides for k-mer from CDS boudaries
             size_t begin = cdsInfo[i].loc[j].first - 1;
@@ -1091,6 +1067,8 @@ void SeqIterator::devideToCdsAndNonCds(const char * seq,
                 int k = 0;
                 while (k < 7 && begin >= 3) {
                     begin -= 3;
+                    currStartCodonPos += 3;
+                    extend += 3;
                     k++;
                 }
             }
@@ -1098,17 +1076,22 @@ void SeqIterator::devideToCdsAndNonCds(const char * seq,
                 int k = 0;
                 while (k < 7 && end + 3 < seqLen) {
                     end += 3;
+                    extend += 3;
                     k++;
                 }
             }    
-            tmp += string(seq + begin, end - begin + 1);    
+            tmp += string(seq + begin, end - begin + 1);
+            tmpMasked += string(maskedSeq + begin, end - begin + 1);    
         }
-
+        startCodonPos.push_back(currStartCodonPos);
+        lengths.push_back(tmp.length() - extend);
         // Reverse complement if needed
         if (cdsInfo[i].isComplement) {
             cds.emplace_back(reverseComplement(tmp));
+            maskedCds.emplace_back(reverseComplement(tmpMasked));
         } else {
-            cds.emplace_back(tmp);   
+            cds.emplace_back(tmp);
+            maskedCds.emplace_back(tmpMasked);   
         }
     }
 
@@ -1133,57 +1116,64 @@ void SeqIterator::devideToCdsAndNonCds(const char * seq,
         }
         if (len > 32) {
             nonCds.emplace_back(string(seq + i - len, len));
+            maskedNonCds.emplace_back(string(maskedSeq + i - len, len));
         }
         i ++;
     }
 }
 
-void SeqIterator::devideToCdsAndNonCds(const char * seq,
+void SeqIterator::devideToCdsAndNonCds(const char *seq,
+                                       const char *maskedSeq,
                                        size_t seqLen,
-                                       ProdigalWrapper * prodigal,
-                                       vector<string> & cds, 
-                                       vector<string> & nonCds) {
+                                       ProdigalWrapper * prodigal, 
+                                       vector<string> &cds,
+                                       vector<string> &maskedCds,
+                                       vector<string> &nonCds, 
+                                       vector<string> &maskedNonCds,
+                                       vector<int> & startCodonPos,
+                                       vector<int> & lengths) {
     if (prodigal->ng == 0) {
         nonCds.emplace_back(string(seq));
         return;
     }
 
     vector<pair<size_t, size_t>> cdsLoc;
-
+    string tmp;
     for (int geneCnt = 0; geneCnt < prodigal->ng; geneCnt++) {
-       if (prodigal->nodes[prodigal->genes[geneCnt].start_ndx].strand == 1) {
-            size_t begin = prodigal->genes[geneCnt].begin - 1;
-            size_t end = prodigal->genes[geneCnt].end - 1;
-            cdsLoc.emplace_back(begin, end);
-            // int k = 0;
-            // while (k < 7 && begin >= 3) {
-            //     begin -= 3;
-            //     k++;
-            // }
-            // k = 0;
-            
-            // while (k < 7 && end + 3 < seqLen) {
-            //     end += 3;
-            //     k++;
-            // }
+        tmp.clear();
+        int currStartCodonPos = 0;
+        int extend = 0;
+
+        size_t begin = prodigal->genes[geneCnt].begin - 1;
+        size_t end = prodigal->genes[geneCnt].end - 1;
+        cdsLoc.emplace_back(begin, end);
+        int k = 0;
+
+        while (k < 7 && begin >= 3) {
+            begin -= 3;
+            currStartCodonPos += 3;
+            extend += 3;
+            k++;
+        }
+        k = 0;
+
+        while (k < 7 && end + 3 < seqLen) {
+            end += 3;
+            extend += 3;
+            k++;
+        }
+
+        if (prodigal->nodes[prodigal->genes[geneCnt].start_ndx].strand == 1) {
             cds.emplace_back(string(seq + begin, end - begin + 1));
+            maskedCds.emplace_back(string(maskedSeq + begin, end - begin + 1));
         } else {
-            size_t begin = prodigal->genes[geneCnt].begin - 1;
-            size_t end = prodigal->genes[geneCnt].end - 1;
-            cdsLoc.emplace_back(begin, end);
-            // int k = 0;
-            // while (k < 7 && begin >= 3) {
-            //     begin -= 3;
-            //     k++;
-            // }
-            // k = 0;
-            // while (k < 7 && end + 3 < seqLen) {
-            //     end += 3;
-            //     k++;
-            // }
             string tmp = string(seq + begin, end - begin + 1);
             cds.emplace_back(reverseComplement(tmp));
+            tmp = string(maskedSeq + begin, end - begin + 1);
+            maskedCds.emplace_back(reverseComplement(tmp));
         }
+        startCodonPos.push_back(currStartCodonPos);
+        lengths.push_back(cds.back().length() - extend);
     }
 
     // Get non-CDS that are not in the CDS list
@@ -1205,6 +1195,7 @@ void SeqIterator::devideToCdsAndNonCds(const char * seq,
         }
         if (len > 32) {
             nonCds.emplace_back(string(seq + i - len, len));
+            maskedNonCds.emplace_back(string(maskedSeq + i - len, len));
         }
         i ++;
     }

@@ -82,7 +82,7 @@ int workerNum=0;
 #define UNINIT 0
 #define FILLED 1
 #define SORTED 2
-#define BWT 3
+#define BWT_MACRO 3
 #define DONE 4
 #define SAFILE 6
 #define PROCESS 5
@@ -508,10 +508,10 @@ void bwtBucket(Bucket *b) {
   int k;
 
   if (b->len) {
-    b->bwt = malloc(b->len);
+    b->bwt = (char*) malloc(b->len);
     for (k=0; k<b->len; ++k) b->bwt[k]=*(b->sa[k]-1);
   }
-  b->status = BWT;
+  b->status = BWT_MACRO;
 }
 
 
@@ -588,7 +588,7 @@ void *BucketSorter(void *x) {
 
 
     /* Write SA checkpoints */
-    if ( bs->sawrite >=0 && bs->sawrite < bs->nbuckets && bs->b[bs->sawrite]->status == BWT ) {
+    if ( bs->sawrite >=0 && bs->sawrite < bs->nbuckets && bs->b[bs->sawrite]->status == BWT_MACRO ) {
       b=bs->b[bs->sawrite];
       b->status=PROCESS;
       pthread_mutex_unlock(&(bs->lock));
@@ -885,14 +885,14 @@ char *read_alphabet(char *alphabet, char term) {
 
   if (!term) term='*';
 
-  if (strcmp(alphabet,"DNA")==0) { l=6; a = malloc(l+2); strcpy(a+1,"ACGTN"); }
+  if (strcmp(alphabet,"DNA")==0) { l=6; a = (char*) malloc(l+2); strcpy(a+1,"ACGTN"); }
   else {
-    if (strcmp(alphabet,"RNA")==0) { l=6; a = malloc(l+2); strcpy(a+1,"ACGUN"); }
+    if (strcmp(alphabet,"RNA")==0) { l=6; a = (char*) malloc(l+2); strcpy(a+1,"ACGUN"); }
     else {
-      if (strcmp(alphabet,"protein")==0) { l=22; a = malloc(l+2); strcpy(a+1,"ACDEFGHIKLMNPQRSTVWYX"); }
+      if (strcmp(alphabet,"protein")==0) { l=22; a = (char*) malloc(l+2); strcpy(a+1,"ACDEFGHIKLMNPQRSTVWYX"); }
       else {
 	l = 1+strlen(alphabet);
-	a = malloc(l+2);
+	a = (char*) malloc(l+2);
 	strcpy(a+1,alphabet);
       }
     }
@@ -919,181 +919,181 @@ void print_time(char *text) {
 
 
 
-int main(int argc, char **argv) {
-  long approx_seqlen, bwtlen;
-  int alen, i, j, k;
-  char *alphabet, *filename;
-  AlphabetStruct *astruct;
-  FILE *fp;
-  FILE *bwtfile, *sa_file;
-  int wlen, nseq;
-  SEQstruct *ss;
-  suffixArray *sa_struct;
-  int padding=10;          // The zero padding between sequences. Needs to be able to hold seq order
-                           // and word length. 10 is more than enough for the first.
+// int main(int argc, char **argv) {
+//   long approx_seqlen, bwtlen;
+//   int alen, i, j, k;
+//   char *alphabet, *filename;
+//   AlphabetStruct *astruct;
+//   FILE *fp;
+//   FILE *bwtfile, *sa_file;
+//   int wlen, nseq;
+//   SEQstruct *ss;
+//   suffixArray *sa_struct;
+//   int padding=10;          // The zero padding between sequences. Needs to be able to hold seq order
+//                            // and word length. 10 is more than enough for the first.
 
-  print_time(NULL);
+//   print_time(NULL);
 
-  /* Parsing options and arguments */
-  OPT_read_cmdline(opt_struct, argc, argv);
-  if (help) { OPT_help(opt_struct); exit(0); }
-  OPT_print_vars(stderr, opt_struct, "# ", 0);
+//   /* Parsing options and arguments */
+//   OPT_read_cmdline(opt_struct, argc, argv);
+//   if (help) { OPT_help(opt_struct); exit(0); }
+//   OPT_print_vars(stderr, opt_struct, "# ", 0);
 
-  /* Input file and approximate sequence length */
-  if (length>=1.e-6) approx_seqlen = (long)( (length+0.1)*1.e6 );
-  else approx_seqlen = 0;
-  if (infilename) {
-    fp = fopen(infilename,"r");
-    if (!fp) ERRORs("mkbwt: Can't open file %s\n",infilename, 1);
-  }
-  else {
-    if (!approx_seqlen) ERROR("mkbwt: You need to specify length (-l) in MB, when sequences are read on stdin",2);
-    fp = stdin;
-  }
+//   /* Input file and approximate sequence length */
+//   if (length>=1.e-6) approx_seqlen = (long)( (length+0.1)*1.e6 );
+//   else approx_seqlen = 0;
+//   if (infilename) {
+//     fp = fopen(infilename,"r");
+//     if (!fp) ERRORs("mkbwt: Can't open file %s\n",infilename, 1);
+//   }
+//   else {
+//     if (!approx_seqlen) ERROR("mkbwt: You need to specify length (-l) in MB, when sequences are read on stdin",2);
+//     fp = stdin;
+//   }
 
-  /* Check if output file name is given */
-  if (!outfilename) {
-    if (!infilename) ERROR("mkbwt: You need to specify name for output file if sequences are read on stdin",2);
-    outfilename = infilename;
-  }
+//   /* Check if output file name is given */
+//   if (!outfilename) {
+//     if (!infilename) ERROR("mkbwt: You need to specify name for output file if sequences are read on stdin",2);
+//     outfilename = infilename;
+//   }
 
-  /* First set alphabet (allocated in the option parsing code) */
-  alphabet = read_alphabet(Alphabet,term[0]);
-  astruct = alloc_AlphabetStruct(alphabet, caseSens, revComp);
-  alen = astruct->len;
+//   /* First set alphabet (allocated in the option parsing code) */
+//   alphabet = read_alphabet(Alphabet,term[0]);
+//   astruct = alloc_AlphabetStruct(alphabet, caseSens, revComp);
+//   alen = astruct->len;
 
-  /* Set word length */
-  wlen = 2;
-  if (alen<=16) wlen = 3;
-  if (alen<=8)  wlen = 4;
-  if (padding<wlen) padding=wlen;
+//   /* Set word length */
+//   wlen = 2;
+//   if (alen<=16) wlen = 3;
+//   if (alen<=8)  wlen = 4;
+//   if (padding<wlen) padding=wlen;
 
-  /* Read sequences from fasta file */
-  ss = readFasta(fp, approx_seqlen, astruct->trans, astruct->comp, 0, padding);
-  if (infilename) fclose(fp);
+//   /* Read sequences from fasta file */
+//   ss = readFasta(fp, approx_seqlen, astruct->trans, astruct->comp, 0, padding);
+//   if (infilename) fclose(fp);
 
-  print_time("Sequences read");
+//   print_time("Sequences read");
 
-  fprintf(stderr,"SLEN %ld\nNSEQ %d\nALPH %s",ss->len,ss->sort_order,alphabet);
-  if (astruct->comp) fprintf(stderr," (%s)",astruct->comp);
-  fprintf(stderr,"\n");
+//   fprintf(stderr,"SLEN %ld\nNSEQ %d\nALPH %s",ss->len,ss->sort_order,alphabet);
+//   if (astruct->comp) fprintf(stderr," (%s)",astruct->comp);
+//   fprintf(stderr,"\n");
 
-  /* ss->next points to the first seq. Other fields of ss contains other info */
-#ifdef DEBUG2
-  print_seq(ss->start, ss->start, 0, ss->len, 50, alphabet, alen, stderr);
-#endif
+//   /* ss->next points to the first seq. Other fields of ss contains other info */
+// #ifdef DEBUG2
+//   print_seq(ss->start, ss->start, 0, ss->len, 50, alphabet, alen, stderr);
+// #endif
 
-  /* Open files */
-  int l=strlen(outfilename);
-  filename = (char *)malloc((l+10)*sizeof(char));
-  strcpy(filename,outfilename);
-  strcpy(filename+l,".bwt");
-  bwtfile = fopen(filename,"w");
-  strcpy(filename+l,".sa");
-  sa_file = fopen(filename,"w");
-  free(filename);
+//   /* Open files */
+//   int l=strlen(outfilename);
+//   filename = (char *)malloc((l+10)*sizeof(char));
+//   strcpy(filename,outfilename);
+//   strcpy(filename+l,".bwt");
+//   bwtfile = fopen(filename,"w");
+//   strcpy(filename+l,".sa");
+//   sa_file = fopen(filename,"w");
+//   free(filename);
 
-  // Alloc and init suffix array
-  sa_struct = init_suffixArray(ss, checkpoint);
+//   // Alloc and init suffix array
+//   sa_struct = init_suffixArray(ss, checkpoint);
 
-  DEBUG1LINE(fprintf(stderr,"SA initiated\n"));
+//   DEBUG1LINE(fprintf(stderr,"SA initiated\n"));
 
-  bwtlen=sa_struct->len;
-  nseq=sa_struct->nseq;
+//   bwtlen=sa_struct->len;
+//   nseq=sa_struct->nseq;
 
-  // Write header for bwtfile
-  fwrite(&bwtlen,sizeof(IndexType),1,bwtfile);
-  fwrite(&nseq,sizeof(int),1,bwtfile);
-  fwrite(&alen,sizeof(int),1,bwtfile);
-  fwrite(alphabet,sizeof(char),alen,bwtfile);
+//   // Write header for bwtfile
+//   fwrite(&bwtlen,sizeof(IndexType),1,bwtfile);
+//   fwrite(&nseq,sizeof(int),1,bwtfile);
+//   fwrite(&alen,sizeof(int),1,bwtfile);
+//   fwrite(alphabet,sizeof(char),alen,bwtfile);
 
-  DEBUG1LINE(fprintf(stderr,"BWT header written\n"));
+//   DEBUG1LINE(fprintf(stderr,"BWT header written\n"));
 
-  /* Sorting sequence terminations
+//   /* Sorting sequence terminations
 
-     Seq terminations can in principle be sorted anyway you like.
-     Two methods are implemented: sorted as read or sorted reverse.
-     If they are reverse sorted, the BWT will be more compressible.
+//      Seq terminations can in principle be sorted anyway you like.
+//      Two methods are implemented: sorted as read or sorted reverse.
+//      If they are reverse sorted, the BWT will be more compressible.
 
-     Sorting is implemented by extending the sequence with words that
-     sort in the required sort order.
-   */
-  if (revsort) revSortSeqs(ss);
-  else readOrder(ss);
-  /* Encode ordering in sequence */
-  encodeOrder(ss,alen);
+//      Sorting is implemented by extending the sequence with words that
+//      sort in the required sort order.
+//    */
+//   if (revsort) revSortSeqs(ss);
+//   else readOrder(ss);
+//   /* Encode ordering in sequence */
+//   encodeOrder(ss,alen);
 
-  DEBUG1LINE(fprintf(stderr,"Order encoded\n"));
+//   DEBUG1LINE(fprintf(stderr,"Order encoded\n"));
 
-  /* Alloc bucket stack */
-  BucketStack *wbs = initBucketStack(alen,alphabet,ss->len,ss->start,bwtfile, sa_file, sa_struct, wlen);
+//   /* Alloc bucket stack */
+//   BucketStack *wbs = initBucketStack(alen,alphabet,ss->len,ss->start,bwtfile, sa_file, sa_struct, wlen);
 
-  DEBUG1LINE(fprintf(stderr,"Bucket stack initiated\n"));
+//   DEBUG1LINE(fprintf(stderr,"Bucket stack initiated\n"));
 
-  /* Number of buckets to fill. Ad hoc at the moment... */
-  wbs->nfill = wbs->nbuckets/20+nThreads;
+//   /* Number of buckets to fill. Ad hoc at the moment... */
+//   wbs->nfill = wbs->nbuckets/20+nThreads;
 
-  /* Start nThreads-1 to begin with */
-  pthread_t *worker = (pthread_t *)malloc(nThreads*sizeof(pthread_t));
-  for (i=0; i<nThreads-1; ++i) {
-    pthread_create(&(worker[i]), NULL, BucketSorter, wbs);
-  }
+//   /* Start nThreads-1 to begin with */
+//   pthread_t *worker = (pthread_t *)malloc(nThreads*sizeof(pthread_t));
+//   for (i=0; i<nThreads-1; ++i) {
+//     pthread_create(&(worker[i]), NULL, BucketSorter, wbs);
+//   }
 
-  /* Do other work in main thread independent of SA sorting */
+//   /* Do other work in main thread independent of SA sorting */
 
-  /* Do the sorting of seqs */
-  SortSeqs(ss, sa_struct);
-  DEBUG1LINE(fprintf(stderr,"Sequences sorted\n"));
+//   /* Do the sorting of seqs */
+//   SortSeqs(ss, sa_struct);
+//   DEBUG1LINE(fprintf(stderr,"Sequences sorted\n"));
 
-  /* Write first part of BWT */
-  write_term(ss, sa_struct, bwtfile);
-  DEBUG1LINE(fprintf(stderr,"BWT for term chars written\n"));
+//   /* Write first part of BWT */
+//   write_term(ss, sa_struct, bwtfile);
+//   DEBUG1LINE(fprintf(stderr,"BWT for term chars written\n"));
 
-  //sa_struct->seqTermOrder = revSortSeqs(ss, bwtfile);
+//   //sa_struct->seqTermOrder = revSortSeqs(ss, bwtfile);
 
-  /* Write SA header */
-  write_suffixArray_header(sa_struct, sa_file);
-  free(sa_struct->seqTermOrder); sa_struct->seqTermOrder=NULL;
-  free(sa_struct->ids); sa_struct->ids = NULL;
-  DEBUG1LINE(fprintf(stderr,"SA header written\n"));
+//   /* Write SA header */
+//   write_suffixArray_header(sa_struct, sa_file);
+//   free(sa_struct->seqTermOrder); sa_struct->seqTermOrder=NULL;
+//   free(sa_struct->ids); sa_struct->ids = NULL;
+//   DEBUG1LINE(fprintf(stderr,"SA header written\n"));
 
-  /* Allow for writing of other buckets */
-  wbs->sawrite = wbs->bwtwrite = 0;
+//   /* Allow for writing of other buckets */
+//   wbs->sawrite = wbs->bwtwrite = 0;
 
-  /* Start last thread */
-  pthread_create(&(worker[nThreads-1]), NULL, BucketSorter, wbs);
+//   /* Start last thread */
+//   pthread_create(&(worker[nThreads-1]), NULL, BucketSorter, wbs);
 
-  /* Join workers */
-  for (i=0; i<nThreads; ++i) {
-    DEBUG1LINE(fprintf(stderr,"Join worker %d\n",i));
-    pthread_join(worker[i], NULL);
-  }
-  free(worker);
+//   /* Join workers */
+//   for (i=0; i<nThreads; ++i) {
+//     DEBUG1LINE(fprintf(stderr,"Join worker %d\n",i));
+//     pthread_join(worker[i], NULL);
+//   }
+//   free(worker);
 
-  /* Print last */
-  while ( wbs->bwtwrite < wbs->nbuckets ) {
-    Bucket *b = wbs->b[wbs->bwtwrite];
-    DEBUG1LINE(fprintf(stderr,"Finish bucket for word %s\n",b->word));
-    if (b->status == BWT ) {
-      /* Write SA checkpoints */
-      write_suffixArray_checkpoints(b->sa, b->start, b->len, wbs->sa_struct, wbs->safile);
-      /* free SA */
-      free_sa(b);
-    }
-    /* Write BWT */
-    bwtWriteBucket(b,wbs->bwtfile);
-    ++(wbs->bwtwrite);
-  }
+//   /* Print last */
+//   while ( wbs->bwtwrite < wbs->nbuckets ) {
+//     Bucket *b = wbs->b[wbs->bwtwrite];
+//     DEBUG1LINE(fprintf(stderr,"Finish bucket for word %s\n",b->word));
+//     if (b->status == BWT ) {
+//       /* Write SA checkpoints */
+//       write_suffixArray_checkpoints(b->sa, b->start, b->len, wbs->sa_struct, wbs->safile);
+//       /* free SA */
+//       free_sa(b);
+//     }
+//     /* Write BWT */
+//     bwtWriteBucket(b,wbs->bwtfile);
+//     ++(wbs->bwtwrite);
+//   }
 
-  fprintf(stderr,"SA NCHECK=%ld\n",sa_struct->ncheck);
+//   fprintf(stderr,"SA NCHECK=%ld\n",sa_struct->ncheck);
 
-  fclose(bwtfile);
-  fclose(sa_file);
+//   fclose(bwtfile);
+//   fclose(sa_file);
 
-  print_time("Sorting done, ");
+//   print_time("Sorting done, ");
 
-  /* Free a lot of stuf.... */
+//   /* Free a lot of stuf.... */
 
-}
+// }
 
 

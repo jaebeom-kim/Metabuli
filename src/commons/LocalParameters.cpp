@@ -352,6 +352,8 @@ LocalParameters::LocalParameters() :
     build_functional.push_back(&NCBI2GTDB);
     build_functional.push_back(&KAIJU_MODE);
 
+    build_kaiju.push_back(&PARAM_THREADS);
+
 
     //classify
     classify.push_back(&PARAM_THREADS);

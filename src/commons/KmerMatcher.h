@@ -121,12 +121,12 @@ public:
   bool matchMetamers(Buffer<QueryKmer> *queryKmerBuffer,
                      Buffer<MatchF> *matchBuffer);
 
-  bool matchAAKmers(Buffer<ExtractedMetamer> *queryKmerBuffer,
-                    Buffer<ProtMatch> *matchBuffer,
-                    const unordered_map<uint32_t, int> & unirefIdx2taxId,
-                    const unordered_map<TaxID, unordered_set<TaxID>> & spTaxId2UniRefTaxIds,
-                    const unordered_map<int, int> & ncbi2gtdb,
-                    const string &db = string());
+  // bool matchAAKmers(Buffer<ExtractedMetamer> *queryKmerBuffer,
+  //                   Buffer<ProtMatch> *matchBuffer,
+  //                   const unordered_map<uint32_t, int> & unirefIdx2taxId,
+  //                   const unordered_map<TaxID, unordered_set<TaxID>> & spTaxId2UniRefTaxIds,
+  //                   const unordered_map<int, int> & ncbi2gtdb,
+  //                   const string &db = string());
                 
   void sortMatches(Buffer<Match> *matchBuffer);
 

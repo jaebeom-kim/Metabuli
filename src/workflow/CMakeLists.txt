@@ -4,6 +4,6 @@ set(workflow_source_files
         workflow/add_to_library.cpp
         workflow/build.cpp
         workflow/filter.cpp
-        workflow/build_uniref.cpp
+        workflow/build_kaiju.cpp
         workflow/build_func.cpp
         PARENT_SCOPE)

@@ -62,13 +62,16 @@ set(BWT_SOURCES
     bwt/compactfmi.c
     bwt/sequence.c
     bwt/suffixArray.c
+    bwt/multikeyqsort.c
 )
 
 set(BWT_HEADERS
     bwt/bwt.h
     bwt/compactfmi.h
     bwt/sequence.h
-    bwt/suffixArray.h)
+    bwt/suffixArray.h
+    bwt/multikeyqsort.h
+)
 
 set(KAIJU_SOURCES
     ReadItem.cpp

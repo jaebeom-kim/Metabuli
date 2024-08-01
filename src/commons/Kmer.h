@@ -157,21 +157,11 @@ struct DeltaIdxOffset{
 };
 
 struct ExtractedMetamer {
-    ExtractedMetamer(uint64_t metamer, uint32_t id, TaxID speciesId, uint32_t cdsPos, uint32_t unirefId) 
-     : metamer(metamer, id), speciesId(speciesId), cdsPos(cdsPos), unirefId(unirefId) {}
+    ExtractedMetamer(uint64_t metamer, uint32_t id, TaxID speciesId, uint32_t unirefId) 
+     : metamer(metamer, id), speciesId(speciesId), unirefId(unirefId) {}
     Metamer metamer;
     TaxID speciesId;
-    uint32_t cdsPos;
     uint32_t unirefId;
 };
-
-struct TargetMetamerF { // Deprecated
-    TargetMetamerF(uint64_t metamer, uint32_t seqId, uint32_t protId, TaxID taxId, uint32_t cdsPos) 
-        : metamerF(metamer, seqId, protId), speciesId(taxId), cdsPos(cdsPos) {}
-    MetamerF metamerF;
-    TaxID speciesId;
-    uint32_t cdsPos; // The position of the metamer in the CDS
-};
-
 
 #endif //ADKMER3_KMER_H

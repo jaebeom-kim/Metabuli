@@ -34,6 +34,8 @@ public:
     std::vector<MMseqsParameter*> databaseReport;
     std::vector<MMseqsParameter*> mapping2taxon;
 
+    std::vector<MMseqsParameter*> build_kaiju;
+
     // Superkingdom taxonomy id
     PARAMETER(VIRUS_TAX_ID)
     PARAMETER(BACTERIA_TAX_ID)

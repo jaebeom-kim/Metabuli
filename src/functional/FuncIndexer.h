@@ -51,6 +51,11 @@ protected:
     string unirefIdx2taxIdFileName;
     string ncbi2gtdbFileName;
 
+    // Inputs (from Kaiju)
+    string kaijuFmiFileName;
+    string kaijuUniRefIdsFileName;
+    string kaijuUniRefTaxIdsFileName;
+
     // Outputs
     string regionId2taxIdFileName;
     string regionId2unirefIdFileName;
@@ -65,11 +70,10 @@ protected:
 
     // Required to annoate with UniRef
     KaijuWrapper *kaiju;
-    std::unordered_map<string, uint32_t> uniRefId2Idx;
-    std::unordered_map<uint32_t, TaxID> unirefIdx2taxId;
+    std::vector<string> uniRefIds;
+    std::vector<TaxID> uniRefTaxIds;
     std::unordered_set<TaxID> speciesTaxIds;
     std::unordered_map<TaxID, TaxID> ncbi2gtdb;
-
 
     // Results
     std::unordered_map<uint32_t, TaxID> regionId2taxId;
@@ -80,9 +84,8 @@ protected:
 
     std::unordered_map<uint32_t, QueryCodingRegionInfo> queryCodingRegionMap;
 
-
-    void loadUniRefId2Idx();
-    void loadUniRefIdx2TaxId();
+    // void loadUniRefId2Idx();
+    // void loadUniRefIdx2TaxId();
 
     void makeSpTaxId2UniRefTaxIds();
 
@@ -92,11 +95,6 @@ protected:
                                 bool * tempChecker,
                                 size_t &processedSplitCnt,
                                 uint32_t & nonCdsIdx);
-    
-    size_t fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &kmerBuffer,
-                                            bool * tempChecker,
-                                            size_t &processedSplitCnt,
-                                            uint32_t & nonCdsIdx);
 
     // size_t fillTargetKmerBufferUsingProdigal(Buffer<ExtractedMetamer> &kmerBuffer,
     //                                          bool * tempChecker,
@@ -148,11 +146,14 @@ protected:
 
     void generateTaxId2SpeciesIdMap();
 
+    int selectReadingFrame(unordered_set<uint64_t> & kmerSet, const string & seq);
+
     
 public:
     FuncIndexer(const LocalParameters &par);
     ~FuncIndexer();
     void createIndex();
+    // std::unordered_map<string, uint32_t> & getUniRefId2Idx() { return uniRefId2Idx; }
 
 };
 #endif //METABULI_PROTEINDBINDEXER_H

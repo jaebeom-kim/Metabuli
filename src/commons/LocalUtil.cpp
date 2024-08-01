@@ -78,3 +78,75 @@ void LocalUtil::loadMappingFile_text(const std::string &fileName, std::unordered
 //     }
 //     return std::stoi(accession.substr(3));
 // }
+
+void LocalUtil::exportVector(const std::vector<std::string>& vec, const std::string& filename) {
+    std::ofstream ofs(filename, std::ios::binary);
+    if (!ofs) {
+        std::cerr << "Could not open " << filename << " for writing." << std::endl;
+        return;
+    }
+
+    // Write the number of strings
+    size_t size = vec.size();
+    ofs.write(reinterpret_cast<const char*>(&size), sizeof(size));
+
+    // Write each string
+    for (const auto& str : vec) {
+        size_t length = str.size();
+        ofs.write(reinterpret_cast<const char*>(&length), sizeof(length));
+        ofs.write(str.data(), length);
+    }
+}
+
+
+ void LocalUtil::importVector(const std::string& filename, std::vector<std::string> & vec) {
+    std::ifstream ifs(filename, std::ios::binary);
+    if (!ifs) {
+        std::cerr << "Could not open " << filename << " for reading." << std::endl;
+        return;
+    }
+    // Read the number of strings
+    size_t size;
+    ifs.read(reinterpret_cast<char*>(&size), sizeof(size));
+    vec.resize(size);
+
+    // Read each string
+    for (size_t i = 0; i < size; ++i) {
+        size_t length;
+        ifs.read(reinterpret_cast<char*>(&length), sizeof(length));
+        vec[i].resize(length);
+        ifs.read(&vec[i][0], length);
+    }
+}
+
+void LocalUtil::exportVector(const std::vector<int>& vec, const std::string& filename) {
+    std::ofstream ofs(filename, std::ios::binary);
+    if (!ofs) {
+        std::cerr << "Could not open " << filename << " for writing." << std::endl;
+        return;
+    }
+
+    // Write the number of integers
+    size_t size = vec.size();
+    ofs.write(reinterpret_cast<const char*>(&size), sizeof(size));
+
+    // Write the integers
+    ofs.write(reinterpret_cast<const char*>(vec.data()), size * sizeof(int));
+}
+
+
+void LocalUtil::importVector(const std::string& filename, std::vector<int>& vec) {
+    std::ifstream ifs(filename, std::ios::binary);
+    if (!ifs) {
+        std::cerr << "Could not open " << filename << " for reading." << std::endl;
+        return;
+    }
+
+    // Read the number of integers
+    size_t size;
+    ifs.read(reinterpret_cast<char*>(&size), sizeof(size));
+    vec.resize(size);
+
+    // Read the integers
+    ifs.read(reinterpret_cast<char*>(vec.data()), size * sizeof(int));
+}
