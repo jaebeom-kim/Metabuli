@@ -1,25 +1,37 @@
 #include "KaijuWrapper.h"
 #include "Config.hpp"
+#include "LocalUtil.h"
+#include "NcbiTaxonomy.h"
+#include <iostream>
+extern "C" {
 #include "bwt/bwt.h"
+// #include "bwt/mkbwt_vars.h"
+#include "bwt/mkbwt.c"
+#include "bwt/readFasta.c"
+#include "bwt/multikeyqsort.h"
 
-KaijuWrapper::KaijuWrapper(const LocalParameters & par) : par(par) {
+}
+// #include "bwt/bwt.h"
+
+
+KaijuWrapper::KaijuWrapper(
+	const LocalParameters & par,
+	std::vector<std::string> & unirefIds,
+	std::vector<TaxID> & unirefTaxIds,
+	std::string fmi_file_name) : 
+	par(par), unirefIds(unirefIds), unirefTaxIds(unirefTaxIds), unirefIdx(0), fmi_file_name(fmi_file_name) {
     this->config = new Config();
 	config->SEG = false;
+	unirefIds.push_back("unclassified");
+	unirefTaxIds.push_back(0);
 
     if (par.kaijuMode == "mem") {
         config->mode = MEM;
         config->use_Evalue = false;
     } else if (par.kaijuMode == "greedy") {
         config->mode = GREEDY;
-    } else {
-        std::cerr << "Unknown mode: " << par.kaijuMode << std::endl;
-        exit(1);
-    }
+    } 
 	
-	std::cout << "Loading Kaiju FMI index...";
-    readFMI(par.filenames[3], config);
-	std::cout << "done" << std::endl;
-    config->init();
     blosum_subst = {
 					{'A',{'S', 'V', 'T', 'G', 'C', 'P', 'M', 'K', 'L', 'I', 'E', 'Q', 'R', 'Y', 'F', 'H', 'D', 'N', 'W' }},
 					{'R',{'K', 'Q', 'H', 'E', 'N', 'T', 'S', 'M', 'A', 'Y', 'P', 'L', 'G', 'D', 'V', 'W', 'F', 'I', 'C' }},
@@ -195,7 +207,16 @@ KaijuWrapper::KaijuWrapper(const LocalParameters & par) : par(par) {
 }
 
 KaijuWrapper::~KaijuWrapper() {
-    delete config;
+	if (!fmi_file_name.empty()) {    
+		delete config;
+	}
+}
+
+void KaijuWrapper::loadFMI(const std::string & fmi_file_name) {
+	std::cout << "Loading Kaiju FMI index ... ";
+    readFMI(fmi_file_name, this->config);	
+	std::cout << "done" << std::endl;
+    config->init();
 }
 
 void KaijuWrapper::translate(const std::string & cds, std::string & aa) {
@@ -210,12 +231,20 @@ void KaijuWrapper::translate(const std::string & cds, std::string & aa) {
 	aa[0] = 'M'; // start codon
 }
 
-void KaijuWrapper::classify_length(std::string cds, std::set<char *> & match_ids, int & maxLength) {
+void KaijuWrapper::search(std::string cds, std::set<char *> & match_ids) {
+	if(config->mode == GREEDY) {
+		classify_greedyblosum(cds, match_ids);
+	}
+	else {
+		classify_length(cds, match_ids);
+	}
+}
+
+void KaijuWrapper::classify_length(std::string cds, std::set<char *> & match_ids) {
 	std::string sequence;
 	translate(cds, sequence);
 	const unsigned int length = (unsigned int)sequence.length();
-    // if(config->debug) { std::cerr << "Searching fragment "<< fragment <<  " (" << length << ")" << "\n"; }
-	char * seq = new char[length+1];
+    char * seq = new char[length+1];
 	std::strcpy(seq, sequence.c_str());
     translate2numbers((uchar *)seq, length, config->astruct);
     
@@ -225,8 +254,6 @@ void KaijuWrapper::classify_length(std::string cds, std::set<char *> & match_ids
 		if(config->debug) std::cerr << "No match for this fragment." << "\n";
         return;
     }
-	maxLength = si->ql;
-
     match_ids.clear();
     ids_from_SI_recursive(si, match_ids);
     recursive_free_SI(si);
@@ -415,6 +442,18 @@ void KaijuWrapper::ids_from_SI_recursive(SI *si, std::set<char *> & match_ids){
 	} // end while all SI with same length    
 }
 
+void KaijuWrapper::ids_from_SI(SI *si, std::set<char *> & match_ids) {
+	IndexType k, pos;
+	int iseq;
+	for (k=si->start; k<si->start+si->len; ++k) {
+		if(match_ids.size() > config->max_match_ids) {
+			break;
+		}
+		get_suffix(config->fmi, config->bwt->s, k, &iseq, &pos);
+		match_ids.insert(config->bwt->s->ids[iseq]);
+	}
+}
+
 unsigned int KaijuWrapper::calcScore(const std::string & s, size_t start, size_t len, int diff) {
 	int score = 0;
 	for(size_t i=start; i < start+len; ++i) {
@@ -516,24 +555,13 @@ Fragment * KaijuWrapper::getNextFragment(
 	return f;
 }
 
-void KaijuWrapper::ids_from_SI(SI *si, std::set<char *> & match_ids) {
-	IndexType k, pos;
-	int iseq;
-	for (k=si->start; k<si->start+si->len; ++k) {
-		if(match_ids.size() > config->max_match_ids) {
-			break;
-		}
-		get_suffix(config->fmi, config->bwt->s, k, &iseq, &pos);
-		match_ids.insert(config->bwt->s->ids[iseq]);
-	}
-}
 
 
 void KaijuWrapper::eval_match_scores(
 	SI *si,
 	Fragment * frag, 
 	std::vector<SI *> & best_matches_SI, 
-	unsigned int best_match_score,
+	unsigned int & best_match_score,
 	std::vector<std::string> & best_matches) 
 	{
 
@@ -579,6 +607,381 @@ void KaijuWrapper::eval_match_scores(
 		free(si);
 		si = NULL;
 	}
+}
+
+SEQstruct * KaijuWrapper::read_id(FILE *fp, char *idline) {
+  SEQstruct *ret;
+  int c=1;
+  char *cptr;
+  const int MaxIDlen = 1000;
+
+  if ( !fgets(idline,MaxIDlen,fp) ) {
+    fprintf(stderr,"read_id: Should read an identifier, but didn't\n");
+    free(idline);
+    return NULL;
+  }
+
+  /* Absorb until end of line if longer than MaxIDlen */
+  cptr=idline+strlen(idline)-1;
+  if (*cptr!='\n') { do c=getc(fp); while (c!='\n' && c!=EOF); }
+  if (c==EOF) {
+    fprintf(stderr,"read_fasta_forward: EOF while reading ID line\n");
+    free(idline);
+    return NULL;
+  }
+  *cptr = '\0';
+
+  /* Alloc sequence structure and copy ID */
+  ret = alloc_SEQstruct();
+  ret->id = strdup(idline);
+  /* Separate id and description */
+  cptr=ret->id;
+  while (*cptr && !isblank(*cptr)) ++cptr;
+  if (*cptr) ret->descr = cptr+1;
+  *cptr=0;
+
+  /* Map Id 2 index*/
+  this->unirefIds.push_back(ret->id);
+  this->unirefTaxIds.push_back(LocalUtil::getTaxIdFromComment(std::string(ret->descr)));
+  
+  ret->id = strdup(std::to_string(unirefIds.size()).c_str());
+
+  return ret;
+}
+
+void KaijuWrapper::makeBWT(const std::string & infileName, const std::string & outfileName) {
+  long approx_seqlen = 0;
+  long bwtlen;
+  int alen, i;
+  char *alphabet;
+  AlphabetStruct *astruct;
+  FILE *fp;
+  FILE *bwtfile, *sa_file;
+  int wlen, nseq;
+  SEQstruct *ss;
+  suffixArray *sa_struct;
+  int padding=10;   
+  
+  // Set variables
+  nThreads = par.threads;
+
+  fp = fopen(infileName.c_str(),"r");
+  if (!fp) {
+	fprintf(stderr,"mkbwt: Could not open file %s\n",infileName.c_str());
+	exit(1);
+  }
+
+  /* Check if output file name is given */
+  if (outfileName.empty()) {
+    if (!infilename) ERROR("mkbwt: You need to specify name for output file if sequences are read on stdin",2);
+    outfilename = infilename;
+  }
+
+  /* First set alphabet (allocated in the option parsing code) */
+  alphabet = read_alphabet(Alphabet,term[0]);
+  astruct = alloc_AlphabetStruct(alphabet, caseSens, revComp);
+  alen = astruct->len;
+
+  /* Set word length */
+  wlen = 2;
+  if (alen<=16) wlen = 3;
+  if (alen<=8)  wlen = 4;
+  if (padding<wlen) padding=wlen;
+
+  /* Read sequences from fasta file */
+  ss = readFasta(fp, approx_seqlen, astruct->trans, astruct->comp, 0, padding);
+  if (infilename) fclose(fp);
+
+  print_time("Sequences read");
+
+  fprintf(stderr,"SLEN %ld\nNSEQ %d\nALPH %s",ss->len,ss->sort_order,alphabet);
+  if (astruct->comp) fprintf(stderr," (%s)",astruct->comp);
+  fprintf(stderr,"\n");
+
+  
+
+  /* Open files */
+  std::string bwtFileName = outfileName + ".bwt";
+  std::string saFileName = outfileName + ".sa";
+  bwtfile = fopen(bwtFileName.c_str(),"w");
+  sa_file = fopen(saFileName.c_str(),"w");
+
+  
+  // Alloc and init suffix array
+  sa_struct = init_suffixArray(ss, checkpoint);
+
+  DEBUG1LINE(fprintf(stderr,"SA initiated\n"));
+
+  bwtlen=sa_struct->len;
+  nseq=sa_struct->nseq;
+
+  // Write header for bwtfile
+  fwrite(&bwtlen,sizeof(IndexType),1,bwtfile);
+  fwrite(&nseq,sizeof(int),1,bwtfile);
+  fwrite(&alen,sizeof(int),1,bwtfile);
+  fwrite(alphabet,sizeof(char),alen,bwtfile);
+
+  DEBUG1LINE(fprintf(stderr,"BWT header written\n"));
+
+  /* Sorting sequence terminations
+
+     Seq terminations can in principle be sorted anyway you like.
+     Two methods are implemented: sorted as read or sorted reverse.
+     If they are reverse sorted, the BWT will be more compressible.
+
+     Sorting is implemented by extending the sequence with words that
+     sort in the required sort order.
+   */
+  if (revsort) revSortSeqs(ss);
+  else readOrder(ss);
+  /* Encode ordering in sequence */
+  encodeOrder(ss,alen);
+
+  DEBUG1LINE(fprintf(stderr,"Order encoded\n"));
+
+  /* Alloc bucket stack */
+  BucketStack *wbs = initBucketStack(alen,alphabet,ss->len,ss->start,bwtfile, sa_file, sa_struct, wlen);
+
+  DEBUG1LINE(fprintf(stderr,"Bucket stack initiated\n"));
+
+  /* Number of buckets to fill. Ad hoc at the moment... */
+  wbs->nfill = wbs->nbuckets/20+nThreads;
+
+  /* Start nThreads-1 to begin with */
+  pthread_t *worker = (pthread_t *)malloc(nThreads*sizeof(pthread_t));
+  for (i=0; i<nThreads-1; ++i) {
+    pthread_create(&(worker[i]), NULL, BucketSorter, wbs);
+  }
+
+  /* Do other work in main thread independent of SA sorting */
+
+  /* Do the sorting of seqs */
+  SortSeqs(ss, sa_struct);
+  DEBUG1LINE(fprintf(stderr,"Sequences sorted\n"));
+
+  /* Write first part of BWT */
+  write_term(ss, sa_struct, bwtfile);
+  DEBUG1LINE(fprintf(stderr,"BWT for term chars written\n"));
+
+  //sa_struct->seqTermOrder = revSortSeqs(ss, bwtfile);
+
+  /* Write SA header */
+  write_suffixArray_header(sa_struct, sa_file);
+  free(sa_struct->seqTermOrder); sa_struct->seqTermOrder=NULL;
+  free(sa_struct->ids); sa_struct->ids = NULL;
+  DEBUG1LINE(fprintf(stderr,"SA header written\n"));
+
+  /* Allow for writing of other buckets */
+  wbs->sawrite = wbs->bwtwrite = 0;
+
+  /* Start last thread */
+  pthread_create(&(worker[nThreads-1]), NULL, BucketSorter, wbs);
+
+  /* Join workers */
+  for (i=0; i<nThreads; ++i) {
+    DEBUG1LINE(fprintf(stderr,"Join worker %d\n",i));
+    pthread_join(worker[i], NULL);
+  }
+  free(worker);
+
+  /* Print last */
+  while ( wbs->bwtwrite < wbs->nbuckets ) {
+    Bucket *b = wbs->b[wbs->bwtwrite];
+    DEBUG1LINE(fprintf(stderr,"Finish bucket for word %s\n",b->word));
+    if (b->status == BWT_MACRO ) {
+      /* Write SA checkpoints */
+      write_suffixArray_checkpoints(b->sa, b->start, b->len, wbs->sa_struct, wbs->safile);
+      /* free SA */
+      free_sa(b);
+    }
+    /* Write BWT */
+    bwtWriteBucket(b,wbs->bwtfile);
+    ++(wbs->bwtwrite);
+  }
+
+  fprintf(stderr,"SA NCHECK=%ld\n",sa_struct->ncheck);
+
+  fclose(bwtfile);
+  fclose(sa_file);
+
+  print_time("Sorting done, ");
+
+  /* Free a lot of stuf.... */
 
 
+
+
+}
+
+
+SEQstruct * KaijuWrapper::readFasta(FILE *fp, long length, char *transtab, char *complement, char term, int padding) {
+  char *seq, *tmp;
+  char *revtrans;
+  int i, al;
+  long totlen;
+  SEQstruct *ss, *sst;
+
+  /* alloc space for long sequence */
+  if (length) totlen = length;
+  else totlen = file_size(fp);
+  if (complement) totlen *= 2;
+  seq = (char *)malloc(totlen*sizeof(char));
+
+  if (!seq) {
+    fprintf(stderr,"readFasta: Failed to alloc seq of length %ld\n",totlen);
+    return NULL;
+  }
+
+  ss = this->read_fasta_forward(fp, seq, totlen, transtab, term, padding);
+
+  if (!ss) ERROR("readFasta: No sequences read",5);
+
+  if (complement) {
+    if (totlen<2*ss->len) ERROR("readFasta: Not enough space allocated for reverse complement",2);
+
+    al = strlen(complement);
+    revtrans = (char*)malloc(128*sizeof(char));
+    /* OK. This is not trivial
+       Original alphabet is already translated to integers,
+               e.g. for "*ACGT" A->1, C->2, G->3, T->4
+       We want "*ACGT" -> "*TGCA", so 1->4 (A->T), 2->3 (C->G), etc
+       All other chars stay the same
+     */
+    for (i=0;i<128;++i) revtrans[i] = i;
+    for (i=0; i<al;++i) revtrans[i] = transtab[(int)complement[i]];
+
+    revcomp_all(ss, revtrans, term, padding);
+    free(revtrans);
+  }
+
+  /* Down-size to actual size */
+  tmp = ss->start;
+  ss->start = (char *)realloc((void*)tmp,ss->len);
+
+  /* If down-sizing by realloc actually copies to new array: */
+  if (tmp != ss->start) {
+    sst=ss;
+    while (sst->next) { sst=sst->next; sst->start=ss->start+sst->pos; }
+  }
+
+  // fprintf(stderr,"readFasta returning\n");
+
+  return ss;
+
+}
+
+SEQstruct * KaijuWrapper::read_fasta_forward(FILE *fp, char *seq, long length, char *translate, char term, int padding) {
+  const int MaxIDlen = 10000;
+  long filepos;
+  int c, i;
+  SEQstruct *ret=NULL, *ss;
+  char *seqend = seq+length;
+  char *idline = (char *)malloc((MaxIDlen+2)*sizeof(char));
+
+
+  /* Absorb until "\n>" (in beginning of file) */
+  do c=getc(fp); while (c!='>' && c!=EOF);
+  if (c==EOF) return NULL;
+
+  /* Alloc sequence structure to hold anchor and hold total length of
+     allocation. */
+  ret=ss=alloc_SEQstruct();
+  ret->start = seq;
+  ret->sort_order = 0;
+
+  /* Add padding in beginning */
+  for (i=0; i<padding; ++i) *seq++ = term;
+
+  while (c!=EOF) {
+    /* Now at ">" in beginning of line. Read id line */
+    filepos=ftell(fp);
+    ss->next = this->read_id(fp,idline);
+    if (ss->next==NULL) ERROR("Failed to read ID",3);
+    ss=ss->next;
+
+    ss->start = seq;
+    ss->pos = (long)(seq - ret->start);
+    ss->id_filepos = filepos;
+    ss->seq_filepos = ftell(fp);
+    ret->sort_order += 1;
+
+    /* Read sequence */
+    int lastc=0;
+    c=getc(fp);
+    while ( c!=EOF ) {
+      /* New fasta entry is starting */
+      if (c=='>' && lastc=='\n') {
+	ss->len = seq - ss->start;
+	// Add padding
+	for (i=0; i<padding; ++i) { *seq++ = term; test_seq_alloc(seq,seqend); }
+	break;
+      }
+      if (translate[c]>=0) {
+        *seq++ = translate[c];
+	test_seq_alloc(seq,seqend);
+	ss->len += 1;
+      }
+      lastc=c;
+      c=getc(fp);
+    }
+  }
+
+  if (seq != ret->start) for (i=0; i<padding; ++i) { *seq++ = term; test_seq_alloc(seq,seqend); }
+  ret->len = seq - ret->start;
+
+  free(idline);
+
+  //fprintf(stderr,"read_fasta_forward returning\n");
+
+  return ret;
+}
+
+void KaijuWrapper::makeFMI(const std::string & outfileName) {
+  
+  std::string bwtFileName = outfileName + ".bwt";
+  std::string saFileName = outfileName + ".sa";
+  std::string fmiFileName = outfileName + ".fmi";
+
+  FILE *fp=NULL;
+  BWT *b;
+
+  /* Read BWT */
+  fp = fopen(bwtFileName.c_str(),"r");
+  if (!fp) std::cerr<< "File %s containing BWT could not be opened for reading\n" <<  bwtFileName.c_str() << std::endl;
+  fprintf(stderr,"Reading BWT from file %s ... ", bwtFileName.c_str());
+  b = read_BWT(fp);
+  fclose(fp);
+  fprintf(stderr,"DONE\n");
+  fprintf(stderr,"BWT of length %ld has been read with %d sequencs, alphabet=%s\n",
+	  b->len, b->nseq, b->alphabet); 
+
+  /* Read SA */
+  fp = fopen(saFileName.c_str(),"r");
+  if (!fp) std::cerr << "File %s containing SA could not be opened for reading\n" << saFileName << std::endl;
+  fprintf(stderr,"Reading suffix array from file %s ... ", saFileName.c_str());
+  b->s = read_suffixArray_header(fp);
+  /* If the whole SA is saved, don't read it! */
+  if (b->s->chpt_exp > 0) read_suffixArray_body(b->s,fp);
+  fclose(fp);
+  fprintf(stderr,"DONE\n");
+
+  /* Concatenate stuff in fmi file */
+  fp = fopen(fmiFileName.c_str(),"w");
+  if (!fp) std::cerr << "File %s for FMI could not be opened for writing\n" << fmiFileName << std::endl;  
+  fprintf(stderr,"Writing BWT header and SA to file  %s ... ", fmiFileName.c_str());
+  write_BWT_header(b, fp);
+  write_suffixArray(b->s,fp);
+  fprintf(stderr,"DONE\n");
+
+  fprintf(stderr,"Constructing FM index\n");
+  b->f = makeIndex(b->bwt, b->len, b->alen);
+  fprintf(stderr,"\nDONE\n");
+
+  fprintf(stderr,"Writing FM index to file ... ");
+  write_fmi(b->f,fp);
+  fclose(fp);
+  fprintf(stderr,"DONE\n");
+
+  fprintf(stderr,"\n  !!  You can now delete files %s and ",bwtFileName.c_str());
+  fprintf(stderr,"%s  !!\n\n",saFileName.c_str());
 }
