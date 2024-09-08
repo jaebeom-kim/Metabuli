@@ -131,6 +131,18 @@ static void loadBuffer2(int fd, T *buffer, size_t &bufferIdx, size_t size, off_t
                   size_t & selectedMatchIdx,
                   uint8_t frame);
 
+  void compareDna3(uint64_t query,
+                   const uint64_t * decodedKmers,
+                   size_t startIdx,
+                   size_t endIdx,
+                   std::vector<uint8_t> & hammingDists,
+                   std::vector<size_t> &selectedMatches,
+                   std::vector<uint8_t> &selectedHammingSum,
+                   std::vector<uint16_t> &selectedHammings,
+                   std::vector<uint32_t> &selectedDnaEncodings,
+                   size_t & selectedMatchIdx,
+                   uint8_t frame);
+
   virtual uint8_t getHammingDistanceSum(uint64_t kmer1, uint64_t kmer2);
 
   virtual uint16_t getHammings(uint64_t kmer1, uint64_t kmer2);
@@ -163,6 +175,24 @@ static void loadBuffer2(int fd, T *buffer, size_t &bufferIdx, size_t size, off_t
                  static_cast<int>(infoBufferIdx - bufferSize));
     }
     return infoBuffer[infoBufferIdx];
+  }
+
+  void decodeKmers(uint64_t * decodedKmerBuffer,
+                   size_t & decodedKmerBufferIdx,
+                   size_t & decodedKmerCnt,
+                   const uint16_t * diffIdxBuffer,
+                   uint64_t currentKmer,
+                   size_t & diffIdxBufferIdx,
+                   size_t & totalPos,
+                   size_t keepFirstN = 0) {
+    decodedKmerBufferIdx = 0;
+    decodedKmerCnt = keepFirstN;
+    decodedKmerBuffer[decodedKmerCnt++] = currentKmer;
+//      getNextTargetKmer(currentKmer, diffIdxBuffer, diffIdxBufferIdx, totalPos);
+    while (BufferSize >= diffIdxBufferIdx + 7) {
+      decodedKmerBuffer[decodedKmerCnt++] =
+        getNextTargetKmer(decodedKmerBuffer[decodedKmerCnt - 1], diffIdxBuffer, diffIdxBufferIdx, totalPos);
+    }             
   }
 
 public:

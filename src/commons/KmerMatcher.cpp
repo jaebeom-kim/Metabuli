@@ -651,9 +651,12 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
 
     // Target K-mer buffer
     uint16_t * diffIdxBuffer = (uint16_t *) malloc(sizeof(uint16_t) * (BufferSize + 1)); // size = 32 Mb
+    uint64_t * decodedKmerBuffer = (uint64_t *) malloc(sizeof(uint64_t) * (BufferSize + 1)); // 64 Mb
     TargetKmerInfo * kmerInfoBuffer = (TargetKmerInfo *) malloc(sizeof(TargetKmerInfo) * (BufferSize + 1)); // 64 Mb
     size_t kmerInfoBufferIdx = 0;
     size_t diffIdxBufferIdx = 0;
+    size_t decodedKmerBufferIdx = 0;
+    size_t decodedKmerCnt = 0;
     
     // Query variables
     uint64_t currentQuery = UINT64_MAX;
@@ -662,7 +665,7 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
         
     // Target variables
     size_t diffIdxPos = 0;
-    std::vector<uint64_t> candidateTargetKmers; // vector for candidate target k-mer, some of which are selected after based on hamming distance
+    std::vector<uint64_t> candidateTargetKmers;
     std::vector<TargetKmerInfo> candidateKmerInfos;
     std::vector<uint8_t> hammingDists;
     uint64_t currentTargetKmer;
@@ -686,6 +689,8 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
     size_t posToWrite;
     size_t idx;
     bool hasOverflow = false;
+    size_t matchStartIdx = 0;
+    size_t matchEndIdx = 0;
 
 #pragma omp for schedule(dynamic, 1)
     for (size_t i = 0; i < querySplits.size(); i++) {
@@ -709,6 +714,14 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
                                                   diffIdxBufferIdx, diffIdxPos);
         }
         
+        decodeKmers(decodedKmerBuffer,
+                    decodedKmerBufferIdx, 
+                    decodedKmerCnt,
+                    diffIdxBuffer,
+                    currentTargetKmer,
+                    diffIdxBufferIdx,
+                    diffIdxPos);
+
         currentQuery = UINT64_MAX;
         currentQueryAA = UINT64_MAX;
         size_t lastMovedQueryIdx = 0;
@@ -750,8 +763,8 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
 
             // Reuse the candidate target k-mers to compare in DNA level if queries are the same at amino acid level but not at DNA level
             if (currentQueryAA == AMINO_ACID_PART(queryKmerList[j].ADkmer)) {
-                compareDna(queryKmerList[j].ADkmer, candidateTargetKmers, hammingDists, selectedMatches,
-                           selectedHammingSum, selectedHammings, selectedDnaEncodings, selectedMatchCnt, queryKmerList[j].info.frame);
+                compareDna3(queryKmerList[j].ADkmer, decodedKmerBuffer, matchStartIdx, matchEndIdx, hammingDists, selectedMatches, selectedHammingSum,
+                            selectedHammings, selectedDnaEncodings, selectedMatchCnt, queryKmerList[j].info.frame);
                 // If local buffer is full, copy them to the shared buffer.
                 if (unlikely(matchCnt + selectedMatchCnt > localBufferSize)) {
                     // Check if the shared buffer is full.
@@ -780,7 +793,7 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
                 currentQueryInfo = queryKmerList[j].info;
                 continue;
             }
-            candidateTargetKmers.clear();
+            // candidateTargetKmers.clear();
             candidateKmerInfos.clear();
 
             // Get next query, and start to find
@@ -789,44 +802,108 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
             currentQueryInfo = queryKmerList[j].info;
 
             // Skip target k-mers that are not matched in amino acid level
-            while (diffIdxPos != numOfDiffIdx
-                   && (currentQueryAA > AMINO_ACID_PART(currentTargetKmer))) {  
-                if (unlikely(BufferSize < diffIdxBufferIdx + 7)){
-                    loadBuffer(diffIdxFp, diffIdxBuffer, diffIdxBufferIdx, BufferSize, ((int)(BufferSize - diffIdxBufferIdx)) * -1 );
+            while (true) {
+                while (decodedKmerBufferIdx < decodedKmerCnt
+                       && currentQueryAA > AMINO_ACID_PART(decodedKmerBuffer[decodedKmerBufferIdx])) {
+                    decodedKmerBufferIdx++;
+                    kmerInfoBufferIdx++;
                 }
-                currentTargetKmer = getNextTargetKmer(currentTargetKmer, diffIdxBuffer,
-                                                      diffIdxBufferIdx, diffIdxPos);
-                
-                kmerInfoBufferIdx ++;
+                if (currentQueryAA <= AMINO_ACID_PART(decodedKmerBuffer[decodedKmerBufferIdx])) {
+                    break;
+                } else {
+                    if (diffIdxPos == numOfDiffIdx) {
+                        break;
+                    }
+                    loadBuffer(diffIdxFp, diffIdxBuffer, diffIdxBufferIdx, BufferSize, ((int)(BufferSize - diffIdxBufferIdx)) * -1);
+                    decodeKmers(decodedKmerBuffer,
+                                decodedKmerBufferIdx,
+                                decodedKmerCnt,
+                                diffIdxBuffer,
+                                decodedKmerBuffer[decodedKmerBufferIdx - 1],
+                                diffIdxBufferIdx,
+                                diffIdxPos);
+                    decodedKmerBufferIdx = 1;
+                }
             }
+            // // Skip target k-mers that are not matched in amino acid level
+            // while (diffIdxPos != numOfDiffIdx
+            //        && (currentQueryAA > AMINO_ACID_PART(currentTargetKmer))) {  
+            //     if (unlikely(BufferSize < diffIdxBufferIdx + 7)){
+            //         loadBuffer(diffIdxFp, diffIdxBuffer, diffIdxBufferIdx, BufferSize, ((int)(BufferSize - diffIdxBufferIdx)) * -1 );
+            //     }
+            //     currentTargetKmer = getNextTargetKmer(currentTargetKmer, diffIdxBuffer,
+            //                                           diffIdxBufferIdx, diffIdxPos);
+                
+            //     kmerInfoBufferIdx ++;
+            // }
 
-            if (currentQueryAA != AMINO_ACID_PART(currentTargetKmer)) {
+            if (currentQueryAA != AMINO_ACID_PART(decodedKmerBuffer[decodedKmerBufferIdx])) {
                 continue;
             } 
                     
             // Load target k-mers that are matched in amino acid level
-            while (diffIdxPos != numOfDiffIdx &&
-                   currentQueryAA == AMINO_ACID_PART(currentTargetKmer)) {
-                candidateTargetKmers.push_back(currentTargetKmer);
-                candidateKmerInfos.push_back(getKmerInfo(BufferSize, kmerInfoFp, kmerInfoBuffer, kmerInfoBufferIdx));
-                if (unlikely(BufferSize < diffIdxBufferIdx + 7)){
-                    loadBuffer(diffIdxFp, diffIdxBuffer, diffIdxBufferIdx,
-                               BufferSize, ((int)(BufferSize - diffIdxBufferIdx)) * -1 );
+            matchStartIdx = decodedKmerBufferIdx;
+            while (true) {
+                while (decodedKmerBufferIdx < decodedKmerCnt 
+                    && currentQueryAA == AMINO_ACID_PART(decodedKmerBuffer[decodedKmerBufferIdx])) {
+                    candidateKmerInfos.push_back(getKmerInfo(BufferSize, kmerInfoFp, kmerInfoBuffer, kmerInfoBufferIdx));
+                    decodedKmerBufferIdx ++;
+                    kmerInfoBufferIdx ++;
                 }
-                currentTargetKmer = getNextTargetKmer(currentTargetKmer, diffIdxBuffer,
-                                                      diffIdxBufferIdx, diffIdxPos);
-                kmerInfoBufferIdx ++;
+                if (currentQueryAA != AMINO_ACID_PART(decodedKmerBuffer[decodedKmerBufferIdx])) {
+                    break;
+                } else {
+                    if (diffIdxPos == numOfDiffIdx) {
+                        break;
+                    }
+                    // Keep the matched k-mers so far
+                    for (size_t k = 0; k < decodedKmerBufferIdx - matchStartIdx; k++) {
+                        decodedKmerBuffer[k] = decodedKmerBuffer[matchStartIdx + k];
+                    }
+                    // Load ...
+                    loadBuffer(diffIdxFp, diffIdxBuffer, diffIdxBufferIdx, BufferSize, ((int)(BufferSize - diffIdxBufferIdx)) * -1);
+                    decodeKmers(decodedKmerBuffer,
+                                decodedKmerBufferIdx,
+                                decodedKmerCnt,
+                                diffIdxBuffer,
+                                decodedKmerBuffer[decodedKmerBufferIdx - 1],
+                                diffIdxBufferIdx,
+                                diffIdxPos,
+                                decodedKmerBufferIdx - matchStartIdx - 1);
+                    decodedKmerBufferIdx = decodedKmerBufferIdx - matchStartIdx;
+                    matchStartIdx = 0;
+                }
             }
+            matchEndIdx = decodedKmerBufferIdx;
+            
+            // while (diffIdxPos != numOfDiffIdx &&
+            //        currentQueryAA == AMINO_ACID_PART(currentTargetKmer)) {
+            //     candidateTargetKmers.push_back(currentTargetKmer);
+            //     candidateKmerInfos.push_back(getKmerInfo(BufferSize, kmerInfoFp, kmerInfoBuffer, kmerInfoBufferIdx));
+            //     if (unlikely(BufferSize < diffIdxBufferIdx + 7)){
+            //         loadBuffer(diffIdxFp, diffIdxBuffer, diffIdxBufferIdx,
+            //                    BufferSize, ((int)(BufferSize - diffIdxBufferIdx)) * -1 );
+            //     }
+            //     currentTargetKmer = getNextTargetKmer(currentTargetKmer, diffIdxBuffer,
+            //                                           diffIdxBufferIdx, diffIdxPos);
+            //     kmerInfoBufferIdx ++;
+            // }
 
-            if (candidateTargetKmers.size() > selectedMatches.size()) {
-                selectedMatches.resize(candidateTargetKmers.size());
-                selectedHammingSum.resize(candidateTargetKmers.size());
-                selectedHammings.resize(candidateTargetKmers.size());
-                selectedDnaEncodings.resize(candidateTargetKmers.size());
+            if (matchEndIdx - matchStartIdx > selectedMatches.size()) {
+                selectedMatches.resize(matchEndIdx - matchStartIdx);
+                selectedHammingSum.resize(matchEndIdx - matchStartIdx);
+                selectedHammings.resize(matchEndIdx - matchStartIdx);
+                selectedDnaEncodings.resize(matchEndIdx - matchStartIdx);
             }
+            // if (candidateTargetKmers.size() > selectedMatches.size()) {
+            //     selectedMatches.resize(candidateTargetKmers.size());
+            //     selectedHammingSum.resize(candidateTargetKmers.size());
+            //     selectedHammings.resize(candidateTargetKmers.size());
+            //     selectedDnaEncodings.resize(candidateTargetKmers.size());
+            // }
 
             // Compare the current query and the loaded target k-mers and select
-            compareDna(currentQuery, candidateTargetKmers, hammingDists, selectedMatches, selectedHammingSum,
+            compareDna3(currentQuery, decodedKmerBuffer, matchStartIdx, matchEndIdx, hammingDists, selectedMatches, selectedHammingSum,
                        selectedHammings, selectedDnaEncodings, selectedMatchCnt, queryKmerList[j].info.frame);
 
             // If local buffer is full, copy them to the shared buffer.
@@ -1324,6 +1401,42 @@ void KmerMatcher::compareDna(uint64_t query,
             selectedHammings[selectedMatchIdx] = (frame < 3)
                 ? getHammings(query, targetKmersToCompare[h])
                 : getHammings_reverse(query, targetKmersToCompare[h]);
+            selectedMatches[selectedMatchIdx++] = h;
+        }
+    }
+}
+
+void KmerMatcher::compareDna3(uint64_t query,
+                             const uint64_t * decodedKmers,
+                             size_t startIdx,
+                             size_t endIdx,
+                             std::vector<uint8_t> & hammingDists,
+                             std::vector<size_t> &selectedMatches,
+                             std::vector<uint8_t> &selectedHammingSum,
+                             std::vector<uint16_t> &selectedHammings,
+                             std::vector<uint32_t> &selectedDnaEncodings,
+                             size_t & selectedMatchIdx,
+                             uint8_t frame) {
+    size_t decodedKmerCnt = endIdx - startIdx;                            
+    hammingDists.resize(decodedKmerCnt);
+    uint8_t minHammingSum = UINT8_MAX;
+
+    // Calculate hamming distance
+    for (size_t i = 0; i < decodedKmerCnt; i++) {
+        hammingDists[i] = getHammingDistanceSum(query, decodedKmers[i + startIdx]);
+        minHammingSum = min(minHammingSum, hammingDists[i]);
+    }
+
+    // Select target k-mers that passed hamming criteria
+    selectedMatchIdx = 0;
+    uint8_t maxHamming = min(minHammingSum * 2, 7);
+    for (size_t h = 0; h < decodedKmerCnt; h++) {
+        if (hammingDists[h] <= maxHamming) {
+            selectedHammingSum[selectedMatchIdx] = hammingDists[h];
+            selectedDnaEncodings[selectedMatchIdx] = GET_24_BITS_UINT(decodedKmers[h + startIdx]);
+            selectedHammings[selectedMatchIdx] = (frame < 3)
+                ? getHammings(query, decodedKmers[h + startIdx])
+                : getHammings_reverse(query, decodedKmers[h + startIdx]);
             selectedMatches[selectedMatchIdx++] = h;
         }
     }
