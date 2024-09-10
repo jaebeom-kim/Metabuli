@@ -211,7 +211,8 @@ bool KmerMatcher::matchKmers(QueryKmerBuffer * queryKmerBuffer,
     }
 
 #pragma omp parallel default(none), shared(splitCheckList, totalOverFlowCnt, \
-querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffIdx, targetInfoFileName)
+querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffIdx, targetInfoFileName, \
+diffIdxBuffers, decodedKmerBuffers, kmerInfoBuffers)
 {
     // FILE
     FILE * diffIdxFp = fopen(targetDiffIdxFileName.c_str(), "rb");
