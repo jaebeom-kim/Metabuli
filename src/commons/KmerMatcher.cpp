@@ -197,6 +197,19 @@ bool KmerMatcher::matchKmers(QueryKmerBuffer * queryKmerBuffer,
     time_t beforeSearch = time(nullptr);
 
     size_t totalOverFlowCnt = 0;
+
+    // Allocate buffers for each thread
+    std::vector<uint16_t*> diffIdxBuffers(threads);
+    std::vector<uint64_t*> decodedKmerBuffers(threads);
+    std::vector<TargetKmerInfo*> kmerInfoBuffers(threads);
+
+    // Initialize each buffer for every thread
+    for (int t = 0; t < threads; ++t) {
+        diffIdxBuffers[t] = (uint16_t*)malloc(sizeof(uint16_t) * (BufferSize + 1));  // size = 32 Mb
+        decodedKmerBuffers[t] = (uint64_t*)malloc(sizeof(uint64_t) * (BufferSize + 1));  // size = 64 Mb
+        kmerInfoBuffers[t] = (TargetKmerInfo*)malloc(sizeof(TargetKmerInfo) * (BufferSize + 1));  // size = 64 Mb
+    }
+
 #pragma omp parallel default(none), shared(splitCheckList, totalOverFlowCnt, \
 querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffIdx, targetInfoFileName)
 {
@@ -205,9 +218,15 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
     FILE * kmerInfoFp = fopen(targetInfoFileName.c_str(), "rb");
 
     // Target K-mer buffer
-    uint16_t * diffIdxBuffer = (uint16_t *) malloc(sizeof(uint16_t) * (BufferSize + 1)); // size = 32 Mb
-    uint64_t * decodedKmerBuffer = (uint64_t *) malloc(sizeof(uint64_t) * (BufferSize + 1)); // 64 Mb
-    TargetKmerInfo * kmerInfoBuffer = (TargetKmerInfo *) malloc(sizeof(TargetKmerInfo) * (BufferSize + 1)); // 64 Mb
+    // uint16_t * diffIdxBuffer = (uint16_t *) malloc(sizeof(uint16_t) * (BufferSize + 1)); // size = 32 Mb
+    // uint64_t * decodedKmerBuffer = (uint64_t *) malloc(sizeof(uint64_t) * (BufferSize + 1)); // 64 Mb
+    // TargetKmerInfo * kmerInfoBuffer = (TargetKmerInfo *) malloc(sizeof(TargetKmerInfo) * (BufferSize + 1)); // 64 Mb
+
+    int threadNum = omp_get_thread_num();
+    uint16_t* diffIdxBuffer = diffIdxBuffers[threadNum];
+    uint64_t* decodedKmerBuffer = decodedKmerBuffers[threadNum];
+    TargetKmerInfo* kmerInfoBuffer = kmerInfoBuffers[threadNum];
+
     size_t kmerInfoBufferIdx = 0;
     size_t diffIdxBufferIdx = 0;
     size_t decodedKmerBufferIdx = 0;
@@ -489,9 +508,9 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
     delete[] matches;
     fclose(diffIdxFp);
     fclose(kmerInfoFp);
-    free(diffIdxBuffer);
-    free(kmerInfoBuffer);
-    free(decodedKmerBuffer);
+    // free(diffIdxBuffer);
+    // free(kmerInfoBuffer);
+    // free(decodedKmerBuffer);
 } // End of omp parallel
         
     if (totalOverFlowCnt > 0) {
@@ -500,6 +519,13 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
     std::cout << "Time spent for the comparison: " << double(time(nullptr) - beforeSearch) << std::endl;
     free(splitCheckList);
     totalMatchCnt += matchBuffer->startIndexOfReserve;
+
+        for (int t = 0; t < threads; ++t) {
+        free(diffIdxBuffers[t]);
+        free(decodedKmerBuffers[t]);
+        free(kmerInfoBuffers[t]);
+    }
+
     return true;
 }
 
