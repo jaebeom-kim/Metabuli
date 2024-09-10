@@ -15,7 +15,9 @@
 
 #define BufferSize 16'777'216 // 16 * 1024 * 1024 // 16 M
 
-#define AMINO_ACID_PART(kmer) ((kmer) & MARKER)
+// #define AMINO_ACID_PART(kmer) ((kmer) & ~16777215)
+
+#define AMINO_ACID_PART(kmer) ((kmer) & 0xFFFFFFFFFF000000)
 
 // Input
 // 1. Query K-mers
@@ -188,7 +190,6 @@ static void loadBuffer2(int fd, T *buffer, size_t &bufferIdx, size_t size, off_t
     decodedKmerBufferIdx = 0;
     decodedKmerCnt = keepFirstN;
     decodedKmerBuffer[decodedKmerCnt++] = currentKmer;
-//      getNextTargetKmer(currentKmer, diffIdxBuffer, diffIdxBufferIdx, totalPos);
     while (BufferSize >= diffIdxBufferIdx + 7) {
       decodedKmerBuffer[decodedKmerCnt++] =
         getNextTargetKmer(decodedKmerBuffer[decodedKmerCnt - 1], diffIdxBuffer, diffIdxBufferIdx, totalPos);
