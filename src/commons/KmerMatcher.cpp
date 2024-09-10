@@ -245,7 +245,6 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
     size_t idx;
     bool hasOverflow = false;
     size_t matchStartIdx = 0;
-    size_t matchEndIdx = 0;
     size_t aaMatchCnt = 0;
 
     // SeqIterator * seqIterator = new SeqIterator(par);
@@ -431,15 +430,11 @@ querySplits, queryKmerList, matchBuffer, cout, targetDiffIdxFileName, numOfDiffI
             }
             aaMatchCnt = decodedKmerBufferIdx - matchStartIdx;
             
-            matchEndIdx = decodedKmerBufferIdx;
-
-            // cout << matchStartIdx << " " << matchEndIdx << " "<< matchEndIdx - matchStartIdx << endl;
-            
-            if (matchEndIdx - matchStartIdx > selectedMatches.size()) {
-                selectedMatches.resize(matchEndIdx - matchStartIdx);
-                selectedHammingSum.resize(matchEndIdx - matchStartIdx);
-                selectedHammings.resize(matchEndIdx - matchStartIdx);
-                selectedDnaEncodings.resize(matchEndIdx - matchStartIdx);
+            if (aaMatchCnt > selectedMatches.size()) {
+                selectedMatches.resize(aaMatchCnt);
+                selectedHammingSum.resize(aaMatchCnt);
+                selectedHammings.resize(aaMatchCnt);
+                selectedDnaEncodings.resize(aaMatchCnt);
             }
 
             // Compare the current query and the loaded target k-mers and select

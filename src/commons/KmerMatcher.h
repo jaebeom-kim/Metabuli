@@ -13,7 +13,7 @@
 #include <vector>
 #include <unistd.h>
 
-#define BufferSize 16'777'216 // 16 * 1024 * 1024 // 16 M
+#define BufferSize 8'388'608 // 16'777'216 // 16 * 1024 * 1024 // 16 M
 
 // #define AMINO_ACID_PART(kmer) ((kmer) & ~16777215)
 
