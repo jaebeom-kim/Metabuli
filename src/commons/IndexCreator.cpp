@@ -376,7 +376,7 @@ void IndexCreator::writeTargetFiles(TargetKmer * kmerBuffer, size_t & kmerNum, c
     size_t write = 0;
 
     for(size_t i = 0; i < uniqKmerCnt ; i++) {
-        fwrite(& kmerBuffer[uniqeKmerIdx[i]].info, sizeof (TargetKmerInfo), 1, infoFile);
+        fwrite(& kmerBuffer[uniqeKmerIdx[i]].seqId, sizeof (TaxID), 1, infoFile);
         write++;
         getDiffIdx(lastKmer, kmerBuffer[uniqeKmerIdx[i]].ADkmer, diffIdxFile, diffIdxBuffer, localBufIdx);
         lastKmer = kmerBuffer[uniqeKmerIdx[i]].ADkmer;
@@ -445,7 +445,7 @@ void IndexCreator::writeTargetFilesAndSplits(TargetKmer * kmerBuffer, size_t & k
     size_t totalDiffIdx = 0;
     cout << "Writing k-mers to disk" << endl;
     for(size_t i = 0; i < uniqKmerCnt ; i++) {
-        fwrite(& kmerBuffer[uniqKmerIdx[i]].info, sizeof (TargetKmerInfo), 1, infoFile);
+        fwrite(& kmerBuffer[uniqKmerIdx[i]].seqId, sizeof (TaxID), 1, infoFile);
         write++;
         getDiffIdx(lastKmer, kmerBuffer[uniqKmerIdx[i]].ADkmer, diffIdxFile,
                    diffIdxBuffer, localBufIdx, totalDiffIdx);
@@ -529,16 +529,16 @@ void IndexCreator::reduceRedundancy(TargetKmerBuffer & kmerBuffer, size_t * uniq
             for(size_t i = 1 + splits[split].offset; i < splits[split].end + 1 ; i++) {
                 hasSeenOtherStrains = 0;
                 taxIds.clear();
-                taxIds.push_back(taxIdList[lookingKmer->info.sequenceID]);
+                taxIds.push_back(taxIdList[lookingKmer->seqId]);
                 // Scan redundancy
                 while(lookingKmer->taxIdAtRank == kmerBuffer.buffer[i].taxIdAtRank &&
                       lookingKmer->ADkmer == kmerBuffer.buffer[i].ADkmer){
-                    taxIds.push_back(taxIdList[kmerBuffer.buffer[i].info.sequenceID]);
+                    taxIds.push_back(taxIdList[kmerBuffer.buffer[i].seqId]);
                     if (par.accessionLevel) {
-                        hasSeenOtherStrains += (taxonomy->taxonNode(taxIdList[lookingKmer->info.sequenceID])->parentTaxId 
-                                                != taxonomy->taxonNode(taxIdList[kmerBuffer.buffer[i].info.sequenceID]) -> parentTaxId);
+                        hasSeenOtherStrains += (taxonomy->taxonNode(taxIdList[lookingKmer->seqId])->parentTaxId 
+                                                != taxonomy->taxonNode(taxIdList[kmerBuffer.buffer[i].seqId]) -> parentTaxId);
                     } else {
-                        hasSeenOtherStrains += (taxIdList[lookingKmer->info.sequenceID] != taxIdList[kmerBuffer.buffer[i].info.sequenceID]);
+                        hasSeenOtherStrains += (taxIdList[lookingKmer->seqId] != taxIdList[kmerBuffer.buffer[i].seqId]);
                     }
                     i++;
                     if(i == splits[split].end + 1){
@@ -547,11 +547,10 @@ void IndexCreator::reduceRedundancy(TargetKmerBuffer & kmerBuffer, size_t * uniq
                     }
                 }
                 if(taxIds.size() > 1){
-                    lookingKmer->info.sequenceID = taxonomy->LCA(taxIds)->taxId;
+                    lookingKmer->seqId = taxonomy->LCA(taxIds)->taxId;
                 } else {
-                    lookingKmer->info.sequenceID = taxIds[0];
+                    lookingKmer->seqId = taxIds[0];
                 }
-                lookingKmer->info.redundancy = (hasSeenOtherStrains > 0);
                 idxOfEachSplit[split][cntOfEachSplit[split]++] = lookingIndex;
                 if(endFlag == 1) break;
                 lookingKmer = & kmerBuffer.buffer[i];
@@ -561,7 +560,7 @@ void IndexCreator::reduceRedundancy(TargetKmerBuffer & kmerBuffer, size_t * uniq
             //For the end part
             if(!((kmerBuffer.buffer[splits[split].end - 1].ADkmer == kmerBuffer.buffer[splits[split].end].ADkmer) &&
                  (kmerBuffer.buffer[splits[split].end - 1].taxIdAtRank == kmerBuffer.buffer[splits[split].end].taxIdAtRank))){
-                kmerBuffer.buffer[splits[split].end].info.sequenceID = taxIdList[kmerBuffer.buffer[splits[split].end].info.sequenceID];
+                kmerBuffer.buffer[splits[split].end].seqId = taxIdList[kmerBuffer.buffer[splits[split].end].seqId];
                 idxOfEachSplit[split][cntOfEachSplit[split]++] = splits[split].end;
             }
         }
@@ -625,16 +624,16 @@ void IndexCreator::writeDiffIdx(uint16_t *buffer, FILE* handleKmerTable, uint16_
     localBufIdx += size;
 }
 
-void IndexCreator::writeInfo(TargetKmerInfo * entryToWrite, FILE * infoFile, TargetKmerInfo * infoBuffer, size_t & infoBufferIdx)
+void IndexCreator::writeInfo(TaxID * entryToWrite, FILE * infoFile, TaxID * infoBuffer, size_t & infoBufferIdx)
 {
     if (infoBufferIdx >= bufferSize) {
         flushInfoBuf(infoBuffer, infoFile, infoBufferIdx);
     }
-    memcpy(infoBuffer + infoBufferIdx, entryToWrite, sizeof(TargetKmerInfo));
+    memcpy(infoBuffer + infoBufferIdx, entryToWrite, sizeof(TaxID));
     infoBufferIdx++;
 }
-void IndexCreator::flushInfoBuf(TargetKmerInfo * buffer, FILE * infoFile, size_t & localBufIdx ) {
-    fwrite(buffer, sizeof(TargetKmerInfo), localBufIdx, infoFile);
+void IndexCreator::flushInfoBuf(TaxID * buffer, FILE * infoFile, size_t & localBufIdx ) {
+    fwrite(buffer, sizeof(TaxID), localBufIdx, infoFile);
     localBufIdx = 0;
 }
 int IndexCreator::getNumOfFlush()
@@ -658,11 +657,7 @@ inline bool IndexCreator::compareForDiffIdx2(const TargetKmer & a, const TargetK
         return a.taxIdAtRank < b.taxIdAtRank;
     }
 
-    if (a.info.sequenceID != b.info.sequenceID) {
-        return a.info.sequenceID < b.info.sequenceID;
-    }
-
-    return a.info.redundancy < b.info.redundancy;
+    return a.seqId < b.seqId;
 }
 
 

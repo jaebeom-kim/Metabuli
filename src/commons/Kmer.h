@@ -19,20 +19,20 @@ typedef struct QueryKmer {
 } QueryKmer; // 16 byte
 
 
-struct TargetKmerInfo{
-    explicit TargetKmerInfo(int seqID = 0, bool redundancy = false) : sequenceID(seqID), redundancy(redundancy) {}
-    int sequenceID : 31;
-    int redundancy : 1;
-    bool operator == (const TargetKmerInfo & info) const{
-        return (sequenceID == info.sequenceID && this->redundancy==info.redundancy);
-    }
-}; // 4 bytes
+// struct TargetKmerInfo{
+//     explicit TargetKmerInfo(int seqID = 0) : sequenceID(seqID) {}
+//     int sequenceID;
+//     bool operator == (const TargetKmerInfo & info) const{
+//         return (sequenceID == info.sequenceID && this->redundancy==info.redundancy);
+//     }
+// }; // 4 bytes
 
 struct TargetKmer{
-    TargetKmer(): info(0, false), taxIdAtRank(0), ADkmer(0)  { };
-    TargetKmer(uint64_t ADkmer, TaxID taxIdAtRank, int seqID, bool redundacy)
-        : info(seqID, redundacy), taxIdAtRank(taxIdAtRank), ADkmer(ADkmer) {}
-    TargetKmerInfo info; // 4 byte
+    TargetKmer(): seqId(0), taxIdAtRank(0), ADkmer(0)  { };
+    TargetKmer(uint64_t ADkmer, TaxID taxIdAtRank, int seqID)
+        : seqId(seqID), taxIdAtRank(taxIdAtRank), ADkmer(ADkmer) {}
+    TaxID seqId;
+    // TargetKmerInfo info; // 4 byte
     TaxID taxIdAtRank; // 4 byte
     uint64_t ADkmer; // 8 byte
 };

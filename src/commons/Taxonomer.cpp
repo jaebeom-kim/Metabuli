@@ -328,16 +328,10 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
                 i ++;
             }
             if (i - start >= minConsCnt) {
-                // remainConsecutiveMatches(matchList, start, i, matchPaths, currentSpecies);
                 getMatchPaths(matchList, start, i, matchPaths, currentSpecies);
             }
         }
         size_t pathSize = matchPaths.size();
-        // Combine MatchPaths
-        // cout << "Current species: " << currentSpecies << endl;
-        // for (size_t kk = previousPathSize; kk < matchPaths.size(); kk++) {
-        //     matchPaths[kk].printMatchPath();
-        // }
         if (pathSize > previousPathSize) {
             speciesList.push_back(currentSpecies);
             speciesPathIdx.push_back(previousPathSize);
