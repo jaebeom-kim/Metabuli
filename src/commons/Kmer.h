@@ -6,7 +6,45 @@
 #include <cstdint>
 #include <bitset>
 
+class MetamerPattern {
+public:
+    std::vector<const GeneticCode *> geneticCodes;
+    std::vector<int> codePattern;
+    std::vector<int> codonBitList;
+    std::vector<int> aaBitList;
+    uint64_t dnaMask;
+    int totalDNABits = 0;
+    int totalAABits = 0;
 
+    MetamerPattern() {}
+
+    MetamerPattern(const std::vector<const GeneticCode *> &geneticCodes, const std::vector<int> & codePattern) 
+        : geneticCodes(geneticCodes), codePattern(codePattern) 
+    {
+        for (size_t i = 0; i < geneticCodes.size(); ++i) {
+            codonBitList.push_back(geneticCodes[i]->bitPerCodon);
+            aaBitList.push_back(geneticCodes[i]->bitPerAA);
+        }
+        for (size_t i = 0; i < codePattern.size(); ++i) {
+            totalDNABits += codonBitList[codePattern[i]];
+            totalAABits += aaBitList[codePattern[i]];
+        }
+        dnaMask = (1ULL << totalDNABits) - 1;
+    }
+
+    void init() {
+        for (size_t i = 0; i < geneticCodes.size(); ++i) {
+            codonBitList.push_back(geneticCodes[i]->bitPerCodon);
+            aaBitList.push_back(geneticCodes[i]->bitPerAA);
+        }
+        for (size_t i = 0; i < codePattern.size(); ++i) {
+            totalDNABits += codonBitList[codePattern[i]];
+            totalAABits += aaBitList[codePattern[i]];
+        }
+        std::cout << "Total DNA bits: " << totalDNABits << ", Total AA bits: " << totalAABits << std::endl;
+        dnaMask = (1ULL << totalDNABits) - 1;
+    }
+};
 
 struct QueryKmerInfo {
     explicit QueryKmerInfo(uint32_t seqID = 0, uint32_t pos = 0, uint8_t frame = 0 ) : sequenceID(seqID), pos(pos), frame(frame) {}
@@ -21,7 +59,8 @@ struct TargetKmerInfo {
     TaxID speciesId; // 4 byte
 };
 
-struct Kmer {
+class Kmer {
+public:
     uint64_t value;
     union {
         uint32_t pos;
@@ -49,28 +88,59 @@ struct Kmer {
         return value == 0 && id == 0;
     }
 
-    void printAA(const GeneticCode & code) const {
+    void printAA(const GeneticCode * code) const {
         uint64_t aaPart = value >> 24;
         for (int i = 0; i < 8; ++i) {
             int aa = (aaPart >> (35 - 5 * i)) & 0x1F;
-            std::cout << code.aminoacids[aa];
+            std::cout << code->aminoacids[aa];
         }
     }
 
-    void printAA(const GeneticCode & code, int k) const {
+    void printAA(const GeneticCode * code, int k) const {
         for (int i = 0; i < k; ++i) {
             int aa = (value >> (((k - 1) * 5) - 5 * i)) & 0x1F;
-            std::cout << code.aminoacids[aa];
+            std::cout << code->aminoacids[aa];
+        }
+    }
+        
+    void printAA(const MetamerPattern * pattern) const {
+        uint64_t aaPart = value >> (pattern->totalDNABits);
+        int k = pattern->codePattern.size();
+        int aaBitSum = 0;
+        for (int i = 0; i < k; ++i) {
+            const int * currAABit = &pattern->aaBitList[pattern->codePattern[i]];
+            aaBitSum += *currAABit;
+            int aa = (aaPart >> (pattern->totalAABits - aaBitSum)) & ((1 << *currAABit) - 1);
+            std::cout << pattern->geneticCodes[pattern->codePattern[i]]->aminoacids[aa];
         }
     }
 
-    void printDNA(const GeneticCode & code) const {
+    void printDNA(const MetamerPattern * pattern) const {
+        uint64_t dnaPart = value & pattern->dnaMask;
+        uint64_t aaPart = value >> (pattern->totalDNABits);
+        int k = pattern->codePattern.size();
+        int aaBitSum = 0;
+        int dnaBitSum = 0;
+        for (int i = 0; i < k; ++i) {
+            const int * currAABit = &pattern->aaBitList[pattern->codePattern[i]];
+            aaBitSum += *currAABit;
+            int aa = (aaPart >> (pattern->totalAABits - aaBitSum)) & ((1 << *currAABit) - 1);
+            
+            const int * currCodonBit = &pattern->codonBitList[pattern->codePattern[i]];
+            dnaBitSum += *currCodonBit;
+            int codon = (dnaPart >> (pattern->totalDNABits - dnaBitSum)) & ((1 << *currCodonBit) - 1);
+
+            std::cout << pattern->geneticCodes[pattern->codePattern[i]]->aa2codon[aa][codon];
+        }
+    }
+
+    void printDNA(const GeneticCode * code) const {
         uint64_t dnaPart = value & 0xFFFFFF;
         uint64_t aaPart = value >> 24;
         for (int i = 0; i < 8; ++i) {
             int aa = (aaPart >> (35 - 5 * i)) & 0x1F;
             int codon = (dnaPart >> (21 - 3 * i)) & 0x7;
-            std::cout << code.aa2codon[aa][codon];
+            std::cout << code->aa2codon[aa][codon];
         }
     }
 
@@ -90,7 +160,16 @@ struct Kmer {
         if (a.value != b.value) {
             return a.value < b.value;
         }
-        return a.qInfo.sequenceID < b.qInfo.sequenceID;
+
+        if (a.qInfo.sequenceID != b.qInfo.sequenceID) {
+            return a.qInfo.sequenceID < b.qInfo.sequenceID;
+        }
+
+        if (a.qInfo.frame != b.qInfo.frame) {
+            return a.qInfo.frame < b.qInfo.frame;
+        }
+        
+        return a.qInfo.pos < b.qInfo.pos;
     }
 
     static bool compareQKmerByIdAndPos(const Kmer &a, const Kmer &b) {
@@ -107,6 +186,31 @@ struct Kmer {
         return a.id < b.id;
     }
 };
+
+
+// class MultiCodeMetamer : public Kmer {
+// public:
+//     MultiCodeMetamer() : Kmer() {}
+
+//     MultiCodeMetamer(uint64_t value, TaxID taxid) : Kmer(value, taxid) {}
+
+//     MultiCodeMetamer(uint64_t value, uint32_t id) : Kmer(value, id) {}
+
+//     MultiCodeMetamer(uint64_t value, const QueryKmerInfo & qInfo) : Kmer(value, qInfo) {}
+
+//     MultiCodeMetamer(uint64_t value, const TargetKmerInfo & tInfo) : Kmer(value, tInfo) {}
+
+//     MultiCodeMetamer(uint64_t value, TaxID taxId, TaxID speciesId) : Kmer(value, taxId, speciesId) {}
+
+//     MultiCodeMetamer(uint64_t value, uint32_t seqId, uint32_t pos, uint8_t frame) 
+//         : Kmer(value, seqId, pos, frame) {}
+
+//     bool isEmpty() const {
+//         return value == 0 && id == 0;
+//     }
+
+
+// };
 
 struct DiffIdxSplit{
     DiffIdxSplit(uint64_t ADkmer, size_t diffIdxOffset, size_t infoIdxOffset) : ADkmer(ADkmer), diffIdxOffset(diffIdxOffset), infoIdxOffset(infoIdxOffset) { }
