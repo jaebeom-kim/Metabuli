@@ -47,10 +47,14 @@ public:
 };
 
 struct QueryKmerInfo {
-    explicit QueryKmerInfo(uint32_t seqID = 0, uint32_t pos = 0, uint8_t frame = 0 ) : sequenceID(seqID), pos(pos), frame(frame) {}
-    uint64_t pos : 32;
-    uint64_t sequenceID : 29;
-    uint64_t frame : 3; // 0, 1, 2 are forward, and 3, 4, 5 are reverse 1 byte
+    QueryKmerInfo(uint32_t sequenceID, uint32_t pos, uint8_t frame)
+        : sequenceID(sequenceID), pos(pos), frame(frame) {}
+    QueryKmerInfo() = default;
+    struct {
+        uint64_t pos        : 32; // 32 bits
+        uint64_t sequenceID : 29; // 29 bits
+        uint64_t frame      : 3;  // 3 bits
+    };
 }; // 8 byte
 
 struct TargetKmerInfo {

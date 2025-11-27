@@ -28,15 +28,16 @@ IndexCreator::IndexCreator(
     versionFileName = dbDir + "/db.version";
     paramterFileName = dbDir + "/db.parameters";
 
-    if (par.reducedAA == 1){
+    if (par.reducedAA) {
+        geneticCode = new ReducedGeneticCode();
         MARKER = 0Xffffffff;
         MARKER = ~ MARKER;
     } else {
+        geneticCode = new RegularGeneticCode();
         MARKER = 16777215;
         MARKER = ~ MARKER;
     }
-    geneticCode = new GeneticCode(par.reducedAA == 1);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, kmerFormat);
+    kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
 }
@@ -48,8 +49,12 @@ IndexCreator::IndexCreator(
     : par(par), unirefTree(unirefTree), kmerFormat(kmerFormat) 
 {
     dbDir = par.filenames[0];
-    geneticCode = new GeneticCode(par.reducedAA == 1);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, kmerFormat);
+    if (par.reducedAA) {
+        geneticCode = new ReducedGeneticCode();
+    } else {
+        geneticCode = new RegularGeneticCode();
+    }
+    kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     isUpdating = false;
 }
 
@@ -58,8 +63,12 @@ IndexCreator::IndexCreator(
     int kmerFormat) : par(par), kmerFormat(kmerFormat) 
 {
     dbDir = par.filenames[0];
-    geneticCode = new GeneticCode(par.reducedAA == 1);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, kmerFormat);
+    if (par.reducedAA) {
+        geneticCode = new ReducedGeneticCode();
+    } else {
+        geneticCode = new RegularGeneticCode();
+    }
+    kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
 }

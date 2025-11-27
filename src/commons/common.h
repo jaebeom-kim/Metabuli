@@ -449,7 +449,22 @@ public:
     }
 };
 
+inline uint64_t extract_bits(uint64_t value, unsigned int start_bit, unsigned int block_size) {
+    // Edge case handling: If block_size is 64, the mask is ~0ULL (all bits set).
+    // (1ULL << 64) is Undefined Behavior, so we handle 64 separately.
+    // if (block_size >= 64) {
+    //     return value;
+    // }
 
+    // // Generalized Mask Creation: (2^L - 1) << start_bit
+    // // 1. (1ULL << block_size) - 1  -> Creates the L-bit mask (0b11...1)
+    // // 2. (...) << start_bit      -> Shifts the mask to the correct position
+    // uint64_t full_mask = ((1ULL << block_size) - 1) << start_bit;
+
+    // // Apply the mask and shift down (normalization)
+    // return (value & full_mask) >> start_bit;
+    return (value & (((1ULL << block_size) - 1) << start_bit)) >> start_bit;
+}
 
 
 #endif //ADCLASSIFIER2_COMMON_H

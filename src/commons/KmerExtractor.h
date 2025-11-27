@@ -12,7 +12,8 @@
 class KmerExtractor {
 private:
     const LocalParameters &par;
-    const GeneticCode &geneticCode;
+    const GeneticCode * geneticCode;
+    const MetamerPattern * metamerPattern;
     KmerScanner ** kmerScanners;
     
     // Parameters
@@ -72,10 +73,13 @@ private:
 public:
     explicit KmerExtractor(
         const LocalParameters & par,
-        const GeneticCode &geneticCode,
+        const GeneticCode *geneticCode,
         int kmerFormat);
+    explicit KmerExtractor(
+        const LocalParameters &par,
+        const MetamerPattern * metamerPattern);
     ~KmerExtractor();
-
+    
     void extractQueryKmers(
         Buffer<Kmer> &kmerBuffer,
         vector<Query> & queryList,

@@ -47,6 +47,7 @@ protected:
 
     // Agents
     GeneticCode * geneticCode = nullptr;
+    MetamerPattern * metamerPattern = nullptr;
     QueryIndexer * queryIndexer = nullptr;
     KmerExtractor * kmerExtractor = nullptr;
     KmerMatcher * kmerMatcher = nullptr;

@@ -20,14 +20,31 @@ Classifier::Classifier(LocalParameters & par) {
     
     taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
 
-    geneticCode = new GeneticCode(par.reducedAA == 1);
-    queryIndexer = new QueryIndexer(par);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, kmerFormat);
+    metamerPattern = new MetamerPattern();
     if (par.reducedAA) {
-        kmerMatcher = new ReducedKmerMatcher(par, taxonomy, kmerFormat);
+        geneticCode = new ReducedGeneticCode();
+        metamerPattern->geneticCodes.push_back(geneticCode);
+        for (size_t i = 0; i < 8; ++i) {
+            metamerPattern->codePattern.push_back(0);            
+        }
+        metamerPattern->init();
     } else {
-        kmerMatcher = new KmerMatcher(par, taxonomy, kmerFormat);
+        geneticCode = new RegularGeneticCode();
+        metamerPattern->geneticCodes.push_back(geneticCode);
+        for (size_t i = 0; i < 8; ++i) {
+            metamerPattern->codePattern.push_back(0);            
+        }
+        metamerPattern->init();
     }
+    queryIndexer = new QueryIndexer(par);
+    kmerExtractor = new KmerExtractor(par, metamerPattern);
+    // kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
+    // if (par.reducedAA) {
+    //     kmerMatcher = new ReducedKmerMatcher(par, taxonomy, kmerFormat);
+    // } else {
+    //     kmerMatcher = new KmerMatcher(par, taxonomy, kmerFormat);
+    // }
+    kmerMatcher = new KmerMatcher(par, taxonomy, metamerPattern);
     reporter = new Reporter(par, taxonomy);
 }
 
@@ -38,6 +55,7 @@ Classifier::~Classifier() {
     delete kmerMatcher;
     delete reporter;
     delete geneticCode;
+    delete metamerPattern;
     if (mappingResList) delete[] mappingResList;
 }
 
@@ -111,7 +129,7 @@ void Classifier::startClassify(const LocalParameters &par) {
             
             // Search matches between query and target k-mers
             bool searchComplete = false;
-            searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer);
+            searchComplete = kmerMatcher->matchKmers2(&queryKmerBuffer, &matchBuffer, dbDir);
             if (searchComplete) {
                 cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << endl;
                 kmerMatcher->sortMatches(&matchBuffer);

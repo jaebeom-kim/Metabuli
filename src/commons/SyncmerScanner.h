@@ -30,16 +30,16 @@ public:
         this->dq.clear();
         this->smerCnt = 0;
         this->smer = 0;
-        this->prevPos = -8;
+        this->prevPos = -kmerSize;
     }
 
     Kmer next() override {
         bool syncmerFound = false;
         int aa = 0;
-        while (posStart <= aaLen - 8 && !syncmerFound) {
+        while (posStart <= aaLen - kmerSize && !syncmerFound) {
             bool sawN = false;
             smerCnt -= (smerCnt > 0);
-            while (smerCnt < 8 - smerLen + 1) {
+            while (smerCnt < kmerSize - smerLen + 1) {
                 loadedCharCnt -= (loadedCharCnt == smerLen);
                 while (loadedCharCnt < smerLen) {
                     if (isForward) {
@@ -50,7 +50,7 @@ public:
                         aa = geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
                     }
                     if (aa < 0) { sawN = true; break; }
-                    smer = (smer << 5) | (uint64_t)aa;                    
+                    smer = (smer << bitsPerAA) | (uint64_t)aa;                    
                     loadedCharCnt++;
                 }
                 if (sawN) break;
@@ -61,7 +61,7 @@ public:
             }
             if (sawN) {
                 posStart += smerCnt + loadedCharCnt + 1;
-                prevPos = posStart - 8; // Reset previous position ??
+                prevPos = posStart - kmerSize; // Reset previous position ??
                 dq.clear(); 
                 smerCnt = loadedCharCnt = 0; 
                 smer = 0;
@@ -74,15 +74,15 @@ public:
                 int shifts = posStart - prevPos;
                 if (isForward) {
                     for (int i = 0; i < shifts; ++i) {
-                        int ci = seqStart + (prevPos + 8 + i) * 3;
-                        aaPart = (aaPart << 5) | (uint64_t)geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
-                        dnaPart = (dnaPart << 3) | (uint64_t)geneticCode.getCodon(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
+                        int ci = seqStart + (prevPos + kmerSize + i) * 3;
+                        aaPart = (aaPart << bitsPerAA) | (uint64_t)geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
+                        dnaPart = (dnaPart << bitsPerCodon) | (uint64_t)geneticCode.getCodon(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
                     }
                 } else {
                     for (int i = 0; i < shifts; ++i) {
-                        int ci = seqEnd - (prevPos + 8 + i) * 3;
-                        aaPart = (aaPart << 5) | (uint64_t)geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
-                        dnaPart = (dnaPart << 3) | (uint64_t)geneticCode.getCodon(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
+                        int ci = seqEnd - (prevPos + kmerSize + i) * 3;
+                        aaPart = (aaPart << bitsPerAA) | (uint64_t)geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
+                        dnaPart = (dnaPart << bitsPerCodon) | (uint64_t)geneticCode.getCodon(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
                     }
                 }
                 prevPos = posStart;
@@ -92,9 +92,9 @@ public:
         }
         if (syncmerFound) {
             if (isForward) {
-                return {(aaPart << 24) | (dnaPart & dnaMask), seqStart + prevPos * 3};
+                return {(aaPart << dnaBits) | (dnaPart & dnaMask), seqStart + prevPos * 3};
             } else {
-                return {(aaPart << 24) | (dnaPart & dnaMask), seqEnd - (prevPos + 8) * 3 + 1};
+                return {(aaPart << dnaBits) | (dnaPart & dnaMask), seqEnd - (prevPos + kmerSize) * 3 + 1};
             }
         } else {
             return {UINT64_MAX, 0}; // No more syncmers found
@@ -205,7 +205,7 @@ public:
     SyncmerScanner_dna2aa(const GeneticCode &geneticCode, int k, int s) 
         : KmerScanner_dna2aa(geneticCode, k), smerLen(s) 
     {
-        this->smerMask = (1ULL << (5 * smerLen)) - 1;
+        this->smerMask = (1ULL << (bitsPerAA * smerLen)) - 1;
     }
 
     void initScanner(
@@ -239,7 +239,7 @@ public:
                         aa = geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);            
                     }
                     if (aa < 0) { sawN = true; break; }
-                    smer = (smer << 5) | (uint64_t)aa;
+                    smer = (smer << bitsPerAA) | (uint64_t)aa;
                     loadedCharCnt++;
                 }
                 if (sawN) break;
@@ -269,12 +269,12 @@ public:
                 if (isForward) {
                     for (int i = 0; i < shifts; ++i) {
                         int ci = seqStart + (prevPos + kmerSize + i) * 3;
-                        aaPart = (aaPart << 5) | (uint64_t)geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
+                        aaPart = (aaPart << bitsPerAA) | (uint64_t)geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
                     }
                 } else {
                     for (int i = 0; i < shifts; ++i) {
                         int ci = seqEnd - (prevPos + kmerSize + i) * 3;
-                        aaPart = (aaPart << 5) | (uint64_t)geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
+                        aaPart = (aaPart << bitsPerAA) | (uint64_t)geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
                     }
                 }
                 prevPos = posStart;

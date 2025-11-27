@@ -21,9 +21,13 @@ QueryFilter::QueryFilter(LocalParameters & par) {
     taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
  
     // Agents
-    geneticCode = new GeneticCode(par.reducedAA == 1);
+    if (par.reducedAA) {
+        geneticCode = new ReducedGeneticCode();
+    } else {
+        geneticCode = new RegularGeneticCode();
+    }
     queryIndexer = new QueryIndexer(par);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, isNewDB);
+    kmerExtractor = new KmerExtractor(par, geneticCode, isNewDB);
     if (par.reducedAA) { kmerMatcher = new ReducedKmerMatcher(par, taxonomy, isNewDB);} 
     else { kmerMatcher = new KmerMatcher(par, taxonomy, isNewDB);}
     taxonomer = new Taxonomer(par, taxonomy, isNewDB);

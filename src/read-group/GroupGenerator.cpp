@@ -18,10 +18,14 @@ GroupGenerator::GroupGenerator(LocalParameters & par) : par(par) {
                     taxDbDir + "/merged.dmp",
                     true);
     
-    geneticCode = new GeneticCode(par.reducedAA == 1);
+    if (par.reducedAA) {
+        geneticCode = new ReducedGeneticCode();
+    } else {
+        geneticCode = new RegularGeneticCode();
+    }
     queryIndexer = new QueryIndexer(par);
     queryIndexer->setKmerLen(12);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, kmerFormat);
+    kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     updatedResultFileName = outDir + "/updated_classifications.tsv";
     updatedReportFileName = outDir + "/updated_report.tsv";
 
