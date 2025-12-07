@@ -22,16 +22,6 @@ struct TaxonScore {
     TaxonScore() : taxId(0), score(0.0f), hammingDist(0), LCA(false) {}
 };
 
-struct depthScore {
-    depthScore(size_t depth, float score, int hammingDist, const Match * endMatch) : 
-        depth(depth), score(score), hammingDist(hammingDist), endMatch(endMatch) {}
-    depthScore() : depth(0), score(0.f), hammingDist(0), endMatch(nullptr) {}
-    size_t depth;
-    float score;
-    int hammingDist;
-    const Match * endMatch;
-};
-
 struct MatchPath {
     MatchPath(int start, int end, float score, int hammingDist, int depth, const Match * startMatch, const Match * endMatch) :
          start(start), end(end), score(score), hammingDist(hammingDist), depth(depth), startMatch(startMatch), endMatch(endMatch) {}
@@ -62,7 +52,7 @@ class Taxonomer {
 private:
     const LocalParameters & par;
     TaxonomyWrapper * taxonomy;
-    int kmerFormat;
+    const MetamerPattern *metamerPattern = nullptr;
 
     // spaced k-mer
     int unmaskedPos[9];
@@ -141,7 +131,11 @@ private:
     void trimMatchPath(MatchPath & path1, const MatchPath & path2, int overlapLength);
 
 public:
-    Taxonomer(const LocalParameters & par, TaxonomyWrapper * taxonomy, int kmerFormat);
+    Taxonomer(
+        const LocalParameters & par, 
+        TaxonomyWrapper * taxonomy, 
+        const MetamerPattern *metamerPattern);
+
     ~Taxonomer();
 
     void assignTaxonomy(const Match *matchList,
@@ -160,16 +154,22 @@ public:
                        size_t start,
                        size_t end,
                        vector<MatchPath> & matchPaths,
-                       TaxID speciesId);                                    
+                       TaxID speciesId);       
+                       
+    void getMatchPaths2(const Match * matchList,
+                       size_t start,
+                       size_t end,
+                       vector<MatchPath> & matchPaths,
+                       TaxID speciesId); 
 
     void filterRedundantMatches(const Match *matchList,
                                 const std::pair<size_t, size_t> & bestSpeciesRange,
                                 unordered_map<TaxID, unsigned int> & taxCnt,
                                 int queryLength);
 
-    bool isConsecutive(const Match * match1, const Match * match2);
+    bool isConsecutive_legacy(const Match * match1, const Match * match2);
 
-    bool isConsecutive(const Match * match1, const Match * match2, int shift);
+    bool isConsecutive_legacy(const Match * match1, const Match * match2, int shift);
 
     bool isConsecutive2(const Match * match1, const Match * match2);
 

@@ -75,9 +75,14 @@ public:
         const LocalParameters & par,
         const GeneticCode *geneticCode,
         int kmerFormat);
+
     explicit KmerExtractor(
         const LocalParameters &par,
-        const MetamerPattern * metamerPattern);
+        const MultiCodePattern * metamerPattern);
+
+    explicit KmerExtractor(
+        const LocalParameters &par,
+        const SingleCodePattern * metamerPattern);
     ~KmerExtractor();
     
     void extractQueryKmers(

@@ -212,7 +212,7 @@ protected:
 
   virtual uint16_t getHammings_reverse(uint64_t kmer1, uint64_t kmer2);
 
-  std::pair<uint8_t, uint16_t> getHammingDists(uint64_t kmer1, uint64_t kmer2);
+  // std::pair<uint8_t, uint16_t> getHammingDists(uint64_t kmer1, uint64_t kmer2);
 
   std::pair<uint8_t, uint16_t> getHammingDists_reverse(uint64_t kmer1, uint64_t kmer2);
 
@@ -411,71 +411,6 @@ inline uint16_t KmerMatcher::getHammings(
   return h;
 }
 
-inline uint8_t KmerMatcher::getHammingDistanceSum2(
-  uint64_t kmer1, // 12345678                                                
-  uint64_t kmer2) 
-{ 
-  uint8_t hammingSum = 0;
-  const int totalDNABits = metamerPattern->totalDNABits;
-  const int totalAABits = metamerPattern->totalAABits;
-
-  const uint64_t aaPart = kmer1 >> totalDNABits;  
-  const uint64_t dnaPart1 = kmer1 & metamerPattern->dnaMask;
-  const uint64_t dnaPart2 = kmer2 & metamerPattern->dnaMask;
-
-  int aaBitSum = 0;
-  int dnaBitSum = 0;
-  for (size_t i = 0; i < kmerLen ; i++) {
-    const uint8_t patternIdx = metamerPattern->codePattern[i];
-    const int currAABit = metamerPattern->aaBitList[patternIdx];
-    aaBitSum += currAABit;
-    const int aa = (aaPart >> (totalAABits - aaBitSum)) & ((1 << currAABit) - 1);
-
-    const int currCodonBit = metamerPattern->codonBitList[patternIdx];
-    dnaBitSum += currCodonBit;
-    const uint64_t codonMask = (1ULL << currCodonBit) - 1;
-    const int codon1 = (dnaPart1 >> (totalDNABits - dnaBitSum)) & codonMask;
-    const int codon2 = (dnaPart2 >> (totalDNABits - dnaBitSum)) & codonMask;
-    hammingSum += metamerPattern->geneticCodes[patternIdx]->getHammingDist(aa, codon1, codon2);
-  }  
-  return hammingSum;
-}
-
-inline std::pair<uint8_t, uint16_t> KmerMatcher::getHammingDists(
-  uint64_t kmer1, 
-  uint64_t kmer2) 
-{
-  uint8_t hammingSum = 0;
-  uint16_t hammings = 0;
-
-  const int totalDNABits = metamerPattern->totalDNABits;
-  const int totalAABits = metamerPattern->totalAABits;
-
-  const uint64_t aaPart = kmer1 >> totalDNABits;  
-  const uint64_t dnaPart1 = kmer1 & metamerPattern->dnaMask;
-  const uint64_t dnaPart2 = kmer2 & metamerPattern->dnaMask;
-
-  int aaBitSum = 0;
-  int dnaBitSum = 0;
-  for (size_t i = 0; i < kmerLen ; i++) {
-    const uint8_t patternIdx = metamerPattern->codePattern[i];
-    const int currAABit = metamerPattern->aaBitList[patternIdx];
-    aaBitSum += currAABit;
-    const int aa = (aaPart >> (totalAABits - aaBitSum)) & ((1 << currAABit) - 1);
-
-    const int currCodonBit = metamerPattern->codonBitList[patternIdx];
-    dnaBitSum += currCodonBit;
-    const uint64_t codonMask = (1ULL << currCodonBit) - 1;
-    const int codon1 = (dnaPart1 >> (totalDNABits - dnaBitSum)) & codonMask;
-    const int codon2 = (dnaPart2 >> (totalDNABits - dnaBitSum)) & codonMask;
-    const int hammingDist = metamerPattern->geneticCodes[patternIdx]->getHammingDist(aa, codon1, codon2);
-    hammingSum += hammingDist;
-    hammings |= hammingDist << (2 * (kmerLen - 1 -i));
-  } 
-
-  return {hammingSum, hammings};
-}
-
 inline uint16_t KmerMatcher::getHammings_reverse(
   uint64_t kmer1,  // left-end 76543210 right-end
   uint64_t kmer2)  // left-end 76543210 right-end
@@ -490,40 +425,6 @@ inline uint16_t KmerMatcher::getHammings_reverse(
   h |= HAMMING_LUT1[GET_3_BITS(kmer1 >> 18) << 3 | GET_3_BITS(kmer2 >> 18)];
   h |= HAMMING_LUT0[GET_3_BITS(kmer1 >> 21) << 3 | GET_3_BITS(kmer2 >> 21)];
   return h; // left-end 01234567 right-end
-}
-
-inline std::pair<uint8_t, uint16_t> KmerMatcher::getHammingDists_reverse(
-  uint64_t kmer1, 
-  uint64_t kmer2) 
-{
-  uint8_t hammingSum = 0;
-  uint16_t hammings = 0;
-  const int totalDNABits = metamerPattern->totalDNABits;
-  const int totalAABits = metamerPattern->totalAABits;
-
-  const uint64_t aaPart = kmer1 >> totalDNABits;  
-  const uint64_t dnaPart1 = kmer1 & metamerPattern->dnaMask;
-  const uint64_t dnaPart2 = kmer2 & metamerPattern->dnaMask;
-
-  int aaBitSum = 0;
-  int dnaBitSum = 0;
-  for (size_t i = 0; i < kmerLen ; i++) {
-    const uint8_t patternIdx = metamerPattern->codePattern[i];
-    const int currAABit = metamerPattern->aaBitList[patternIdx];
-    aaBitSum += currAABit;
-    const int aa = (aaPart >> (totalAABits - aaBitSum)) & ((1 << currAABit) - 1);
-
-    const int currCodonBit = metamerPattern->codonBitList[patternIdx];
-    dnaBitSum += currCodonBit;
-    const uint64_t codonMask = (1ULL << currCodonBit) - 1;
-    const int codon1 = (dnaPart1 >> (totalDNABits - dnaBitSum)) & codonMask;
-    const int codon2 = (dnaPart2 >> (totalDNABits - dnaBitSum)) & codonMask;
-    const int hammingDist = metamerPattern->geneticCodes[patternIdx]->getHammingDist(aa, codon1, codon2);
-    hammingSum += hammingDist;
-    hammings |= hammingDist << (2 * i);
-  } 
-
-  return {hammingSum, hammings};
 }
 
 

@@ -53,7 +53,7 @@ KmerMatcher::KmerMatcher(
     DNA_MASK = ~metamerPattern->dnaMask; // metamer & DNA_MASK -> AA part 
     AA_MASK = metamerPattern->dnaMask;   // metamer & AA_MASK  -> DNA part
     totalMatchCnt = 0;
-    kmerLen = metamerPattern->codePattern.size();
+    kmerLen = metamerPattern->kmerLen;
     kmerFormat = 2;
     loadTaxIdList(par);
 }
@@ -311,10 +311,9 @@ querySplits, queryKmerList, matchBuffer, cout, mask, targetDiffIdxFileName, numO
                     matches[matchCnt] = {queryKmerList[j].qInfo,
                                          candidateKmerInfos[idx],
                                          taxId2speciesId[candidateKmerInfos[idx]],
-                                         (unsigned int) (candidateTargetKmers[idx] & AA_MASK),
+                                         candidateTargetKmers[idx] & AA_MASK,
                                          selectedHammings[k],
                                          selectedHammingSum[k]};
-                    // std::cout << "$$ " << bitset<32>(candidateTargetKmers[idx] & AA_MASK) << "\t" << bitset<16>(selectedHammings[k]) << "\t" << (int) selectedHammingSum[k] << endl;
                     matchCnt++;
                 }
                 continue;
@@ -342,7 +341,7 @@ querySplits, queryKmerList, matchBuffer, cout, mask, targetDiffIdxFileName, numO
                     matches[matchCnt] = {queryKmerList[j].qInfo,
                                          candidateKmerInfos[idx],
                                          taxId2speciesId[candidateKmerInfos[idx]],
-                                         (unsigned int) (candidateTargetKmers[idx] & AA_MASK),
+                                         candidateTargetKmers[idx] & AA_MASK,
                                          selectedHammings[k],
                                          selectedHammingSum[k]};
                     matchCnt++;
@@ -386,15 +385,14 @@ querySplits, queryKmerList, matchBuffer, cout, mask, targetDiffIdxFileName, numO
                     cout << "Query  k-mer: ";
                     print_binary64(64, currentQuery);
                     cout << "\t";
-                    queryKmerList[j].printAA(metamerPattern); cout << "\t";
-                    queryKmerList[j].printDNA(metamerPattern);
+                    metamerPattern->printAA(queryKmerList[j].value); cout << "\t";
+                    metamerPattern->printDNA(queryKmerList[j].value);
                     cout << endl;
                     cout << "Target k-mer: ";
                     print_binary64(64, currentTargetKmer);
                     cout << "\t";
-                    Kmer targetKmer(currentTargetKmer, kmerInfoBuffer[kmerInfoBufferIdx]);
-                    targetKmer.printAA(metamerPattern); cout << "\t";
-                    targetKmer.printDNA(metamerPattern);
+                    metamerPattern->printAA(currentTargetKmer); cout << "\t";
+                    metamerPattern->printDNA(currentTargetKmer);
                     cout << endl;
                     cout << "\t" << taxonomy->getOriginalTaxID(kmerInfoBuffer[kmerInfoBufferIdx])
                          << "\t" << taxonomy->getOriginalTaxID(taxId2speciesId[kmerInfoBuffer[kmerInfoBufferIdx]])<< endl;
@@ -446,11 +444,9 @@ querySplits, queryKmerList, matchBuffer, cout, mask, targetDiffIdxFileName, numO
                 matches[matchCnt] = {queryKmerList[j].qInfo,
                                      candidateKmerInfos[idx],
                                      taxId2speciesId[candidateKmerInfos[idx]],
-                                     (unsigned int) (candidateTargetKmers[idx] & AA_MASK),
+                                     candidateTargetKmers[idx] & AA_MASK,
                                      selectedHammings[k],
-                                     selectedHammingSum[k]};
-                // std::cout << "$$ " << bitset<32>(candidateTargetKmers[idx] & AA_MASK) << "\t" << bitset<16>(selectedHammings[k]) << "\t" << (int) selectedHammingSum[k] << endl;
-                    
+                                     selectedHammingSum[k]};                    
                 matchCnt++;
             }
         } // End of one split
@@ -806,9 +802,9 @@ void KmerMatcher::filterCandidates(
     uint8_t hDistCutoff = UINT8_MAX;
     for (size_t i = 0; i < candidates.size(); i++) {
         if ((qKmer.qInfo.frame < 3) == (kmerFormat == 2)) {
-            hammingDists[i] = getHammingDists(qKmer.value, candidates[i].value);
+            hammingDists[i] = metamerPattern->getHammingDists(qKmer.value, candidates[i].value);
         } else {
-            hammingDists[i] = getHammingDists_reverse(qKmer.value, candidates[i].value);
+            hammingDists[i] = metamerPattern->getHammingDists_reverse(qKmer.value, candidates[i].value);
         }
         hDistCutoff = min(hDistCutoff, hammingDists[i].first);
     }
@@ -819,9 +815,9 @@ void KmerMatcher::filterCandidates(
                 qKmer.qInfo,                                    // query k-mer info
                 candidates[h].id,                               // target TaxID
                 taxId2speciesId[candidates[h].id],              // target species ID
-                (unsigned int) (candidates[h].value & AA_MASK), // target DNA encoding
+                candidates[h].value,           // target DNA encoding
                 hammingDists[h].second,
-                hammingDists[h].first                                 // Hamming dist. sum
+                hammingDists[h].first                           // Hamming dist. sum
             );
         }
     }
@@ -877,5 +873,5 @@ bool KmerMatcher::compareMatches(const Match& a, const Match& b) {
     if (a.hamming != b.hamming)
         return a.hamming < b.hamming;
 
-    return a.dnaEncoding < b.dnaEncoding;
+    return a.value < b.value;
 }

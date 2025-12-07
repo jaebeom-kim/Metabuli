@@ -45,9 +45,12 @@ KmerExtractor::KmerExtractor(
     const MetamerPattern * metamerPattern)
     : par(par), metamerPattern(metamerPattern), kmerScanners(new KmerScanner*[par.threads]) {
     // Initialize k-mer scanners for each thread
-    kmerLen = metamerPattern->codePattern.size();
-    for (int i = 0; i < par.threads; ++i) {
-        kmerScanners[i] = new MultiCodeScanner(metamerPattern);
+    kmerLen = metamerPattern->kmerLen;
+
+    if (dynamic_cast<const MultiCodePattern *>(metamerPattern)) {
+        for (int i = 0; i < par.threads; ++i) {
+            kmerScanners[i] = new MultiCodeScanner(metamerPattern);
+        }
     }
     spaceNum = 0;
     maskMode = par.maskMode;
@@ -55,6 +58,22 @@ KmerExtractor::KmerExtractor(
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
     probMatrix = new ProbabilityMatrix(*(subMat));
 }
+
+// KmerExtractor::KmerExtractor(
+//     const LocalParameters &par,
+//     const SingleCodePattern * metamerPattern)
+//     : par(par), metamerPattern(metamerPattern), kmerScanners(new KmerScanner*[par.threads]) {
+//     // Initialize k-mer scanners for each thread
+//     kmerLen = metamerPattern->kmerLen;
+//     for (int i = 0; i < par.threads; ++i) {
+//         kmerScanners[i] = new SingleCodeScanner(metamerPattern);
+//     }
+//     spaceNum = 0;
+//     maskMode = par.maskMode;
+//     maskProb = par.maskProb;
+//     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
+//     probMatrix = new ProbabilityMatrix(*(subMat));
+// }
 
 KmerExtractor::~KmerExtractor() {
     delete probMatrix;

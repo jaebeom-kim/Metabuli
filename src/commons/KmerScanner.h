@@ -50,7 +50,7 @@ public:
 
 class MultiCodeScanner : public KmerScanner {
 protected:
-    const MetamerPattern * pattern;
+    const MultiCodePattern * pattern;
     // const std::vector<const GeneticCode *> geneticCodes;
     // std::vector<int> codePattern;
     uint64_t dnaMask;
@@ -66,7 +66,7 @@ protected:
     // std::vector<int> dnaBitsList;
 
 public:
-    MultiCodeScanner(const MetamerPattern * pattern) 
+    MultiCodeScanner(const MultiCodePattern * pattern) 
         : KmerScanner(pattern->codePattern.size()), pattern(pattern) {
         for (size_t i = 0; i < pattern->geneticCodes.size(); ++i) {
             // dnaMaskList.push_back((1ULL << (geneticCodes[i]->bitPerCodon * kmerSize)) - 1);

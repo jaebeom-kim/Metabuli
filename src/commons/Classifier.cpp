@@ -20,24 +20,39 @@ Classifier::Classifier(LocalParameters & par) {
     
     taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
 
-    metamerPattern = new MetamerPattern();
-    if (par.reducedAA) {
-        geneticCode = new ReducedGeneticCode();
-        metamerPattern->geneticCodes.push_back(geneticCode);
-        for (size_t i = 0; i < 8; ++i) {
-            metamerPattern->codePattern.push_back(0);            
+    if (kmerFormat == 1) {
+        metamerPattern = new LegacyPattern(new RegularGeneticCode(), 8);
+    } else if (kmerFormat == 2) {
+        bool multicode = true;
+        if (multicode) {
+            if (par.reducedAA) {
+                vector<const GeneticCode *> geneticCodes;
+                geneticCodes.push_back(new ReducedGeneticCode());
+                vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
+                metamerPattern = new MultiCodePattern(geneticCodes, codePatterns);
+                kmerExtractor = new KmerExtractor(par, metamerPattern);
+            } else {
+                vector<const GeneticCode *> geneticCodes;
+                geneticCodes.push_back(new RegularGeneticCode());
+                vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
+                metamerPattern = new MultiCodePattern(geneticCodes, codePatterns);
+                kmerExtractor = new KmerExtractor(par, metamerPattern);
+            }
+        } else {
+            if (par.reducedAA) {
+                metamerPattern = new SingleCodePattern(new ReducedGeneticCode(), 8);
+                kmerExtractor = new KmerExtractor(par, metamerPattern);
+            } else {
+                metamerPattern = new SingleCodePattern(new RegularGeneticCode(), 8);
+                kmerExtractor = new KmerExtractor(par, metamerPattern);
+            }
         }
-        metamerPattern->init();
-    } else {
-        geneticCode = new RegularGeneticCode();
-        metamerPattern->geneticCodes.push_back(geneticCode);
-        for (size_t i = 0; i < 8; ++i) {
-            metamerPattern->codePattern.push_back(0);            
-        }
-        metamerPattern->init();
-    }
+        
+        
+    } 
+
     queryIndexer = new QueryIndexer(par);
-    kmerExtractor = new KmerExtractor(par, metamerPattern);
+    // kmerExtractor = new KmerExtractor(par, metamerPattern);
     // kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     // if (par.reducedAA) {
     //     kmerMatcher = new ReducedKmerMatcher(par, taxonomy, kmerFormat);
@@ -204,7 +219,7 @@ void Classifier::assignTaxonomy(const Match *matchList,
     // Process each block
 #pragma omp parallel default(none), shared(cout, matchBlocks, matchList, seqNum, queryList, blockIdx, par)
     {
-        Taxonomer taxonomer(par, taxonomy, kmerFormat);
+        Taxonomer taxonomer(par, taxonomy, metamerPattern);
         #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < blockIdx; ++i) {
             taxonomer.chooseBestTaxon(matchBlocks[i].id - 1,

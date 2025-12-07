@@ -9,8 +9,8 @@
 #include <unordered_map>
 
 
-Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, int kmerFormat) 
-    :  par(par), taxonomy(taxonomy), kmerFormat(kmerFormat) 
+Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, const MetamerPattern *metamerPattern) 
+    :  par(par), taxonomy(taxonomy), metamerPattern(metamerPattern)
 {
     // Parameters
     string spaceMask = "11111111";
@@ -532,24 +532,13 @@ void Taxonomer::getMatchPaths(
                     const MatchPath * bestPath = nullptr;
                     float bestScore = 0;
                     for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                        if (kmerFormat == 2) {
-                            if (isConsecutive2(matchList + curIdx, matchList + nextIdx, shift)) {
-                                connectedToNext[curIdx - start] = true;
-                                if (localMatchPaths[curIdx - start].score > bestScore) {
-                                    bestPath = &localMatchPaths[curIdx - start];
-                                    bestScore = localMatchPaths[curIdx - start].score;
-                                }
-                            }
-                        } else {
-                            if (isConsecutive(matchList + curIdx, matchList + nextIdx, shift)) {
-                                connectedToNext[curIdx - start] = true;
-                                if (localMatchPaths[curIdx - start].score > bestScore) {
-                                    bestPath = &localMatchPaths[curIdx - start];
-                                    bestScore = localMatchPaths[curIdx - start].score;
-                                }
+                        if (metamerPattern->checkOverlap(matchList[curIdx].value,matchList[nextIdx].value,shift)) {
+                            connectedToNext[curIdx - start] = true;
+                            if (localMatchPaths[curIdx - start].score > bestScore) {
+                                bestPath = &localMatchPaths[curIdx - start];
+                                bestScore = localMatchPaths[curIdx - start].score;
                             }
                         }
-
                     }
                     if (bestPath != nullptr) {
                         localMatchPaths[nextIdx - start].start = bestPath->start;                        
@@ -601,21 +590,11 @@ void Taxonomer::getMatchPaths(
                     const MatchPath * bestPath = nullptr;
                     float bestScore = 0;
                     for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                        if (kmerFormat == 2) {
-                            if (isConsecutive2(matchList + nextIdx, matchList + curIdx, shift)) {
-                                connectedToNext[curIdx - start] = true;
-                                if (localMatchPaths[curIdx - start].score > bestScore) {
-                                    bestPath = &localMatchPaths[curIdx - start];
-                                    bestScore = localMatchPaths[curIdx - start].score;
-                                }
-                            }
-                        } else {
-                            if (isConsecutive(matchList + nextIdx, matchList + curIdx, shift)) {
-                                connectedToNext[curIdx - start] = true;
-                                if (localMatchPaths[curIdx - start].score > bestScore) {
-                                    bestPath = &localMatchPaths[curIdx - start];
-                                    bestScore = localMatchPaths[curIdx - start].score;
-                                }
+                        if (metamerPattern->checkOverlap(matchList[nextIdx].value,matchList[curIdx].value,shift)) {
+                            connectedToNext[curIdx - start] = true;
+                            if (localMatchPaths[curIdx - start].score > bestScore) {
+                                bestPath = &localMatchPaths[curIdx - start];
+                                bestScore = localMatchPaths[curIdx - start].score;
                             }
                         }
                     }
@@ -668,25 +647,25 @@ int Taxonomer::calHammingDistIncrement(uint16_t hammings, int shift) {
     return hammingDistIncrement;
 }
 
-bool Taxonomer::isConsecutive(const Match * match1, const Match * match2) {
+bool Taxonomer::isConsecutive_legacy(const Match * match1, const Match * match2) {
     // match1 87654321 -> 08765432
     // match2 98765432 -> 08765432
-    return (match1->dnaEncoding >> bitsPerCodon) == (match2->dnaEncoding & lastCodonMask);
+    return (match1->value >> bitsPerCodon) == (match2->value & lastCodonMask);
 }
 
-bool Taxonomer::isConsecutive(const Match * match1, const Match * match2, int shift) {
+bool Taxonomer::isConsecutive_legacy(const Match * match1, const Match * match2, int shift) {
     // match1 ---76543210 -> ---**765432
     // match2 ---98765432 -> ---**765432
     // uint32_t dnaEncoding1 = match1->dnaEncoding >> (3 * shift);
     // uint32_t dnaEncoding2 = match2->dnaEncoding & ((1U << (24 - 3 * shift)) - 1);
-    return (match1->dnaEncoding >> (bitsPerCodon * shift)) == (match2->dnaEncoding & ((1U << (totalDnaBits - bitsPerCodon * shift)) - 1));
+    return (match1->value >> (bitsPerCodon * shift)) == (match2->value & ((1U << (totalDnaBits - bitsPerCodon * shift)) - 1));
 }
 
 
 bool Taxonomer::isConsecutive2(const Match * match1, const Match * match2) {
     // match1 12345678 -> 02345678
     // match2 23456789 -> 02345678 
-    return (match1->dnaEncoding & lastCodonMask) == (match2->dnaEncoding >> bitsPerCodon);
+    return (match1->value & lastCodonMask) == (match2->value >> bitsPerCodon);
 }
 
 bool Taxonomer::isConsecutive2(const Match * match1, const Match * match2, int shift) {
@@ -694,8 +673,8 @@ bool Taxonomer::isConsecutive2(const Match * match1, const Match * match2, int s
     // match2 ---23456789 -> ---**234567
     // uint32_t dnaEncoding1 = match1->dnaEncoding >> (3 * shift);
     // uint32_t dnaEncoding2 = match2->dnaEncoding & ((1U << (24 - 3 * shift)) - 1);
-    return (match1->dnaEncoding & ((1U << (totalDnaBits - bitsPerCodon * shift)) - 1)) 
-        == (match2->dnaEncoding >> (bitsPerCodon * shift));
+    return (match1->value & ((1U << (totalDnaBits - bitsPerCodon * shift)) - 1)) 
+        == (match2->value >> (bitsPerCodon * shift));
 }
 
 void Taxonomer::ensureArraySize(size_t newSize) {
