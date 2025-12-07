@@ -43,15 +43,10 @@ KmerExtractor::KmerExtractor(
 KmerExtractor::KmerExtractor(
     const LocalParameters &par,
     const MetamerPattern * metamerPattern)
-    : par(par), metamerPattern(metamerPattern), kmerScanners(new KmerScanner*[par.threads]) {
+    : par(par), metamerPattern(metamerPattern) {
     // Initialize k-mer scanners for each thread
     kmerLen = metamerPattern->kmerLen;
-
-    if (dynamic_cast<const MultiCodePattern *>(metamerPattern)) {
-        for (int i = 0; i < par.threads; ++i) {
-            kmerScanners[i] = new MultiCodeScanner(metamerPattern);
-        }
-    }
+    kmerScanners2 = metamerPattern->createScanners(par.threads);
     spaceNum = 0;
     maskMode = par.maskMode;
     maskProb = par.maskProb;

@@ -10,6 +10,7 @@
 #include "unordered_map"
 #include "GeneticCode.h"
 #include "DeltaIdxReader.h"
+#include "MetamerPattern.h"
 
 #include <string>
 #include <vector>
@@ -205,8 +206,6 @@ protected:
   );
 
   virtual uint8_t getHammingDistanceSum(uint64_t kmer1, uint64_t kmer2);
-
-  uint8_t getHammingDistanceSum2(uint64_t kmer1, uint64_t kmer2);
 
   virtual uint16_t getHammings(uint64_t kmer1, uint64_t kmer2);
 

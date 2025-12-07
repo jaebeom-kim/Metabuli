@@ -30,27 +30,23 @@ Classifier::Classifier(LocalParameters & par) {
                 geneticCodes.push_back(new ReducedGeneticCode());
                 vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
                 metamerPattern = new MultiCodePattern(geneticCodes, codePatterns);
-                kmerExtractor = new KmerExtractor(par, metamerPattern);
             } else {
                 vector<const GeneticCode *> geneticCodes;
                 geneticCodes.push_back(new RegularGeneticCode());
                 vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
                 metamerPattern = new MultiCodePattern(geneticCodes, codePatterns);
-                kmerExtractor = new KmerExtractor(par, metamerPattern);
             }
         } else {
             if (par.reducedAA) {
                 metamerPattern = new SingleCodePattern(new ReducedGeneticCode(), 8);
-                kmerExtractor = new KmerExtractor(par, metamerPattern);
             } else {
                 metamerPattern = new SingleCodePattern(new RegularGeneticCode(), 8);
-                kmerExtractor = new KmerExtractor(par, metamerPattern);
             }
         }
         
         
     } 
-
+    kmerExtractor = new KmerExtractor(par, metamerPattern);
     queryIndexer = new QueryIndexer(par);
     // kmerExtractor = new KmerExtractor(par, metamerPattern);
     // kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);

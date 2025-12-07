@@ -5,6 +5,7 @@
 #include "Match.h"
 #include "common.h"
 #include "BitManipulateMacros.h"
+#include "MetamerPattern.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>

@@ -838,7 +838,7 @@ void KmerMatcher::compareDna(uint64_t query,
 
     // Calculate hamming distance
     for (size_t i = 0; i < targetKmersToCompare.size(); i++) {
-        hammingDists[i] = getHammingDistanceSum2(query, targetKmersToCompare[i]);
+        hammingDists[i] = getHammingDistanceSum(query, targetKmersToCompare[i]);
         minHammingSum = min(minHammingSum, hammingDists[i]);
     }
 

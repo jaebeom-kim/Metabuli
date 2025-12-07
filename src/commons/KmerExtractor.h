@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include "GeneticCode.h"
+#include "MetamerPattern.h"
 
 class KmerExtractor {
 private:
@@ -15,6 +16,7 @@ private:
     const GeneticCode * geneticCode;
     const MetamerPattern * metamerPattern;
     KmerScanner ** kmerScanners;
+    std::vector<std::unique_ptr<KmerScanner>> kmerScanners2;
     
     // Parameters
     int spaceNum;
@@ -78,11 +80,8 @@ public:
 
     explicit KmerExtractor(
         const LocalParameters &par,
-        const MultiCodePattern * metamerPattern);
+        const MetamerPattern * metamerPattern);
 
-    explicit KmerExtractor(
-        const LocalParameters &par,
-        const SingleCodePattern * metamerPattern);
     ~KmerExtractor();
     
     void extractQueryKmers(
