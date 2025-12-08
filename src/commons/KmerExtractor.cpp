@@ -5,7 +5,7 @@ KmerExtractor::KmerExtractor(
     const LocalParameters &par,
     const GeneticCode * geneticCode,
     int kmerFormat) 
-    : par(par), geneticCode(geneticCode), kmerScanners(new KmerScanner*[par.threads]) {
+    : par(par), geneticCode(geneticCode) {
     // Initialize k-mer scanners for each thread
     kmerLen = 8;
     for (int i = 0; i < par.threads; ++i) {
@@ -13,20 +13,20 @@ KmerExtractor::KmerExtractor(
             if (i == 0) {
                 std::cout << "Using OldMetamerScanner." << std::endl;
             }
-            kmerScanners[i] = new OldMetamerScanner(*geneticCode);
+            kmerScanners.push_back(std::make_unique<OldMetamerScanner>(*geneticCode));
         } else if (kmerFormat == 2) {
             if (par.syncmer) {
-                kmerScanners[i] = new SyncmerScanner(par.smerLen, *geneticCode);
+                kmerScanners.push_back(std::make_unique<SyncmerScanner>(par.smerLen, *geneticCode));
             } else {
-                kmerScanners[i] = new MetamerScanner(*geneticCode);
+                kmerScanners.push_back(std::make_unique<MetamerScanner>(*geneticCode));
             }
         } else if (kmerFormat == 3) {
-            kmerScanners[i] = new KmerScanner_dna2aa(*geneticCode, 12);
+            kmerScanners.push_back(std::make_unique<KmerScanner_dna2aa>(*geneticCode, 12));
             kmerLen = 12;
         } else if (kmerFormat == 4) {
-            kmerScanners[i] = new KmerScanner_aa2aa(12);
+            kmerScanners.push_back(std::make_unique<KmerScanner_aa2aa>(12));
         } else if (kmerFormat == 5) {
-            kmerScanners[i] = new SyncmerScanner_dna2aa(*geneticCode, 12, par.smerLen);
+            kmerScanners.push_back(std::make_unique<SyncmerScanner_dna2aa>(*geneticCode, 12, par.smerLen));
             kmerLen = 12;
         } else {
             std::cerr << "Error: Invalid k-mer format specified." << std::endl;
@@ -46,7 +46,7 @@ KmerExtractor::KmerExtractor(
     : par(par), metamerPattern(metamerPattern) {
     // Initialize k-mer scanners for each thread
     kmerLen = metamerPattern->kmerLen;
-    kmerScanners2 = metamerPattern->createScanners(par.threads);
+    kmerScanners = metamerPattern->createScanners(par.threads);
     spaceNum = 0;
     maskMode = par.maskMode;
     maskProb = par.maskProb;
@@ -54,29 +54,9 @@ KmerExtractor::KmerExtractor(
     probMatrix = new ProbabilityMatrix(*(subMat));
 }
 
-// KmerExtractor::KmerExtractor(
-//     const LocalParameters &par,
-//     const SingleCodePattern * metamerPattern)
-//     : par(par), metamerPattern(metamerPattern), kmerScanners(new KmerScanner*[par.threads]) {
-//     // Initialize k-mer scanners for each thread
-//     kmerLen = metamerPattern->kmerLen;
-//     for (int i = 0; i < par.threads; ++i) {
-//         kmerScanners[i] = new SingleCodeScanner(metamerPattern);
-//     }
-//     spaceNum = 0;
-//     maskMode = par.maskMode;
-//     maskProb = par.maskProb;
-//     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
-//     probMatrix = new ProbabilityMatrix(*(subMat));
-// }
-
 KmerExtractor::~KmerExtractor() {
     delete probMatrix;
     delete subMat;
-    for (int i = 0; i < par.threads; ++i) {
-        delete kmerScanners[i];
-    }
-    delete[] kmerScanners;
 }
 
 void KmerExtractor::extractQueryKmers(Buffer<Kmer> &kmerBuffer,

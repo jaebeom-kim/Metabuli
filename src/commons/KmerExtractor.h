@@ -15,8 +15,8 @@ private:
     const LocalParameters &par;
     const GeneticCode * geneticCode;
     const MetamerPattern * metamerPattern;
-    KmerScanner ** kmerScanners;
-    std::vector<std::unique_ptr<KmerScanner>> kmerScanners2;
+    // KmerScanner ** kmerScanners;
+    std::vector<std::unique_ptr<KmerScanner>> kmerScanners;
     
     // Parameters
     int spaceNum;

@@ -204,6 +204,11 @@ void Classifier::assignTaxonomy(const Match *matchList,
     size_t matchIdx = 0;
     size_t blockIdx = 0;
     uint32_t currentQuery;
+    if (par.printLog) {
+#ifdef OPENMP
+        omp_set_num_threads(1);
+#endif
+    }
     while (matchIdx < numOfMatches) {
         currentQuery = matchList[matchIdx].qInfo.sequenceID;
         matchBlocks[blockIdx].id = currentQuery;
@@ -225,6 +230,12 @@ void Classifier::assignTaxonomy(const Match *matchList,
                             queryList,
                             par);
         }
+    }
+
+    if (par.printLog) {
+#ifdef OPENMP
+        omp_set_num_threads(par.threads);
+#endif
     }
 
     for (size_t i = 0; i < seqNum; i++) {

@@ -51,7 +51,7 @@ class GeneticCode {
 
 };
 
-class RegularGeneticCode : public GeneticCode {
+class RegularGeneticCode final : public GeneticCode {
     public:
         RegularGeneticCode() : GeneticCode() {
             maxCodonPerAA = 6;
@@ -233,7 +233,7 @@ class RegularGeneticCode : public GeneticCode {
 
         }
 
-        uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const override {
+        inline uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const override {
             return hammingLookup[codon1Idx * 8 + codon2Idx];
         }
 
@@ -243,10 +243,10 @@ class RegularGeneticCode : public GeneticCode {
 };
 
 
-class ReducedGeneticCode : public GeneticCode {
+class ReducedGeneticCode final : public GeneticCode {
     public:
         std::vector<std::vector<uint8_t>> hammingMatrix;
-        uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const override {
+        inline uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const override {
             return hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + codon1Idx * maxCodonPerAA + codon2Idx];
         }
 

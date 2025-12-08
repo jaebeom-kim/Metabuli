@@ -122,12 +122,20 @@ private:
         size_t offset,
         Query & query);
 
+    void getMatchPaths(
+        const Match * matchList,
+        size_t start,
+        size_t end,
+        vector<MatchPath> & matchPaths,
+        TaxID speciesId); 
+
     float combineMatchPaths(
         vector<MatchPath> & matchPaths,
         size_t matchPathStart,
         vector<MatchPath> & combMatchPaths,
         size_t combMatchPathStart,
         int readLength);
+        
     bool isMatchPathOverlapped(const MatchPath & matchPath1, const MatchPath & matchPath2);
     void trimMatchPath(MatchPath & path1, const MatchPath & path2, int overlapLength);
 
@@ -149,19 +157,7 @@ public:
                          size_t end,
                          const Match *matchList,
                          vector<Query> & queryList,
-                         const LocalParameters &par);
-
-    void getMatchPaths(const Match * matchList,
-                       size_t start,
-                       size_t end,
-                       vector<MatchPath> & matchPaths,
-                       TaxID speciesId);       
-                       
-    void getMatchPaths2(const Match * matchList,
-                       size_t start,
-                       size_t end,
-                       vector<MatchPath> & matchPaths,
-                       TaxID speciesId); 
+                         const LocalParameters &par);      
 
     void filterRedundantMatches(const Match *matchList,
                                 const std::pair<size_t, size_t> & bestSpeciesRange,

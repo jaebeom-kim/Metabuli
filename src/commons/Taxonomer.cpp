@@ -322,7 +322,9 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
     combinedMatchPaths.clear();
     vector<pair<TaxID, float>> sp2score;
     int queryLength = query.queryLength + query.queryLength2;
-    
+    if (par.printLog) {
+        cout << "## " << query.name << " ##" << endl;
+    }
     TaxonScore bestScore;
     float bestSpScore = 0;
     size_t i = offset;
@@ -532,7 +534,7 @@ void Taxonomer::getMatchPaths(
                     const MatchPath * bestPath = nullptr;
                     float bestScore = 0;
                     for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                        if (metamerPattern->checkOverlap(matchList[curIdx].value,matchList[nextIdx].value,shift)) {
+                        if (metamerPattern->checkOverlap(matchList[curIdx].value, matchList[nextIdx].value, shift)) {
                             connectedToNext[curIdx - start] = true;
                             if (localMatchPaths[curIdx - start].score > bestScore) {
                                 bestPath = &localMatchPaths[curIdx - start];
@@ -590,7 +592,7 @@ void Taxonomer::getMatchPaths(
                     const MatchPath * bestPath = nullptr;
                     float bestScore = 0;
                     for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                        if (metamerPattern->checkOverlap(matchList[nextIdx].value,matchList[curIdx].value,shift)) {
+                        if (metamerPattern->checkOverlap(matchList[nextIdx].value, matchList[curIdx].value, shift)) {
                             connectedToNext[curIdx - start] = true;
                             if (localMatchPaths[curIdx - start].score > bestScore) {
                                 bestPath = &localMatchPaths[curIdx - start];

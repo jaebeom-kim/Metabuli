@@ -798,7 +798,7 @@ void KmerMatcher::filterCandidates(
     const std::vector<Kmer> &candidates,
     std::vector<Match> &filteredMatches
 ) {
-    std::vector<pair<uint8_t, uint16_t>> hammingDists(candidates.size());
+    std::vector<pair<uint8_t, uint32_t>> hammingDists(candidates.size());
     uint8_t hDistCutoff = UINT8_MAX;
     for (size_t i = 0; i < candidates.size(); i++) {
         if ((qKmer.qInfo.frame < 3) == (kmerFormat == 2)) {
@@ -812,12 +812,12 @@ void KmerMatcher::filterCandidates(
     for (size_t h = 0; h < candidates.size(); h++) {
         if (hammingDists[h].first <= hDistCutoff) {
             filteredMatches.emplace_back(
-                qKmer.qInfo,                                    // query k-mer info
-                candidates[h].id,                               // target TaxID
-                taxId2speciesId[candidates[h].id],              // target species ID
-                candidates[h].value,           // target DNA encoding
+                qKmer.qInfo,                        // query k-mer info
+                candidates[h].id,                   // target TaxID
+                taxId2speciesId[candidates[h].id],  // target species ID
+                candidates[h].value,                // target DNA encoding
                 hammingDists[h].second,
-                hammingDists[h].first                           // Hamming dist. sum
+                hammingDists[h].first               // Hamming dist. sum
             );
         }
     }

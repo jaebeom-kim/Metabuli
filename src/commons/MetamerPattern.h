@@ -34,9 +34,17 @@ public:
     const GeneticCode * geneticCode;
     int bitPerCodon;
     int bitPerAA;
+    const uint64_t codonMask;
+    const uint64_t aaMask;
+    
 
     SingleCodePattern(const GeneticCode * geneticCode, int kmerLen) 
-        : MetamerPattern(0, 0, 0, kmerLen), geneticCode(geneticCode), bitPerCodon(geneticCode->bitPerCodon), bitPerAA(geneticCode->bitPerAA)
+        : MetamerPattern(0, 0, 0, kmerLen),
+         geneticCode(geneticCode),
+         bitPerCodon(geneticCode->bitPerCodon), 
+         bitPerAA(geneticCode->bitPerAA),
+         codonMask((1ULL << bitPerCodon) - 1),
+         aaMask((1ULL << bitPerAA) - 1)
     {
         totalDNABits = kmerLen * geneticCode->bitPerCodon;
         totalAABits = kmerLen * geneticCode->bitPerAA;
@@ -52,14 +60,16 @@ public:
     }
 
     bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const override {
-        return (kmer1 & ((1U << (totalDNABits - bitPerCodon * shift)) - 1)) 
-                == (kmer2 >> (bitPerCodon * shift));
+        const uint64_t dnaPart1 = kmer1 & dnaMask;
+        const uint64_t dnaPart2 = kmer2 & dnaMask;
+        return (dnaPart1 & ((1U << (totalDNABits - bitPerCodon * shift)) - 1)) 
+                == (dnaPart2 >> (bitPerCodon * shift));
     }
 
     void printAA(uint64_t value) const override {
         uint64_t aaPart = value >> totalDNABits;
         for (int i = kmerLen - 1; i >= 0; --i) {
-            int aa = (aaPart >> (i * bitPerAA)) & ((1 << bitPerAA) - 1);
+            int aa = (aaPart >> (i * bitPerAA)) & aaMask;
             std::cout << geneticCode->aminoacids[aa];
         }
     }
@@ -68,8 +78,8 @@ public:
         uint64_t dnaPart = value & dnaMask;
         uint64_t aaPart = value >> totalDNABits;
         for (int i = kmerLen - 1; i >= 0; --i) {
-            int aa = (aaPart >> (i * bitPerAA)) & ((1 << bitPerAA) - 1);
-            int codon = (dnaPart >> (i * bitPerCodon)) & ((1 << bitPerCodon) - 1);
+            int aa = (aaPart >> (i * bitPerAA)) & aaMask;
+            int codon = (dnaPart >> (i * bitPerCodon)) & codonMask;
             std::cout << geneticCode->aa2codon[aa][codon];
         }
     }
@@ -83,9 +93,9 @@ public:
         const uint64_t dnaPart2 = kmer2 & dnaMask;
 
         for (size_t i = 0; i < kmerLen ; i++) {
-            const int aa = (aaPart >> (totalAABits - (i + 1) * bitPerAA)) & ((1 << bitPerAA) - 1);
-            const int codon1 = (dnaPart1 >> (totalDNABits - (i + 1) * bitPerCodon)) & ((1 << bitPerCodon) - 1);
-            const int codon2 = (dnaPart2 >> (totalDNABits - (i + 1) * bitPerCodon)) & ((1 << bitPerCodon) - 1);
+            const int aa = (aaPart >> (totalAABits - (i + 1) * bitPerAA)) & aaMask;
+            const int codon1 = (dnaPart1 >> (totalDNABits - (i + 1) * bitPerCodon)) & codonMask;
+            const int codon2 = (dnaPart2 >> (totalDNABits - (i + 1) * bitPerCodon)) & codonMask;
             const int hammingDist = geneticCode->getHammingDist(aa, codon1, codon2);
             hammingSum += hammingDist;
             hammings |= hammingDist << (2 * (kmerLen - 1 -i));
@@ -102,9 +112,9 @@ public:
         const uint64_t dnaPart2 = kmer2 & dnaMask;
 
         for (size_t i = 0; i < kmerLen ; i++) {
-            const int aa = (aaPart >> (i * bitPerAA)) & ((1 << bitPerAA) - 1);
-            const int codon1 = (dnaPart1 >> (i * bitPerCodon)) & ((1 << bitPerCodon) - 1);
-            const int codon2 = (dnaPart2 >> (i * bitPerCodon)) & ((1 << bitPerCodon) - 1);
+            const int aa = (aaPart >> (totalAABits - (i + 1) * bitPerAA)) & aaMask;
+            const int codon1 = (dnaPart1 >> (totalDNABits - (i + 1) * bitPerCodon)) & codonMask;
+            const int codon2 = (dnaPart2 >> (totalDNABits - (i + 1) * bitPerCodon)) & codonMask;
             const int hammingDist = geneticCode->getHammingDist(aa, codon1, codon2);
             hammingSum += hammingDist;
             hammings |= hammingDist << (2 * i);
@@ -127,7 +137,9 @@ public:
     }
 
     bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const override {
-        return (kmer1 >> (bitPerCodon * shift)) == (kmer2 & ((1U << (totalDNABits - bitPerCodon * shift)) - 1));
+        const uint64_t dnaPart1 = kmer1 & dnaMask;
+        const uint64_t dnaPart2 = kmer2 & dnaMask;
+        return (dnaPart1 >> (bitPerCodon * shift)) == (dnaPart2 & ((1U << (totalDNABits - bitPerCodon * shift)) - 1));
     }
 };
 
