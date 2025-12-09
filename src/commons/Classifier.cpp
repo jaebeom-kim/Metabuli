@@ -21,30 +21,28 @@ Classifier::Classifier(LocalParameters & par) {
     taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
 
     if (kmerFormat == 1) {
-        metamerPattern = new LegacyPattern(new RegularGeneticCode(), 8);
+        metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
     } else if (kmerFormat == 2) {
         bool multicode = true;
         if (multicode) {
             if (par.reducedAA) {
-                vector<const GeneticCode *> geneticCodes;
-                geneticCodes.push_back(new ReducedGeneticCode());
+                vector<std::unique_ptr<GeneticCode>> geneticCodes;
+                geneticCodes.push_back(std::make_unique<ReducedGeneticCode>());
                 vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
-                metamerPattern = new MultiCodePattern(geneticCodes, codePatterns);
+                metamerPattern = new MultiCodePattern(std::move(geneticCodes), codePatterns);
             } else {
-                vector<const GeneticCode *> geneticCodes;
-                geneticCodes.push_back(new RegularGeneticCode());
+                vector<std::unique_ptr<GeneticCode>> geneticCodes;
+                geneticCodes.push_back(std::make_unique<RegularGeneticCode>());
                 vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
-                metamerPattern = new MultiCodePattern(geneticCodes, codePatterns);
+                metamerPattern = new MultiCodePattern(std::move(geneticCodes), codePatterns);
             }
         } else {
             if (par.reducedAA) {
-                metamerPattern = new SingleCodePattern(new ReducedGeneticCode(), 8);
+                metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
             } else {
-                metamerPattern = new SingleCodePattern(new RegularGeneticCode(), 8);
+                metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
             }
         }
-        
-        
     } 
     kmerExtractor = new KmerExtractor(par, metamerPattern);
     queryIndexer = new QueryIndexer(par);
@@ -140,7 +138,7 @@ void Classifier::startClassify(const LocalParameters &par) {
             
             // Search matches between query and target k-mers
             bool searchComplete = false;
-            searchComplete = kmerMatcher->matchKmers2(&queryKmerBuffer, &matchBuffer, dbDir);
+            searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer, dbDir);
             if (searchComplete) {
                 cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << endl;
                 kmerMatcher->sortMatches(&matchBuffer);

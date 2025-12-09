@@ -38,4 +38,5 @@ set(commons_source_files
 		commons/KmerScanner.cpp
 		commons/DeltaIdxReader.h
 		commons/MetamerPattern.h
+		commons/MetamerPattern.cpp
         PARENT_SCOPE)

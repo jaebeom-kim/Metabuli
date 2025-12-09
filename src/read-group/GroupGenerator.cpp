@@ -383,7 +383,7 @@ void GroupGenerator::filterCommonKmers2(
     size_t remainder = queryKmerNum % par.threads;
     size_t startIdx = blankCnt;
     size_t endIdx = 0; // endIdx is inclusive
-    for (size_t i = 0; i < par.threads; i++) {
+    for (int i = 0; i < par.threads; i++) {
         endIdx = startIdx + quotient - 1;
         if (remainder > 0) {
             endIdx++;

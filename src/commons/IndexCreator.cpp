@@ -28,19 +28,43 @@ IndexCreator::IndexCreator(
     versionFileName = dbDir + "/db.version";
     paramterFileName = dbDir + "/db.parameters";
 
-    if (par.reducedAA) {
-        geneticCode = new ReducedGeneticCode();
-        MARKER = 0Xffffffff;
-        MARKER = ~ MARKER;
+    if (kmerFormat == 1) { // Use the legacy metamer pattern
+        metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
+    } else if (par.customMetamer.empty() == false) {
+        metamerPattern = new MultiCodePattern(par.customMetamer);
     } else {
-        geneticCode = new RegularGeneticCode();
-        MARKER = 16777215;
-        MARKER = ~ MARKER;
+        if (par.reducedAA) {
+            metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
+        } else {
+            metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
+        }
     }
-    kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
+    kmerExtractor = new KmerExtractor(par, metamerPattern);
+    MARKER = ~ metamerPattern->dnaMask;
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
 }
+
+// IndexCreator::IndexCreator(
+//     const LocalParameters & par, 
+//     TaxonomyWrapper * taxonomy,
+//     const MetamerPattern * metamerPattern) 
+//     : par(par), taxonomy(taxonomy), metamerPattern(metamerPattern) 
+// {
+//     dbDir = par.filenames[0];
+//     fnaListFileName = par.filenames[1];
+//     if (par.filenames.size() >= 3) {
+//         acc2taxidFileName = par.filenames[2];
+//     }
+//     taxidListFileName = dbDir + "/taxID_list";
+//     taxonomyBinaryFileName = dbDir + "/taxonomyDB";
+//     versionFileName = dbDir + "/db.version";
+//     paramterFileName = dbDir + "/db.parameters";
+//     MARKER = ~metamerPattern->dnaMask;
+//     kmerExtractor = new KmerExtractor(par, metamerPattern);
+//     isUpdating = false;
+//     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
+// }
 
 IndexCreator::IndexCreator(
     const LocalParameters & par, 
@@ -75,6 +99,7 @@ IndexCreator::IndexCreator(
 
 
 IndexCreator::~IndexCreator() {
+    delete metamerPattern;
     delete geneticCode;
     delete kmerExtractor;
     delete subMat;
@@ -846,7 +871,6 @@ void IndexCreator::writeTargetFilesAndSplits(
     numOfFlush++;
     size_t bufferSize = 1024 * 1024 * 32;
     uint64_t lastKmer = 0;
-    size_t splitIdx = 1;
     WriteBuffer<uint16_t> diffBuffer(dbDir + "/diffIdx", bufferSize);
     
     WriteBuffer<uint32_t> infoBuffer(dbDir + "/info", bufferSize); 

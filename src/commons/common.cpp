@@ -323,3 +323,15 @@ void fillAcc2TaxIdMap(unordered_map<string, TaxID> & acc2taxid,
   }                                        
   cout << "Done" << endl;
 }
+
+
+
+int hammingDist(const std::string & codon1, const std::string & codon2) {
+    int res = 0;
+    for (size_t i = 0; i < 3; i++) {
+        if (codon1[i] != codon2[i]) {
+            res++;
+        }
+    }
+    return res;
+}

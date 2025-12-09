@@ -31,16 +31,16 @@ public:
 
 class SingleCodePattern : public MetamerPattern {
 public:
-    const GeneticCode * geneticCode;
+    std::unique_ptr<GeneticCode> geneticCode;
     int bitPerCodon;
     int bitPerAA;
     const uint64_t codonMask;
     const uint64_t aaMask;
     
 
-    SingleCodePattern(const GeneticCode * geneticCode, int kmerLen) 
+    SingleCodePattern(std::unique_ptr<GeneticCode> code, int kmerLen) 
         : MetamerPattern(0, 0, 0, kmerLen),
-         geneticCode(geneticCode),
+         geneticCode(std::move(code)),
          bitPerCodon(geneticCode->bitPerCodon), 
          bitPerAA(geneticCode->bitPerAA),
          codonMask((1ULL << bitPerCodon) - 1),
@@ -92,7 +92,7 @@ public:
         const uint64_t dnaPart1 = kmer1 & dnaMask;
         const uint64_t dnaPart2 = kmer2 & dnaMask;
 
-        for (size_t i = 0; i < kmerLen ; i++) {
+        for (int i = 0; i < kmerLen ; i++) {
             const int aa = (aaPart >> (totalAABits - (i + 1) * bitPerAA)) & aaMask;
             const int codon1 = (dnaPart1 >> (totalDNABits - (i + 1) * bitPerCodon)) & codonMask;
             const int codon2 = (dnaPart2 >> (totalDNABits - (i + 1) * bitPerCodon)) & codonMask;
@@ -111,7 +111,7 @@ public:
         const uint64_t dnaPart1 = kmer1 & dnaMask;
         const uint64_t dnaPart2 = kmer2 & dnaMask;
 
-        for (size_t i = 0; i < kmerLen ; i++) {
+        for (int i = 0; i < kmerLen ; i++) {
             const int aa = (aaPart >> (totalAABits - (i + 1) * bitPerAA)) & aaMask;
             const int codon1 = (dnaPart1 >> (totalDNABits - (i + 1) * bitPerCodon)) & codonMask;
             const int codon2 = (dnaPart2 >> (totalDNABits - (i + 1) * bitPerCodon)) & codonMask;
@@ -125,8 +125,8 @@ public:
 
 class LegacyPattern : public SingleCodePattern {
 public:
-    LegacyPattern(const GeneticCode * geneticCode, int kmerLen) 
-        : SingleCodePattern(geneticCode, kmerLen) {}
+    LegacyPattern(std::unique_ptr<GeneticCode> geneticCode, int kmerLen) 
+        : SingleCodePattern(std::move(geneticCode), kmerLen) {}
 
     std::vector<std::unique_ptr<KmerScanner>> createScanners(int num) const override {
         std::vector<std::unique_ptr<KmerScanner>> scanners;
@@ -145,15 +145,28 @@ public:
 
 class MultiCodePattern : public MetamerPattern {
 public:
-    std::vector<const GeneticCode *> geneticCodes;
+    std::vector<std::unique_ptr<GeneticCode>> geneticCodes;
     std::vector<int> codePattern;
     std::vector<int> codonBitList;
     std::vector<int> aaBitList;
 
     MultiCodePattern() {}
     ~MultiCodePattern() {}
-    MultiCodePattern(const std::vector<const GeneticCode *> &geneticCodes, const std::vector<int> & codePattern) 
-        : MetamerPattern(0, 0, 0, codePattern.size()), geneticCodes(geneticCodes), codePattern(codePattern) 
+
+    MultiCodePattern(const std::string & customFile);
+
+    std::vector<std::unique_ptr<KmerScanner>> createScanners(int num) const override {
+        std::vector<std::unique_ptr<KmerScanner>> scanners;
+        for (int i = 0; i < num; ++i) {
+            scanners.push_back(std::make_unique<MultiCodeScanner>(this));
+        }
+        return scanners;
+    }
+
+    MultiCodePattern(std::vector<std::unique_ptr<GeneticCode>> &&geneticCodes, const std::vector<int> & codePattern) 
+        : MetamerPattern(0, 0, 0, codePattern.size()), 
+          geneticCodes(std::move(geneticCodes)), 
+          codePattern(codePattern) 
     {
         for (size_t i = 0; i < geneticCodes.size(); ++i) {
             codonBitList.push_back(geneticCodes[i]->bitPerCodon);
@@ -210,13 +223,7 @@ public:
         }
     }
 
-    std::vector<std::unique_ptr<KmerScanner>> createScanners(int num) const override {
-        std::vector<std::unique_ptr<KmerScanner>> scanners;
-        for (int i = 0; i < num; ++i) {
-            scanners.push_back(std::make_unique<MultiCodeScanner>(this));
-        }
-        return scanners;
-    }
+
 
     // It checks if rear part of kmer1 and front part of kmer2 overlap given a shift
     bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const override {
@@ -274,7 +281,7 @@ public:
 
         int aaBitSum = 0;
         int dnaBitSum = 0;
-        for (size_t i = 0; i < kmerLen ; i++) {
+        for (int i = 0; i < kmerLen ; i++) {
             const uint8_t patternIdx = codePattern[i];
             const int currAABit = aaBitList[patternIdx];
             aaBitSum += currAABit;
@@ -301,7 +308,7 @@ public:
 
         int aaBitSum = 0;
         int dnaBitSum = 0;
-        for (size_t i = 0; i < kmerLen ; i++) {
+        for (int i = 0; i < kmerLen ; i++) {
           const uint8_t patternIdx = codePattern[i];
           const int currAABit = aaBitList[patternIdx];
           aaBitSum += currAABit;

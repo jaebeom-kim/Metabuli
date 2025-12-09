@@ -137,7 +137,7 @@ public:
     Kmer next() override {
         bool syncymerFound = false;
         int aa = 0;
-        while (posStart <= seqLen - kmerSize && !syncymerFound) {
+        while ((posStart <= seqLen - kmerSize) && !syncymerFound) {
             bool sawN = false;
             smerCnt -= (smerCnt > 0);
             // Fill the deque with s-mers

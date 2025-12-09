@@ -7,10 +7,8 @@ MultiCodeScanner::MultiCodeScanner(const MultiCodePattern * pattern)
     : KmerScanner(pattern->codePattern.size()), pattern(pattern) 
 {
     for (size_t i = 0; i < pattern->geneticCodes.size(); ++i) {
-        // dnaMaskList.push_back((1ULL << (geneticCodes[i]->bitPerCodon * kmerSize)) - 1);
         codonBitList.push_back(pattern->geneticCodes[i]->bitPerCodon);
         aaBitList.push_back(pattern->geneticCodes[i]->bitPerAA);
-        // dnaBitsList.push_back(geneticCodes[i]->bitPerCodon * kmerSize);
     }
     dnaPartList.resize(pattern->geneticCodes.size(), 0);
     aaPartList.resize(pattern->geneticCodes.size(), 0);
@@ -66,7 +64,7 @@ Kmer MultiCodeScanner::next() {
         uint64_t combinedAA = 0;
         uint64_t combinedDNA = 0;
         for (size_t i = 0; i < pattern->codePattern.size(); ++i) {
-            int codeIdx = pattern->codePattern[i];
+            const int codeIdx = pattern->codePattern[i];
             uint64_t aa = extract_bits(aaPartList[codeIdx], (kmerSize - 1 - i) * aaBitList[codeIdx], aaBitList[codeIdx]);
             uint64_t dna = extract_bits(dnaPartList[codeIdx], (kmerSize - 1 - i) * codonBitList[codeIdx], codonBitList[codeIdx]);
             combinedAA = (combinedAA << aaBitList[codeIdx]) | aa;

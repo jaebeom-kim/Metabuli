@@ -183,7 +183,6 @@ public:
     // Getters
     unordered_map<TaxID, unsigned int> & getTaxCounts() { return taxCounts; }
 
-
     bool compareMatchPaths(const MatchPath& a, const MatchPath& b) const {
         if (a.score != b.score)
             return a.score < b.score;

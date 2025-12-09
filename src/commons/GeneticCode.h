@@ -2,6 +2,10 @@
 #define METABULI_GENETIC_CODE_H
 
 #include <iostream>
+#include <vector>
+#include <unordered_map>
+#include "common.h"
+
 
 #define nuc2int(x) (x & 14u)>>1u
 
@@ -50,6 +54,90 @@ class GeneticCode {
         // virtual uint8_t getHammingDist(uint8_t codon1, uint8_t codon2) const = 0;
 
 };
+
+class CustomGeneticCode : public GeneticCode {
+    public:
+        CustomGeneticCode(std::vector<std::pair<std::string, std::vector<std::string>>> customCodes) : GeneticCode() {
+            alphabetSize = customCodes.size();
+            maxCodonPerAA = 0;
+            for (size_t i = 0; i < customCodes.size(); i++) {
+                if (customCodes[i].second.size() > maxCodonPerAA) {
+                    maxCodonPerAA = customCodes[i].second.size();
+                }
+                aminoacids.append(customCodes[i].first);
+            }
+            bitPerAA = bitsNeeded(alphabetSize);
+            bitPerCodon = bitsNeeded(maxCodonPerAA);
+            hammingLookup = new uint8_t[alphabetSize * maxCodonPerAA * maxCodonPerAA];
+            size_t codonCount = 0;
+            for (size_t aaIdx = 0; aaIdx < customCodes.size(); aaIdx++) {
+                const std::vector<std::string>& codons = customCodes[aaIdx].second;
+                codonCount += codons.size();
+                aa2codon.push_back({});
+                for (int j = 0; j < maxCodonPerAA; j++) {
+                    if (j < codons.size()) {
+                        codon2AA[nuc2int(atcg[codons[j][0]])][nuc2int(atcg[codons[j][1]])][nuc2int(atcg[codons[j][2]])] = aaIdx;
+                        codon2codonIdx[nuc2int(atcg[codons[j][0]])][nuc2int(atcg[codons[j][1]])][nuc2int(atcg[codons[j][2]])] = j;
+                        aa2codon[aaIdx].push_back(codons[j]);
+                    }
+                    for (int k = 0; k < maxCodonPerAA; k++) {
+                        if (k < codons.size() && j < codons.size()) {
+                            hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + j * maxCodonPerAA + k] = hammingDist(codons[j], codons[k]);
+                        } else {
+                            hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + j * maxCodonPerAA + k] = 4; // or some default value
+                        }
+                    }
+                }
+            }
+
+            if (codonCount < 64) {
+                std::cout << "Warning: Custom genetic code has less than 64 codons." << std::endl;
+                exit(1);
+            }
+
+            for (int i = 0; i < 8; i++) {
+                for (int j = 0; j < 8; j++) {
+                    codon2AA[7][i][j] = -1;
+                    codon2AA[i][7][j] = -1;
+                    codon2AA[i][j][7] = -1;
+                    codon2codonIdx[7][i][j] = -1;
+                    codon2codonIdx[i][7][j] = -1;
+                    codon2codonIdx[i][j][7] = -1;
+                }
+            }
+
+            validate();
+        }
+
+        inline uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const override {
+            return hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + codon1Idx * maxCodonPerAA + codon2Idx];
+        }
+
+        void validate() const {
+            for (size_t aaIdx = 0; aaIdx < aa2codon.size(); aaIdx++) {
+                const std::vector<std::string>& codons = aa2codon[aaIdx];
+                std::cout << "Validating AA index " << aaIdx << "(" << aminoacids[aaIdx] << ") with codons: ";
+                for (size_t i = 0; i < codons.size(); i++) {
+                    for (size_t j = 0; j < codons.size(); j++) {
+                        uint8_t dist = getHammingDist(aaIdx, i, j);
+                        uint8_t expectedDist = hammingDist(codons[i], codons[j]);
+                        if (dist != expectedDist) {
+                            std::cout << "Mismatch in Hamming distance for AA index " << aaIdx 
+                                      << " between codon " << codons[i] << " and " << codons[j] 
+                                      << ": expected " << static_cast<int>(expectedDist) 
+                                      << ", got " << static_cast<int>(dist) << std::endl;
+                        } else {
+                            std::cout << codons[i] << " " << codons[j] << " (Distance: " << static_cast<int>(dist) << ")" << std::endl;
+                        }
+                    }
+                }
+                std::cout << std::endl;
+            }
+        }
+};
+
+//  aa = geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
+//                     codon = geneticCode.getCodon(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
 
 class RegularGeneticCode final : public GeneticCode {
     public:

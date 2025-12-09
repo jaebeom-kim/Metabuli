@@ -67,6 +67,7 @@ public:
     PARAMETER(SMER_LEN)
     PARAMETER(KMER_FORMAT)
     PARAMETER(UNIREF_XML)
+    PARAMETER(PARAM_CUSTOM_METAMER)
 
     // Classify
     PARAMETER(SEQ_MODE)
@@ -165,6 +166,7 @@ public:
     int smerLen;
     int kmerFormat;
     std::string unirefXml;
+    std::string customMetamer;
 
     // Classify
     int seqMode;

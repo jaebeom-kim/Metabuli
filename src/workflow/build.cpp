@@ -16,7 +16,8 @@ void setDefaults_build(LocalParameters & par){
     par.ramUsage = 128;
     par.validateInput = 0;
     par.validateDb = 0;
-    par.taxonomyPath = "" ;
+    par.taxonomyPath = "";
+    par.customMetamer = "";
     par.splitNum = 4096;
     par.maskProb = 0.9;
     par.maskMode = 1;

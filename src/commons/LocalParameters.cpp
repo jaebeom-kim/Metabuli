@@ -81,6 +81,13 @@ LocalParameters::LocalParameters() :
                     typeid(std::string),
                     (void *) &unirefXml,
                     "^.*$"),
+        PARAM_CUSTOM_METAMER(PARAM_CUSTOM_METAMER_ID,
+                    "--custom-metamer",
+                    "Path to custom metamer pattern JSON file",
+                    "Path to custom metamer pattern JSON file",
+                    typeid(std::string),
+                    (void *) &customMetamer,
+                    "^.*$"),
         SEQ_MODE(SEQ_MODE_ID,
                  "--seq-mode",
                  "Sequencing type",
@@ -598,6 +605,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&SYNCMER);
     build.push_back(&SMER_LEN);
     build.push_back(&REDUCED_AA);
+    build.push_back(&PARAM_CUSTOM_METAMER);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
     createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);

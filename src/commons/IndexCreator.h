@@ -34,6 +34,7 @@
 #include "KmerExtractor.h"
 #include "DeltaIdxReader.h"
 #include "UnirefTree.h"
+#include "MetamerPattern.h"
 
 
 enum class FilterMode { DB_CREATION, COMMON_KMER, UNIQ_KMER, UNIREF_LCA};
@@ -118,6 +119,7 @@ protected:
     // Inputs
     TaxonomyWrapper * taxonomy = nullptr;
     UnirefTree * unirefTree = nullptr;
+    MetamerPattern * metamerPattern = nullptr;
     GeneticCode * geneticCode;
     KmerExtractor * kmerExtractor;
 

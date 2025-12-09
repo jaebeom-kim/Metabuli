@@ -186,9 +186,6 @@ protected:
     }
     return kmer & DNA_MASK;
   }
-  // inline size_t AminoAcidPart(size_t kmer) const { return (kmer) & DNA_MASK; }
-
-  void moveMatches(Match *dest, Match *src, size_t & matchNum);
 
   void compareDna(uint64_t query,
                   std::vector<uint64_t> &targetKmersToCompare,
@@ -237,15 +234,7 @@ public:
 
   virtual ~KmerMatcher();
   
-  bool matchKmers(Buffer<Kmer> *queryKmerBuffer,
-                  Buffer<Match> *matchBuffer,
-                  const string &db = string());
-
-  // bool matchMetamers(Buffer<Kmer> *queryKmerBuffer,
-  //                    Buffer<Match> *matchBuffer,
-  //                    const string &db = string());
-
-  bool matchKmers2(const Buffer<Kmer> *queryKmerBuffer,
+  bool matchKmers(const Buffer<Kmer> *queryKmerBuffer,
                   Buffer<Match> *matchBuffer,
                   const string &db);
 

@@ -12,6 +12,7 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include <cmath>
 
 
 
@@ -466,5 +467,9 @@ inline uint64_t extract_bits(uint64_t value, unsigned int start_bit, unsigned in
     return (value & (((1ULL << block_size) - 1) << start_bit)) >> start_bit;
 }
 
+inline unsigned bitsNeeded(unsigned N) {
+    return (N <= 1) ? 0 : static_cast<unsigned>(std::ceil(std::log2(N)));
+}
 
+int hammingDist(const std::string & codon1, const std::string & codon2);
 #endif //ADCLASSIFIER2_COMMON_H
