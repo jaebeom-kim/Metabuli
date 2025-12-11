@@ -45,7 +45,11 @@ Kmer MultiCodeScanner::next() {
                     aa = pattern->geneticCodes[c]->getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);          
                     codon = pattern->geneticCodes[c]->getCodon(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
                 }
-                if (aa < 0) { sawN = true; break; }
+                if (aa < 0) { 
+                    std::cout << c << " " << posStart << " " << loadedCharCnt << " " << ci << std::endl;
+                    sawN = true; 
+                    break; 
+                }
                 dnaPartList[c] = (dnaPartList[c] << codonBitList[c]) | (uint64_t)codon;
                 aaPartList[c] = (aaPartList[c] << aaBitList[c]) | (uint64_t)aa;
             }

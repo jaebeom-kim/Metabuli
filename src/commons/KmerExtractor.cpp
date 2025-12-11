@@ -378,7 +378,8 @@ void KmerExtractor::fillQueryKmerBuffer(
         Kmer kmer;
         while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
             kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
-            // kmer.printAA(metamerPattern); cout << "\t"; kmer.printDNA(metamerPattern); cout << "\n";
+            // cout << (int) frame << "\t" << kmer.pos << "\t";
+            // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
         }
     }
 }

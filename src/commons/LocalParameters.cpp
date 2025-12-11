@@ -656,7 +656,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&VALIDATE_DB);
     classify.push_back(&SYNCMER);
     classify.push_back(&SMER_LEN);
-    classify.push_back(&KMER_FORMAT);
+    // classify.push_back(&KMER_FORMAT);
     classify.push_back(&PRINT_LOG);
     classify.push_back(&REDUCED_AA);
     // classify.push_back(&EM);

@@ -124,6 +124,8 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
           par.smerLen = stoi(tokens[1]);
         } else if (tokens[0] == "Kmer_format") {
           par.kmerFormat = stoi(tokens[1]);
+        } else if (eachLine == "===BEGIN_CUSTOM_METAMER===") {
+          par.customMetamer = dbDir + "/db.parameters";
         }
       }
       return 1;
@@ -328,7 +330,7 @@ void fillAcc2TaxIdMap(unordered_map<string, TaxID> & acc2taxid,
 
 int hammingDist(const std::string & codon1, const std::string & codon2) {
     int res = 0;
-    for (size_t i = 0; i < 3; i++) {
+    for (size_t i = 0; i < codon1.size(); i++) {
         if (codon1[i] != codon2[i]) {
             res++;
         }

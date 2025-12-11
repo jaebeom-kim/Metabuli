@@ -24,6 +24,7 @@ public:
     virtual bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const = 0;
     virtual void printAA(uint64_t value) const = 0;
     virtual void printDNA(uint64_t value) const = 0;
+    virtual std::string toDnaString(uint64_t value) const = 0;
     virtual std::pair<uint8_t, uint32_t> getHammingDists(uint64_t kmer1, uint64_t kmer2) const = 0;
     virtual std::pair<uint8_t, uint32_t> getHammingDists_reverse(uint64_t kmer1, uint64_t kmer2) const = 0;
     
@@ -82,6 +83,18 @@ public:
             int codon = (dnaPart >> (i * bitPerCodon)) & codonMask;
             std::cout << geneticCode->aa2codon[aa][codon];
         }
+    }
+
+    std::string toDnaString(uint64_t value) const override {
+        std::string dnaStr;
+        uint64_t dnaPart = value & dnaMask;
+        uint64_t aaPart = value >> totalDNABits;
+        for (int i = kmerLen - 1; i >= 0; --i) {
+            int aa = (aaPart >> (i * bitPerAA)) & aaMask;
+            int codon = (dnaPart >> (i * bitPerCodon)) & codonMask;
+            dnaStr += geneticCode->aa2codon[aa][codon];
+        }
+        return dnaStr;
     }
 
     std::pair<uint8_t, uint32_t> getHammingDists(uint64_t kmer1, uint64_t kmer2) const override {
@@ -223,6 +236,27 @@ public:
         }
     }
 
+    std::string toDnaString(uint64_t value) const override {
+        std::string dnaStr;
+        uint64_t dnaPart = value & dnaMask;
+        uint64_t aaPart = value >> totalDNABits;
+        int k = codePattern.size();
+        int aaBitSum = 0;
+        int dnaBitSum = 0;
+        for (int i = 0; i < k; ++i) {
+            const int * currAABit = &aaBitList[codePattern[i]];
+            aaBitSum += *currAABit;
+            int aa = (aaPart >> (totalAABits - aaBitSum)) & ((1 << *currAABit) - 1);
+            
+            const int * currCodonBit = &codonBitList[codePattern[i]];
+            dnaBitSum += *currCodonBit;
+            int codon = (dnaPart >> (totalDNABits - dnaBitSum)) & ((1 << *currCodonBit) - 1);
+
+            dnaStr += geneticCodes[codePattern[i]]->aa2codon[aa][codon];
+        }
+        return dnaStr;
+    }
+
 
 
     // It checks if rear part of kmer1 and front part of kmer2 overlap given a shift
@@ -281,6 +315,7 @@ public:
 
         int aaBitSum = 0;
         int dnaBitSum = 0;
+        // std::cout << "HD: ";
         for (int i = 0; i < kmerLen ; i++) {
             const uint8_t patternIdx = codePattern[i];
             const int currAABit = aaBitList[patternIdx];
@@ -293,9 +328,10 @@ public:
             const int codon2 = (dnaPart2 >> (totalDNABits - dnaBitSum)) & codonMask;
             const int hammingDist = geneticCodes[patternIdx]->getHammingDist(aa, codon1, codon2);
             hammingSum += hammingDist;
+            // std::cout << hammingDist << "\t";
             hammings |= hammingDist << (2 * (kmerLen - 1 -i));
         } 
-
+        // std::cout << std::endl;
       return {hammingSum, hammings};
     }
 
@@ -308,6 +344,7 @@ public:
 
         int aaBitSum = 0;
         int dnaBitSum = 0;
+        // std::cout << "HD: ";
         for (int i = 0; i < kmerLen ; i++) {
           const uint8_t patternIdx = codePattern[i];
           const int currAABit = aaBitList[patternIdx];
@@ -321,9 +358,11 @@ public:
           const int codon2 = (dnaPart2 >> (totalDNABits - dnaBitSum)) & codonMask;
           const int hammingDist = geneticCodes[patternIdx]->getHammingDist(aa, codon1, codon2);
           hammingSum += hammingDist;
+                    //   std::cout << hammingDist << "\t";
+
           hammings |= hammingDist << (2 * i);
         } 
-    
+        // std::cout << std::endl;
         return {hammingSum, hammings};
     }
 

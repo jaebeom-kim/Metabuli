@@ -120,7 +120,7 @@ protected:
     TaxonomyWrapper * taxonomy = nullptr;
     UnirefTree * unirefTree = nullptr;
     MetamerPattern * metamerPattern = nullptr;
-    GeneticCode * geneticCode;
+    GeneticCode * geneticCode = nullptr;
     KmerExtractor * kmerExtractor;
 
     bool externTaxonomy;

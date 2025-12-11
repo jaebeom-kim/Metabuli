@@ -5,12 +5,6 @@
 
 Classifier::Classifier(LocalParameters & par) {
     dbDir = par.filenames[1 + (par.seqMode == 2)];
-    // if(FileUtil::fileExists(string(dbDir + "/diffIdx").c_str())) {
-    //     isNewDB = false;
-    // } else {
-    //     isNewDB = true; 
-    // }
-
     matchPerKmer = par.matchPerKmer;
     loadDbParameters(par, par.filenames[1 + (par.seqMode == 2)]);
     kmerFormat = par.kmerFormat;
@@ -22,6 +16,8 @@ Classifier::Classifier(LocalParameters & par) {
 
     if (kmerFormat == 1) {
         metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
+    } else if (!par.customMetamer.empty()) {
+        metamerPattern = new MultiCodePattern(par.customMetamer);
     } else if (kmerFormat == 2) {
         bool multicode = true;
         if (multicode) {
@@ -43,7 +39,7 @@ Classifier::Classifier(LocalParameters & par) {
                 metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
             }
         }
-    } 
+    }
     kmerExtractor = new KmerExtractor(par, metamerPattern);
     queryIndexer = new QueryIndexer(par);
     // kmerExtractor = new KmerExtractor(par, metamerPattern);
@@ -142,6 +138,9 @@ void Classifier::startClassify(const LocalParameters &par) {
             if (searchComplete) {
                 cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << endl;
                 kmerMatcher->sortMatches(&matchBuffer);
+                // for (size_t i = 0; matchBuffer.startIndexOfReserve < matchBuffer.startIndexOfReserve; i++) {
+                //     matchBuffer.buffer[i].printMatch();
+                // }
                 assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
                 reporter->writeReadClassification(queryList);
                 if (par.em) {

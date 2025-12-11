@@ -8,14 +8,31 @@ MultiCodePattern::MultiCodePattern(const std::string & customFile) {
     if (!file.is_open()) {
         std::cout << "Error: Could not open custom metamer pattern file: " << customFile << std::endl;
     }
-    json j;
-    file >> j;
+
+    std::string line;
+    std::stringstream jsonbuf;
+    bool inJson = false;
+    while (std::getline(file, line)) {
+        if (line == "===BEGIN_CUSTOM_METAMER===") {
+            inJson = true;
+            continue;   
+        }
+        if (line == "===END_CUSTOM_METAMER===") {
+            inJson = false;
+            break;  
+        }
+        if (inJson) {
+            jsonbuf << line << "\n";
+        }
+    }
+
+    json j = json::parse(jsonbuf.str());
 
     std::string name = j["name"];
-    int length = j["length"];
+    kmerLen = j["length"];
     codePattern = j["position_codes"].get<std::vector<int>>();
 
-    if (length != static_cast<int>(codePattern.size())) {
+    if (kmerLen != static_cast<int>(codePattern.size())) {
         std::cout << "Error: Length of code pattern does not match the specified length." << std::endl;
     }
 
@@ -31,7 +48,7 @@ MultiCodePattern::MultiCodePattern(const std::string & customFile) {
         for (const auto& entry : codons_json) {
             std::string aaStr = entry[0].get<std::string>();
             std::vector<std::string> codons = entry[1].get<std::vector<std::string>>();
-            translationTable.emplace_back(aaStr, codons);
+            translationTable.emplace_back(std::string{aaStr[0]}, codons);
         }
 
         geneticCodes.push_back(std::make_unique<CustomGeneticCode>(translationTable));

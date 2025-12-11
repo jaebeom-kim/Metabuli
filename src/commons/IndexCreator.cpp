@@ -100,7 +100,9 @@ IndexCreator::IndexCreator(
 
 IndexCreator::~IndexCreator() {
     delete metamerPattern;
-    delete geneticCode;
+    if (geneticCode != nullptr) {
+        delete geneticCode;
+    }   
     delete kmerExtractor;
     delete subMat;
 }
@@ -386,6 +388,7 @@ void IndexCreator::createIndex() {
         SORT_PARALLEL(kmerBuffer.buffer, kmerBuffer.buffer + kmerBuffer.startIndexOfReserve,
                       Kmer::compareTargetKmer);
         time_t sort = time(nullptr);
+        cout << kmerBuffer.startIndexOfReserve << " k-mers extracted" << endl;
         cout << "Reference k-mer sort : " << sort - start << endl;
 
         // Reduce redundancy
@@ -1301,6 +1304,20 @@ void IndexCreator::writeDbParameters() {
         fprintf(handle, "Syncmer_len\t%d\n", par.smerLen);
     }
     fprintf(handle, "Kmer_format\t%d\n", kmerFormat);
+
+    if (!par.customMetamer.empty()) {
+        // Read the custom metamer file and write to parameter file
+        ifstream metamerFile(par.customMetamer);
+        if (!metamerFile.is_open()) {
+            Debug(Debug::ERROR) << "Could not open " << par.customMetamer << " for reading\n";
+            EXIT(EXIT_FAILURE);
+        }
+        string line;
+        while (getline(metamerFile, line)) {
+            fprintf(handle, "%s\n", line.c_str());
+        }
+        metamerFile.close();
+    }
     fclose(handle);
 }
 

@@ -95,6 +95,11 @@ class CustomGeneticCode : public GeneticCode {
                 exit(1);
             }
 
+            if (codonCount > 64) {
+                std::cout << "Error: Custom genetic code has more than 64 codons." << std::endl;
+                exit(1);
+            }
+
             for (int i = 0; i < 8; i++) {
                 for (int j = 0; j < 8; j++) {
                     codon2AA[7][i][j] = -1;
@@ -135,9 +140,6 @@ class CustomGeneticCode : public GeneticCode {
             }
         }
 };
-
-//  aa = geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
-//                     codon = geneticCode.getCodon(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
 
 class RegularGeneticCode final : public GeneticCode {
     public:

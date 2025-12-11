@@ -478,6 +478,10 @@ void KmerMatcher::filterCandidates(
                 hammingDists[h].first               // Hamming dist. sum
             );
         }
+        // metamerPattern->printDNA(qKmer.value); cout << "\n";
+        // metamerPattern->printDNA(candidates[h].value); cout << "\n";
+        // cout << "Hamming dist 1: " << (int)hammingDists[h].first << "\t"; 
+        // cout << "Hamming dist 2: " << hammingDist(metamerPattern->toDnaString(qKmer.value), metamerPattern->toDnaString(candidates[h].value)) << endl;
     }
 }
 
