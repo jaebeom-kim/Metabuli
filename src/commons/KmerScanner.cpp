@@ -46,7 +46,7 @@ Kmer MultiCodeScanner::next() {
                     codon = pattern->geneticCodes[c]->getCodon(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
                 }
                 if (aa < 0) { 
-                    std::cout << c << " " << posStart << " " << loadedCharCnt << " " << ci << std::endl;
+                    // std::cout << c << " " << posStart << " " << loadedCharCnt << " " << ci << std::endl;
                     sawN = true; 
                     break; 
                 }
