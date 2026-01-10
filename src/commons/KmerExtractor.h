@@ -15,7 +15,6 @@ private:
     const LocalParameters &par;
     const GeneticCode * geneticCode;
     const MetamerPattern * metamerPattern;
-    // KmerScanner ** kmerScanners;
     std::vector<std::unique_ptr<KmerScanner>> kmerScanners;
     
     // Parameters
@@ -27,6 +26,13 @@ private:
     // For masking reads
     ProbabilityMatrix * probMatrix;
     BaseMatrix * subMat;
+
+    // It converts forward frame to the reverse frame
+    const int frameCoversion[3][3] = { //[seq%3][frame%3]
+        {3, 5, 4},  // n = 0
+        {4, 3, 5},  // n = 1
+        {5, 4, 3}   // n = 2
+    };
 
     // Extract query k-mer
     void fillQueryKmerBufferParallel(KSeqWrapper* kseq1,
@@ -71,6 +77,18 @@ private:
         size_t &posToWrite, 
         uint32_t seqID, 
         uint32_t offset = 0);
+
+    void generatePDMNeighborKmers(
+        const char *seq,
+        size_t seqStart, 
+        size_t seqEnd,
+        int seqLen,
+        Buffer<Kmer> &kmerBuffer,
+        int threadID,
+        size_t & posToWrite,
+        int frame,
+        uint32_t seqID, 
+        uint32_t offset);
                                       
 public:
     explicit KmerExtractor(
@@ -138,10 +156,6 @@ public:
         std::unordered_map<std::string, uint32_t> & unirefName2Id,
         uint32_t & seqCnt,
         SeqEntry & savedSeq);
-    
-    size_t countKmers(
-        KSeqWrapper *checker,
-        size_t seqNum);
 };
 
 #endif //METABULI_KMEREXTRACTER_H

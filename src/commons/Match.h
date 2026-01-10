@@ -6,7 +6,8 @@
 #include <iostream>
 #include "BitManipulateMacros.h"
 
-struct Match { // 24 byte
+class Match { // 27 byte
+public:
     Match(){}
     Match(QueryKmerInfo qInfo,
           int targetId,
@@ -18,15 +19,19 @@ struct Match { // 24 byte
           rightEndHamming(eachHamming), hamming(hamming) { }
 
     QueryKmerInfo qInfo;      // 8 // Query K-mer information
-    TaxID targetId;           // 4 // axonomy id infact
+    TaxID targetId;           // 4 // Taxonomy id infact
     TaxID speciesId;          // 4 // Used to group matches by species
-    uint64_t value;     // 8 // Used to check if two matches are consecutive
+    uint64_t value;           // 8 // Used to check if two matches are consecutive
     uint16_t rightEndHamming; // 2 // Used to calculate score
     uint8_t hamming;          // 1 // Used to filter redundant matches
 
     void printMatch() const {
         std::cout << qInfo.sequenceID << " " << qInfo.pos << " " << qInfo.frame << " "
         << targetId << " " << speciesId << " " << rightEndHamming << " " << (int)hamming << " " << getScore() << "\n";
+    }
+
+    static int byteSize() {
+        return sizeof(Match);
     }
 
     float getScore(float score = 0.0f, int cnt = 0) const { 
@@ -85,6 +90,38 @@ struct Match { // 24 byte
         return sum;
     }
 };
+
+class Match2 { // 32 byte
+public:
+    Match2(){}
+    Match2(Kmer qKmer, Kmer tKmer): qKmer(qKmer), tKmer(tKmer) { }
+
+    Kmer qKmer;
+    Kmer tKmer;
+
+    void printMatch() const {
+        std::cout << qKmer.qInfo.sequenceID << " " << qKmer.qInfo.pos << " " << qKmer.qInfo.frame << " "
+        << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << "\n";
+    }
+
+    static bool compare(const Match2 &a, const Match2 &b) {
+        if (a.qKmer.qInfo.sequenceID != b.qKmer.qInfo.sequenceID)
+            return a.qKmer.qInfo.sequenceID < b.qKmer.qInfo.sequenceID;
+        
+        if (a.tKmer.tInfo.speciesId != b.tKmer.tInfo.speciesId)
+            return a.tKmer.tInfo.speciesId < b.tKmer.tInfo.speciesId;
+
+        if (a.qKmer.qInfo.frame != b.qKmer.qInfo.frame)
+            return a.qKmer.qInfo.frame < b.qKmer.qInfo.frame;
+
+        if (a.qKmer.qInfo.pos != b.qKmer.qInfo.pos)
+            return a.qKmer.qInfo.pos < b.qKmer.qInfo.pos;
+
+        return a.tKmer.tInfo.taxId < b.tKmer.tInfo.taxId;
+    }
+
+};
+
 
 struct Match_AA {
     uint32_t queryId;

@@ -75,7 +75,7 @@ protected:
 public:
     void startClassify(const LocalParameters &par);
 
-    void assignTaxonomy(const Match *matchList,
+    void assignTaxonomy(const Match2 *matchList,
                         size_t numOfMatches,
                         std::vector<Query> & queryList,
                         const LocalParameters &par);

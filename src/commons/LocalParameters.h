@@ -88,6 +88,7 @@ public:
     PARAMETER(MAX_SHIFT)
     PARAMETER(EM)
     PARAMETER(NEIGHBOR_KMERS)
+    PARAMETER(PDM_KMER)
 
     // extract
     PARAMETER(TARGET_TAX_ID)
@@ -190,6 +191,7 @@ public:
     int printLineage;
     int maxShift;
     bool em;
+    int pdmKmer;
 
     // Extract
     int targetTaxId;

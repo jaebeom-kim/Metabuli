@@ -367,21 +367,137 @@ void KmerExtractor::fillQueryKmerBuffer(
         bool isForward = frame < 3;
         int begin = 0;
         if (isForward) {
-            begin = frame % 3;
+            begin = frame;
         } else {
             begin = (seqLen % 3) - (frame % 3);
             if (begin < 0) {
                 begin += 3;
             }
         }
-        kmerScanners[threadID]->initScanner(seq, begin, begin + usedLen - 1, isForward);
-        Kmer kmer;
-        while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
-            kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
-            // cout << (int) frame << "\t" << kmer.pos << "\t";
-            // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
+
+        if (par.pdmKmer == 0) {
+            kmerScanners[threadID]->initScanner(seq, begin, begin + usedLen - 1, isForward);
+            Kmer kmer;
+            while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
+                kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
+                // cout << (int) frame << "\t" << kmer.pos << "\t";
+                // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
+            }
+        } else {
+            // Use full seqLen because ancient reads are very short
+            int end = begin + (seqLen - seqLen % 3) - 1;
+            if (end >= seqLen) {
+                end = seqLen - 3;
+            }
+            kmerScanners[threadID]->initScanner(seq, begin, end, isForward);
+            Kmer kmer;
+            while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
+                kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
+            }
+
+            // Extract neighbor k-mers considering post-mortem DNA damage 
+            if (frame < 3) {
+                generatePDMNeighborKmers(
+                    seq,
+                    begin,
+                    end,
+                    seqLen,
+                    kmerBuffer,
+                    threadID,
+                    posToWrite,
+                    frame,
+                    seqID,
+                    offset);
+            }
+
         }
     }
+}
+
+void KmerExtractor::generatePDMNeighborKmers(
+    const char *seq,
+    size_t seqStart, 
+    size_t seqEnd,
+    int seqLen,
+    Buffer<Kmer> &kmerBuffer,
+    int threadID,
+    size_t & posToWrite,
+    int frame,
+    uint32_t seqID, 
+    uint32_t offset) 
+{
+    std::vector<std::string> out;
+
+    std::vector<int> tpos;
+    std::vector<int> apos;
+
+    char kmer[64];
+    char mutatedKmer[64];
+    int dnaKmerLen = kmerLen * 3;
+
+    for (int start = seqStart; start <= seqLen - dnaKmerLen; start += 3) {
+        bool overlapFirstN = (start < par.pdmKmer);
+        bool overlapLastN  = (start + dnaKmerLen > seqLen - par.pdmKmer);
+        
+        if (!overlapFirstN && !overlapLastN) {
+            continue;
+        }
+
+        std::memcpy(kmer, seq + start, dnaKmerLen);
+        tpos.clear();
+        apos.clear();
+
+        for (int i = 0; i < dnaKmerLen; ++i) {
+            int readPos = start + i;
+
+            if (overlapFirstN && readPos < par.pdmKmer && kmer[i] == 'T')
+                tpos.push_back(i);
+
+            if (overlapLastN && readPos >= seqLen - par.pdmKmer && kmer[i] == 'A')
+                apos.push_back(i);
+        }
+
+        const size_t nt = tpos.size();
+        const size_t na = apos.size();
+
+        if (nt == 0 && na == 0)
+            continue; 
+
+        for (size_t mt = 0; mt < (1ULL << nt); ++mt) {
+            for (size_t ma = 0; ma < (1ULL << na); ++ma) {
+
+                if (mt == 0 && ma == 0)
+                    continue; // exclude original
+
+                if (__builtin_popcountll(mt) + __builtin_popcountll(ma) > 3)
+                    continue; // limit to 3  mutations
+
+                std::memcpy(mutatedKmer, kmer, dnaKmerLen) ;
+
+                for (size_t i = 0; i < nt; ++i)
+                    if (mt & (1ULL << i))
+                        mutatedKmer[tpos[i]] = 'C';
+
+                for (size_t i = 0; i < na; ++i)
+                    if (ma & (1ULL << i))
+                        mutatedKmer[apos[i]] = 'G';
+
+                kmerScanners[threadID]->initScanner(mutatedKmer, 0, dnaKmerLen - 1, true);
+                Kmer kmer = kmerScanners[threadID]->next();
+                if (kmer.value != UINT64_MAX) {
+                    kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset + seqStart, (uint8_t) frame};
+                }
+
+                kmerScanners[threadID]->initScanner(mutatedKmer, 0, dnaKmerLen - 1, false);
+                kmer = kmerScanners[threadID]->next();
+                if (kmer.value != UINT64_MAX) {
+                    kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset + seqStart, (uint8_t)frameCoversion[seqLen % 3][frame]}; // frame +3 is not good
+                }
+            }
+        }
+    }
+
+
 }
 
 void KmerExtractor::extractKmer_dna2aa(
@@ -450,7 +566,9 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
     if (isReverse) {
         for (size_t i = 0; i < chunkSize && processedQueryNum < chunkEnd; ++i, ++processedQueryNum) {
             kseq->ReadEntry();
-            queryList[processedQueryNum].queryLength2 = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);   
+            // queryList[processedQueryNum].queryLength2 = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);   
+            queryList[processedQueryNum].queryLength2 = par.pdmKmer > 0 ?
+                (int) kseq->entry.sequence.l : LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
             
             if (emptyReads[i]) { 
                 count ++;
@@ -474,7 +592,11 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
         for (size_t i = 0; i < chunkSize && processedQueryNum < chunkEnd; ++i, ++processedQueryNum) {
             kseq->ReadEntry();
             queryList[processedQueryNum].name = string(kseq->entry.name.s);
-            queryList[processedQueryNum].queryLength = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
+            queryList[processedQueryNum].queryLength = par.pdmKmer > 0 ?
+                (int) kseq->entry.sequence.l :
+                LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
+            // queryList[processedQueryNum].queryLength = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
+            // queryList[processedQueryNum].queryLength = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
 
             // Check if the read is too short
             int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, spaceNum, this->kmerLen);

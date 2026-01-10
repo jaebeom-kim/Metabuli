@@ -111,7 +111,7 @@ class CustomGeneticCode : public GeneticCode {
                 }
             }
 
-            validate();
+            // validate();
         }
 
         inline uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const override {

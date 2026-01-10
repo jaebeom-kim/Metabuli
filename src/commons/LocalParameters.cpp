@@ -222,6 +222,13 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &neighborKmers,
                 "[0-4]"),
+        PDM_KMER(PDM_KMER_ID,
+                "--pdm-kmer",
+                "Number of bases from each end to extract PDM-aware neighbor k-mers",
+                "Number of bases from each end to extract PDM-aware neighbor k-mers",
+                typeid(int),
+                (void *) &pdmKmer,
+                "^[0-9]+$"),
         TARGET_TAX_ID(TARGET_TAX_ID_ID,
                "--tax-id",
                "Tax. ID of clade. -1 for unclassified reads",
@@ -656,9 +663,11 @@ LocalParameters::LocalParameters() :
     classify.push_back(&VALIDATE_DB);
     classify.push_back(&SYNCMER);
     classify.push_back(&SMER_LEN);
+    classify.push_back(&PARAM_SUB_MAT);
     // classify.push_back(&KMER_FORMAT);
     classify.push_back(&PRINT_LOG);
     classify.push_back(&REDUCED_AA);
+    classify.push_back(&PDM_KMER);
     // classify.push_back(&EM);
 
     assignUniref.push_back(&PARAM_THREADS);

@@ -199,7 +199,7 @@ protected:
   void filterCandidates(
     Kmer qKmer,
     const std::vector<Kmer> &candidates,
-    std::vector<Match> &filteredMatches
+    std::vector<Match2> &filteredMatches
   );
 
   virtual uint8_t getHammingDistanceSum(uint64_t kmer1, uint64_t kmer2);
@@ -207,10 +207,6 @@ protected:
   virtual uint16_t getHammings(uint64_t kmer1, uint64_t kmer2);
 
   virtual uint16_t getHammings_reverse(uint64_t kmer1, uint64_t kmer2);
-
-  // std::pair<uint8_t, uint16_t> getHammingDists(uint64_t kmer1, uint64_t kmer2);
-
-  std::pair<uint8_t, uint16_t> getHammingDists_reverse(uint64_t kmer1, uint64_t kmer2);
 
   static bool compareMatches(const Match &a, const Match &b);
 
@@ -235,49 +231,31 @@ public:
   virtual ~KmerMatcher();
   
   bool matchKmers(const Buffer<Kmer> *queryKmerBuffer,
-                  Buffer<Match> *matchBuffer,
+                  Buffer<Match2> *matchBuffer,
                   const string &db);
 
   bool matchKmers_AA(const Buffer<Kmer> *queryKmerBuffer,
                      Buffer<Match_AA> *matchBuffer,
                      const string &db);
 
-  void sortMatches(Buffer<Match> *matchBuffer);
+  void sortMatches(Buffer<Match2> *matchBuffer);
 
-  unordered_map<TaxID, TaxID> &getTaxId2SpeciesId() {
-    return taxId2speciesId;
-  }
+
 
   static uint64_t getNextTargetKmer(uint64_t lookingTarget,
                                     const uint16_t *diffIdxBuffer,
                                     size_t &diffBufferIdx, size_t &totalPos);
 
-  static uint64_t getNextTargetKmer(uint64_t lookingTarget,
-                                    uint16_t *&diffIdxBuffer,
-                                    size_t &totalPos);
-
   static Metamer getNextTargetKmer(const Metamer & lookingTarget,
                                    const uint16_t *diffIdxBuffer,
                                    size_t &diffBufferIdx, size_t &totalPos);
 
-  static uint64_t getNextTargetKmer(
-          uint64_t lookingTarget,
-          uint16_t *&diffIdxBuffer); 
-
-  template <typename T>
-  static inline T getKmerInfo(size_t bufferSize,
-                       FILE *kmerInfoFp,
-                       T *infoBuffer,
-                       size_t &infoBufferIdx) {
-    if (unlikely(infoBufferIdx >= bufferSize)) {
-      loadBuffer(kmerInfoFp, infoBuffer, infoBufferIdx, bufferSize,
-                 static_cast<int>(infoBufferIdx - bufferSize));
-    }
-    return infoBuffer[infoBufferIdx];
-  }
-
   // Getters
   size_t getTotalMatchCnt() const { return totalMatchCnt; }
+
+  unordered_map<TaxID, TaxID> &getTaxId2SpeciesId() {
+    return taxId2speciesId;
+  }
 };
 
 inline uint64_t KmerMatcher::getNextTargetKmer(uint64_t lookingTarget,
@@ -294,38 +272,6 @@ inline uint64_t KmerMatcher::getNextTargetKmer(uint64_t lookingTarget,
     totalPos++;
   }
   diffIn64bit |= (fragment & 0x7FFF);
-  return diffIn64bit + lookingTarget;
-}
-
-inline uint64_t KmerMatcher::getNextTargetKmer(
-  uint64_t lookingTarget,
-  uint16_t *&diffIdxBuffer,
-  size_t &totalPos) 
-{
-  uint64_t diffIn64bit = 0;
-  while ((*diffIdxBuffer & 0x8000) == 0) { // 27 %
-    diffIn64bit = (diffIn64bit << 15) | *diffIdxBuffer;
-    ++diffIdxBuffer;
-    ++totalPos;
-  }
-  diffIn64bit = (diffIn64bit << 15) | (*diffIdxBuffer & 0x7FFF);
-  ++totalPos;
-  ++diffIdxBuffer;
-  return diffIn64bit + lookingTarget;
-}
-
-
-inline uint64_t KmerMatcher::getNextTargetKmer(
-  uint64_t lookingTarget,
-  uint16_t *&diffIdxBuffer) 
-{
-  uint64_t diffIn64bit = 0;
-  while ((*diffIdxBuffer & 0x8000) == 0) { // 27 %
-    diffIn64bit = (diffIn64bit << 15) | *diffIdxBuffer;
-    ++diffIdxBuffer;
-  }
-  diffIn64bit = (diffIn64bit << 15) | (*diffIdxBuffer & 0x7FFF);
-  ++diffIdxBuffer;
   return diffIn64bit + lookingTarget;
 }
 

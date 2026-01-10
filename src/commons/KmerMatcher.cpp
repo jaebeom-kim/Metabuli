@@ -148,7 +148,7 @@ void KmerMatcher::loadTaxIdList(const LocalParameters & par) {
 
 bool KmerMatcher::matchKmers(
     const Buffer<Kmer> * queryKmerBuffer,
-    Buffer<Match> * totalMatches,
+    Buffer<Match2> * totalMatches,
     const string & db)
 {
     const string targetDiffIdxFileName = db + "/diffIdx";
@@ -166,10 +166,10 @@ bool KmerMatcher::matchKmers(
     #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
     querySplits, qKmers, totalMatches, cout, mask)
     {
-        Buffer<Match> localMatches(1024 * 1024 * 2);
+        Buffer<Match2> localMatches(1024 * 1024 * 2);
         DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(db + "/diffIdx", db + "/info", 1024 * 1024 * 32, 1024 * 1024);
         std::vector<Kmer> candidates;
-        std::vector<Match> filteredMatches;
+        std::vector<Match2> filteredMatches;
         bool localHasOverflow = false;
     #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < querySplits.size(); i++) {
@@ -188,7 +188,7 @@ bool KmerMatcher::matchKmers(
                 if ((qKmer.value == qKmers[j].value) && (qKmer.qInfo.frame/3 == qKmers[j].qInfo.frame/3)) {
                     size_t filteredMatchCnt = filteredMatches.size();
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
-                        if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
+                        if (!Buffer<Match2>::moveSmallToLarge(&localMatches, totalMatches)) {
                             hasOverflow.fetch_add(1, std::memory_order_relaxed);
                             localHasOverflow = true;
                             break;
@@ -196,9 +196,9 @@ bool KmerMatcher::matchKmers(
                     }
                     size_t posToWrite = localMatches.reserveMemory(filteredMatchCnt);
                     memcpy(localMatches.buffer + posToWrite, filteredMatches.data(),
-                           sizeof(Match) * filteredMatches.size());
+                           sizeof(Match2) * filteredMatches.size());
                     for (size_t k = 0; k < filteredMatchCnt; k++) {
-                        localMatches.buffer[posToWrite + k].qInfo = qKmers[j].qInfo;
+                        localMatches.buffer[posToWrite + k].qKmer.qInfo = qKmers[j].qInfo;
                     }
                     continue;
                 }
@@ -209,7 +209,7 @@ bool KmerMatcher::matchKmers(
                     filterCandidates(qKmers[j], candidates, filteredMatches);
                     size_t filteredMatchCnt = filteredMatches.size();
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
-                        if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
+                        if (!Buffer<Match2>::moveSmallToLarge(&localMatches, totalMatches)) {
                             hasOverflow.fetch_add(1, std::memory_order_relaxed);
                             localHasOverflow = true;
                             break;
@@ -217,7 +217,7 @@ bool KmerMatcher::matchKmers(
                     }
                     size_t posToWrite = localMatches.reserveMemory(filteredMatchCnt);
                     memcpy(localMatches.buffer + posToWrite, filteredMatches.data(),
-                           sizeof(Match) * filteredMatchCnt);
+                           sizeof(Match2) * filteredMatchCnt);
                     qKmer = qKmers[j];
                     qKmerAA = AMINO_ACID_PART(qKmer.value);
                     continue;
@@ -248,7 +248,7 @@ bool KmerMatcher::matchKmers(
 
                 filterCandidates(qKmer, candidates, filteredMatches);
                 if (unlikely(!localMatches.afford(filteredMatches.size()))) {
-                    if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
+                    if (!Buffer<Match2>::moveSmallToLarge(&localMatches, totalMatches)) {
                         hasOverflow.fetch_add(1, std::memory_order_relaxed);
                         localHasOverflow = true;
                         break;
@@ -256,12 +256,12 @@ bool KmerMatcher::matchKmers(
                 }
                 size_t posToWrite = localMatches.reserveMemory(filteredMatches.size());
                 memcpy(localMatches.buffer + posToWrite, filteredMatches.data(),
-                       sizeof(Match) * filteredMatches.size());
+                       sizeof(Match2) * filteredMatches.size());
             } // End of one split
 
 
             // Move matches in the local buffer to the shared buffer
-            if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
+            if (!Buffer<Match2>::moveSmallToLarge(&localMatches, totalMatches)) {
                 hasOverflow.fetch_add(1, std::memory_order_relaxed);
                 localHasOverflow = true;
             }
@@ -441,12 +441,12 @@ bool KmerMatcher::matchKmers_AA(
     return true;
 }
 
-void KmerMatcher::sortMatches(Buffer<Match> * matchBuffer) {
+void KmerMatcher::sortMatches(Buffer<Match2> * matchBuffer) {
     time_t beforeSortMatches = time(nullptr);
     std::cout << "K-mer match sorting    : " << std::flush;
     SORT_PARALLEL(matchBuffer->buffer,
                   matchBuffer->buffer + matchBuffer->startIndexOfReserve,
-                  compareMatches);
+                  Match2::compare);
     std::cout << double(time(nullptr) - beforeSortMatches) << " s" << std::endl;
 }
 
@@ -454,34 +454,20 @@ void KmerMatcher::sortMatches(Buffer<Match> * matchBuffer) {
 void KmerMatcher::filterCandidates(
     Kmer qKmer,
     const std::vector<Kmer> &candidates,
-    std::vector<Match> &filteredMatches
+    std::vector<Match2> &filteredMatches
 ) {
-    std::vector<pair<uint8_t, uint32_t>> hammingDists(candidates.size());
+    std::vector<uint8_t> hammings(candidates.size());
     uint8_t hDistCutoff = UINT8_MAX;
     for (size_t i = 0; i < candidates.size(); i++) {
-        if ((qKmer.qInfo.frame < 3) == (kmerFormat == 2)) {
-            hammingDists[i] = metamerPattern->getHammingDists(qKmer.value, candidates[i].value);
-        } else {
-            hammingDists[i] = metamerPattern->getHammingDists_reverse(qKmer.value, candidates[i].value);
-        }
-        hDistCutoff = min(hDistCutoff, hammingDists[i].first);
+        hammings[i] = metamerPattern->hammingDistSum_R(qKmer.value, candidates[i].value, metamerPattern->kmerLen);
+        hDistCutoff = min(hDistCutoff, hammings[i]);
     }
     hDistCutoff = min(hDistCutoff * 2, 7);
     for (size_t h = 0; h < candidates.size(); h++) {
-        if (hammingDists[h].first <= hDistCutoff) {
-            filteredMatches.emplace_back(
-                qKmer.qInfo,                        // query k-mer info
-                candidates[h].id,                   // target TaxID
-                taxId2speciesId[candidates[h].id],  // target species ID
-                candidates[h].value,                // target DNA encoding
-                hammingDists[h].second,
-                hammingDists[h].first               // Hamming dist. sum
-            );
+        if (hammings[h] <= hDistCutoff) {
+            filteredMatches.emplace_back(qKmer, candidates[h]);
+            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candidates[h].id];
         }
-        // metamerPattern->printDNA(qKmer.value); cout << "\n";
-        // metamerPattern->printDNA(candidates[h].value); cout << "\n";
-        // cout << "Hamming dist 1: " << (int)hammingDists[h].first << "\t"; 
-        // cout << "Hamming dist 2: " << hammingDist(metamerPattern->toDnaString(qKmer.value), metamerPattern->toDnaString(candidates[h].value)) << endl;
     }
 }
 

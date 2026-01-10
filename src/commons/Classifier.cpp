@@ -3,6 +3,8 @@
 #include "QueryIndexer.h"
 #include "common.h"
 
+#include <variant>
+
 Classifier::Classifier(LocalParameters & par) {
     dbDir = par.filenames[1 + (par.seqMode == 2)];
     matchPerKmer = par.matchPerKmer;
@@ -66,7 +68,7 @@ Classifier::~Classifier() {
 
 void Classifier::startClassify(const LocalParameters &par) {
     Buffer<Kmer> queryKmerBuffer;
-    Buffer<Match> matchBuffer;
+    Buffer<Match2> matchBuffer;
     vector<Query> queryList;
     size_t numOfTatalQueryKmerCnt = 0;
     reporter->openReadClassificationFile();
@@ -116,7 +118,7 @@ void Classifier::startClassify(const LocalParameters &par) {
                 size_t remain = queryIndexer->getAvailableRam() 
                                 - (queryReadSplit[splitIdx].kmerCnt * sizeof(Kmer)) 
                                 - (queryIndexer->getReadNum_1() * 200); // TODO: check it later
-                matchBuffer.reallocateMemory(remain / sizeof(Match));
+                matchBuffer.reallocateMemory(remain / sizeof(Match2));
             } else {
                 matchBuffer.reallocateMemory(queryReadSplit[splitIdx].kmerCnt * matchPerKmer);
             }
@@ -189,7 +191,7 @@ void Classifier::startClassify(const LocalParameters &par) {
     return;
 }
 
-void Classifier::assignTaxonomy(const Match *matchList,
+void Classifier::assignTaxonomy(const Match2 *matchList, 
                                size_t numOfMatches,
                                std::vector<Query> &queryList,
                                const LocalParameters &par) {
@@ -207,10 +209,10 @@ void Classifier::assignTaxonomy(const Match *matchList,
 #endif
     }
     while (matchIdx < numOfMatches) {
-        currentQuery = matchList[matchIdx].qInfo.sequenceID;
+        currentQuery = matchList[matchIdx].qKmer.qInfo.sequenceID;
         matchBlocks[blockIdx].id = currentQuery;
         matchBlocks[blockIdx].start = matchIdx;
-        while ((currentQuery == matchList[matchIdx].qInfo.sequenceID) && (matchIdx < numOfMatches)) ++matchIdx;
+        while ((currentQuery == matchList[matchIdx].qKmer.qInfo.sequenceID) && (matchIdx < numOfMatches)) ++matchIdx;
         matchBlocks[blockIdx].end = matchIdx - 1;
         blockIdx++;
     }
