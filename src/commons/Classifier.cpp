@@ -18,8 +18,14 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
 
     if (kmerFormat == 1) {
         metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
+        cout << "Using legacy k-mer format." << endl;
     } else if (!par.customMetamer.empty()) {
-        metamerPattern = new MultiCodePattern(par.customMetamer);
+        int codeNum = getCodeNum(par.customMetamer);
+        if (codeNum == 1) {
+            metamerPattern = new SingleCodePattern(par.customMetamer);
+        } else if (codeNum > 1) {
+            metamerPattern = new MultiCodePattern(par.customMetamer);
+        }
     } else if (kmerFormat == 2) {
         bool multicode = false;
         if (multicode) {
@@ -38,6 +44,7 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
             if (par.reducedAA) {
                 metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
             } else {
+                std::cout << "Using standard k-mer format." << std::endl;
                 metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
             }
         }

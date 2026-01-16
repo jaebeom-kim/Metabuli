@@ -9,6 +9,8 @@
 #include "SubstitutionMatrix.h"
 #include "TranslateNucl.h"
 
+int getCodeNum(const std::string & customFile);
+
 class MetamerPattern {
 public:
     uint64_t dnaMask; // Value & dnaMask -> DNA part
@@ -50,10 +52,10 @@ public:
     std::unique_ptr<GeneticCode> geneticCode;
     int bitPerCodon;
     int bitPerAA;
-    const uint64_t codonMask;
-    const uint64_t aaMask;
+    uint64_t codonMask;
+    uint64_t aaMask;
     
-
+    SingleCodePattern(const std::string & customFile);
     SingleCodePattern(std::unique_ptr<GeneticCode> code, int kmerLen) 
         : MetamerPattern(0, 0, 0, kmerLen),
          geneticCode(std::move(code)),
