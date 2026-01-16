@@ -70,7 +70,7 @@ IndexCreator::IndexCreator(
     const LocalParameters & par, 
     UnirefTree * unirefTree,
     int kmerFormat) 
-    : par(par), unirefTree(unirefTree), kmerFormat(kmerFormat) 
+    : par(par), kmerFormat(kmerFormat), unirefTree(unirefTree)
 {
     dbDir = par.filenames[0];
     if (par.reducedAA) {
@@ -115,7 +115,6 @@ void IndexCreator::createLcaKmerIndex() {
     string fileName = par.filenames[1];
     KSeqWrapper * kseq = KSeqFactory(fileName.c_str());
     std::unordered_map<string, uint32_t> name2id;
-    uint32_t idOffset = 0;
 
     std::cout << "Filling UniRef100 name to ID mapping ... " << std::endl;
     time_t start = time(nullptr);

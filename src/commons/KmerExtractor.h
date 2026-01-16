@@ -34,6 +34,12 @@ private:
         {5, 4, 3}   // n = 2
     };
 
+    static constexpr int MAX_N = 12;
+    size_t binom[MAX_N + 1][MAX_N + 1];
+    
+
+
+
     // Extract query k-mer
     void fillQueryKmerBufferParallel(KSeqWrapper* kseq1,
                                      Buffer<Kmer> &kmerBuffer,
@@ -74,14 +80,13 @@ private:
         const char *seq,
         int seqLen, 
         Buffer<Kmer> &kmerBuffer, 
-        size_t &posToWrite, 
+        size_t & posToWrite, 
         uint32_t seqID, 
         uint32_t offset = 0);
 
     void generatePDMNeighborKmers(
         const char *seq,
         size_t seqStart, 
-        size_t seqEnd,
         int seqLen,
         Buffer<Kmer> &kmerBuffer,
         int threadID,
@@ -89,7 +94,33 @@ private:
         int frame,
         uint32_t seqID, 
         uint32_t offset);
-                                      
+
+    int getKmerCount(
+        const char *seq,
+        int seqLen);
+
+    int getPDMKmerCount2(
+    const char *seq,
+    int seqLen);
+    
+    
+        int getPDMKmerCount(
+    const char *seq,
+    int seqLen);
+
+    inline size_t countMutationComb(size_t nt, size_t na, int maxDamage) {
+        size_t count = 0;
+
+        for (int d = 1; d <= maxDamage; ++d) {
+            for (int t = 0; t <= d; ++t) {
+                int a = d - t;
+                if (t <= (int)nt && a <= (int)na) {
+                    count += binom[nt][t] * binom[na][a];
+                }
+            }
+        }
+        return count;
+    }
 public:
     explicit KmerExtractor(
         const LocalParameters & par,
@@ -110,12 +141,34 @@ public:
         KSeqWrapper* kseq1,
         KSeqWrapper* kseq2 = nullptr);
 
+    bool extractQueryKmers(
+        Buffer<Kmer> &kmerBuffer,
+        vector<Query> & queryList,
+        uint64_t & processedSeqCnt,
+        SeqEntry * savedSeq_1,
+        SeqEntry * savedSeq_2,
+        KSeqWrapper* kseq_1,
+        KSeqWrapper* kseq_2 = nullptr);
+
     bool extractQueryKmers_aa2aa(
         Buffer<Kmer> &kmerBuffer,
         std::vector<ProteinQuery> & queryList,
         KSeqWrapper* kseq,
         uint64_t & processedSeqCnt,
         SeqEntry & savedSeq
+    );
+
+    void processSequenceChunk(
+        Buffer<Kmer> &kmerBuffer,
+        size_t & writePos,
+        uint32_t queryOffset,
+        const std::vector<std::string> & reads, 
+        size_t seqNum,
+        int threadID,
+        char *maskedSeq,
+        size_t & maxReadLength,
+        const vector<Query> & queryList,
+        bool isReverse
     );
 
     void processSequenceChunk_aa2aa(

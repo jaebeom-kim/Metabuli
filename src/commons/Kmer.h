@@ -9,7 +9,7 @@
 
 struct QueryKmerInfo {
     QueryKmerInfo(uint32_t sequenceID, uint32_t pos, uint8_t frame)
-        : sequenceID(sequenceID), pos(pos), frame(frame) {}
+        : pos(pos), sequenceID(sequenceID), frame(frame) {}
     QueryKmerInfo() = default;
     struct {
         uint64_t pos        : 32; // 32 bits

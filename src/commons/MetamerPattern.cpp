@@ -3,68 +3,59 @@
 
 using json = nlohmann::json;
 
-float SingleCodePattern::substitutionScore_R(
-    uint64_t kmer1, 
-    uint64_t kmer2,
-    int count,
-    const SubstitutionMatrix & matrix) const 
-{
-    float score = 0.0f;
-    const uint64_t aaPart = kmer1 >> totalDNABits;
-    int aaBitSum = 0;
-    int dnaBitSum = 0;
-    for (int i = 0; i < count; ++i) {
-        const int myAA = (aaPart >> aaBitSum) & aaMask;
-        const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
-        const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
-        const int idx1 = static_cast<int>(matrix.aa2num[translateNucl->translateSingleCodon(geneticCode->aa2codon[myAA][codon1].c_str())]); // ToDo: precompute it
-        const int idx2 = static_cast<int>(matrix.aa2num[translateNucl->translateSingleCodon(geneticCode->aa2codon[myAA][codon2].c_str())]);
-        score += matrix.subMatrix[idx1][idx2];
-        aaBitSum += bitPerAA;
-        dnaBitSum += bitPerCodon;
-    }  
-    return score;
-}
 
-float SingleCodePattern::substitutionScore_L(
+float SingleCodePattern::substitutionScore(
     uint64_t kmer1,
     uint64_t kmer2,
     int count,
-    const SubstitutionMatrix & matrix) const
-{
+    const SubstitutionMatrix& matrix,
+    bool fromR
+) const {
     float score = 0.0f;
     const uint64_t aaPart = kmer1 >> totalDNABits;
-    int aaBitSum = totalAABits;
-    int dnaBitSum = totalDNABits;
+
+    int aaBitSum  = (fromR) ? 0 : totalAABits;
+    int dnaBitSum = (fromR) ? 0 : totalDNABits;
+
     for (int i = 0; i < count; ++i) {
-        aaBitSum -= bitPerAA;
-        dnaBitSum -= bitPerCodon;
+        aaBitSum -= bitPerAA * !fromR;
+        dnaBitSum -= bitPerCodon * !fromR;
+
         const int myAA   = (aaPart >> aaBitSum) & aaMask;
         const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
         const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
+
         const int idx1 = matrix.aa2num[
-            translateNucl->translateSingleCodon(geneticCode->aa2codon[myAA][codon1].c_str())
+            translateNucl->translateSingleCodon(
+                geneticCode->aa2codon[myAA][codon1].c_str())
         ];
         const int idx2 = matrix.aa2num[
-            translateNucl->translateSingleCodon(geneticCode->aa2codon[myAA][codon2].c_str())
-        ]; // ToDo: precompute it
+            translateNucl->translateSingleCodon(
+                geneticCode->aa2codon[myAA][codon2].c_str())
+        ];
 
         score += matrix.subMatrix[idx1][idx2];
+
+        aaBitSum += bitPerAA * fromR;
+        dnaBitSum += bitPerCodon * fromR;
     }
 
     return score;
 }
 
-float SingleCodePattern::hammingDistScore_R(
+float SingleCodePattern::hammingDistScore(
     uint64_t kmer1, 
     uint64_t kmer2,
-    int count) const 
+    int count,
+    bool fromR) const 
 {
     float score = 0.0f;
     const uint64_t aaPart = kmer1 >> totalDNABits;  
-    int aaBitSum = 0;
-    int dnaBitSum = 0;
+    int aaBitSum  = (fromR) ? 0 : totalAABits;
+    int dnaBitSum = (fromR) ? 0 : totalDNABits;
     for (int i = 0; i < count; ++i) {
+        aaBitSum -= bitPerAA * !fromR;
+        dnaBitSum -= bitPerCodon * !fromR;
         const int aa = (aaPart >> aaBitSum) & aaMask;
         const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
         const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
@@ -74,73 +65,31 @@ float SingleCodePattern::hammingDistScore_R(
         } else {
             score += 2.0f - 0.5f * hammingDist;
         }
-        aaBitSum += bitPerAA;
-        dnaBitSum += bitPerCodon; 
+        aaBitSum += bitPerAA * fromR;
+        dnaBitSum += bitPerCodon * fromR;
     }  
     return score;
 }
 
-float SingleCodePattern::hammingDistScore_L(
-    uint64_t kmer1, 
-    uint64_t kmer2,
-    int count) const 
-{
-    float score = 0.0f;
-    const uint64_t aaPart = kmer1 >> totalDNABits;  
-    int aaBitSum = totalAABits;
-    int dnaBitSum = totalDNABits;
-    for (int i = 0; i < count; ++i) {
-        aaBitSum -= bitPerAA;
-        dnaBitSum -= bitPerCodon;
-        const int aa = (aaPart >> aaBitSum) & aaMask;
-        const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
-        const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
-        const int hammingDist = geneticCode->getHammingDist(aa, codon1, codon2);
-        if (hammingDist == 0) {
-            score += 3.0f;
-        } else {
-            score += 2.0f - 0.5f * hammingDist;
-        }
-    }  
-    return score;
-}
-
-uint8_t SingleCodePattern::hammingDistSum_R(
+uint8_t SingleCodePattern::hammingDistSum(
     uint64_t kmer1, 
     uint64_t kmer2, 
-    int count) const 
+    int count,
+    bool fromR) const 
 {
     uint8_t hammingSum = 0;
     const uint64_t aaPart = kmer1 >> totalDNABits;  
-    int aaBitSum = 0;
-    int dnaBitSum = 0;
+    int aaBitSum = (fromR) ? 0 : totalAABits;
+    int dnaBitSum = (fromR) ? 0 : totalDNABits;
     for (int i = 0; i < count; ++i) {
+        aaBitSum -= bitPerAA * !fromR;
+        dnaBitSum -= bitPerCodon * !fromR;
         const int aa = (aaPart >> aaBitSum) & aaMask;
         const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
         const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
         hammingSum += geneticCode->getHammingDist(aa, codon1, codon2);
-        aaBitSum += bitPerAA;
-        dnaBitSum += bitPerCodon; 
-    }  
-    return hammingSum;
-}
-
-uint8_t SingleCodePattern::hammingDistSum_L(
-    uint64_t kmer1, 
-    uint64_t kmer2, 
-    int count) const 
-{
-    uint8_t hammingSum = 0;
-    const uint64_t aaPart = kmer1 >> totalDNABits;  
-    int aaBitSum = totalAABits;
-    int dnaBitSum = totalDNABits;
-    for (int i = 0; i < count; ++i) {
-        aaBitSum -= bitPerAA;
-        dnaBitSum -= bitPerCodon;
-        const int aa = (aaPart >> aaBitSum) & aaMask;
-        const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
-        const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
-        hammingSum += geneticCode->getHammingDist(aa, codon1, codon2);
+        aaBitSum += bitPerAA * fromR;
+        dnaBitSum += bitPerCodon * fromR;
     }  
     return hammingSum;
 }
@@ -256,199 +205,109 @@ bool MultiCodePattern::checkOverlap(
     return true;
 }
 
-float MultiCodePattern::substitutionScore_R(
-    uint64_t kmer1, 
+
+float MultiCodePattern::substitutionScore(
+    uint64_t kmer1,
     uint64_t kmer2,
     int count,
-    const SubstitutionMatrix & matrix) const 
-{
+    const SubstitutionMatrix& matrix,
+    bool fromR
+) const {
     float totalScore = 0.0f;
-    uint64_t aaPart = kmer1 >> totalDNABits; 
+    const uint64_t aaPart = kmer1 >> totalDNABits;
 
-    // Get substitution score for count times from the right end.
-    int aaBitSum = 0;
-    int dnaBitSum = 0;
-    for (int i = kmerLen - 1; i >= kmerLen - count; --i) {
-        const int currAABit = aaBitList[codePattern[i]];
+    int aaBitSum  = fromR ? 0 : totalAABits;
+    int dnaBitSum = fromR ? 0 : totalDNABits;
+
+    for (int step = 0; step < count; ++step) {
+        const int i = fromR
+            ? (kmerLen - 1 - step)
+            : step;
+
+        const int currAABit  = aaBitList[codePattern[i]];
         const int currDnaBit = codonBitList[codePattern[i]];
-        const int myAA = (aaPart >> aaBitSum) & ((1 << currAABit) - 1);
-        const int codon1 = (kmer1 >> dnaBitSum) & ((1 << currDnaBit) - 1);
-        const int codon2 = (kmer2 >> dnaBitSum) & ((1 << currDnaBit) - 1);
-        const int idx1 = static_cast<int>(matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCodes[codePattern[i]]->aa2codon[myAA][codon1].c_str()
-            )
-        ]);
-        const int idx2 = static_cast<int>(matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCodes[codePattern[i]]->aa2codon[myAA][codon2].c_str()
-            )
-        ]); // To Do: Get A.A. using a canonical translation table before doing substitution
 
-        // std::cout << "myAA: " << geneticCodes[codePattern[i]]->aminoacids[myAA] << "(" << myAA << ")"  
-        //     << " codon1: " << geneticCodes[codePattern[i]]->aa2codon[myAA][codon1] << "(" << codon1 << ")" 
-        //     << " codon2: " << geneticCodes[codePattern[i]]->aa2codon[myAA][codon2] << "(" << codon2 << ")" << std::endl;
-        // std::cout << "aa1: " << translateNucl->translateSingleCodon(
-        //         geneticCodes[codePattern[i]]->aa2codon[myAA][codon1].c_str()
-        //     ) << " idx1: " << idx1 << std::endl;
-        // std::cout << "aa2: " << translateNucl->translateSingleCodon(
-        //         geneticCodes[codePattern[i]]->aa2codon[myAA][codon2].c_str()
-        //     ) << " idx2: " << idx2 << std::endl;
-        // std::cout << "Score: " << matrix.subMatrix[idx1][idx2] << std::endl;
+        aaBitSum -= currAABit * (!fromR);
+        dnaBitSum -= currDnaBit * (!fromR);
 
-        totalScore += matrix.subMatrix[idx1][idx2]; // To Do: Get A.A. using a canonical translation table before doing substitution score lookup.
-        aaBitSum += currAABit;
-        dnaBitSum += currDnaBit;
-    }
-    return totalScore;
-}
-
-float MultiCodePattern::substitutionScore_L(
-    uint64_t kmer1, 
-    uint64_t kmer2,
-    int count,
-    const SubstitutionMatrix & matrix) const 
-{
-    float totalScore = 0.0f;
-    uint64_t aaPart = kmer1 >> totalDNABits; 
-
-    // Get substitution score for count times from the right end.
-    int aaBitSum = totalAABits;
-    int dnaBitSum = totalDNABits;
-    for (int i = 0; i < count; ++i) {
-        const int currAABit = aaBitList[codePattern[i]];
-        const int currDnaBit = codonBitList[codePattern[i]];
-        aaBitSum -= currAABit;
-        dnaBitSum -= currDnaBit;
         const int myAA   = (aaPart >> aaBitSum) & ((1 << currAABit) - 1);
         const int codon1 = (kmer1 >> dnaBitSum) & ((1 << currDnaBit) - 1);
         const int codon2 = (kmer2 >> dnaBitSum) & ((1 << currDnaBit) - 1);
-        const int idx1 = static_cast<int>(matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCodes[codePattern[i]]->aa2codon[myAA][codon1].c_str()
-            )
-        ]);
-        const int idx2 = static_cast<int>(matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCodes[codePattern[i]]->aa2codon[myAA][codon2].c_str()
-            )
-        ]); // To Do: Get A.A. using a canonical translation table before doing substitution
 
-        // std::cout << "myAA: " << geneticCodes[codePattern[i]]->aminoacids[myAA] << "(" << myAA << ")"  
-        //     << " codon1: " << geneticCodes[codePattern[i]]->aa2codon[myAA][codon1] << "(" << codon1 << ")" 
-        //     << " codon2: " << geneticCodes[codePattern[i]]->aa2codon[myAA][codon2] << "(" << codon2 << ")" << std::endl;
-        // std::cout << "aa1: " << translateNucl->translateSingleCodon(
-        //         geneticCodes[codePattern[i]]->aa2codon[myAA][codon1].c_str()
-        //     ) << " idx1: " << idx1 << std::endl;
-        // std::cout << "aa2: " << translateNucl->translateSingleCodon(
-        //         geneticCodes[codePattern[i]]->aa2codon[myAA][codon2].c_str()
-        //     ) << " idx2: " << idx2 << std::endl;
-        // std::cout << "Score: " << matrix.subMatrix[idx1][idx2] << std::endl;
-        
-        totalScore += matrix.subMatrix[idx1][idx2]; // To Do: Get A.A. using a canonical translation table before doing substitution score lookup.
+        const auto& gc = geneticCodes[codePattern[i]];
+
+        const int idx1 = matrix.aa2num[
+            translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon1].c_str())
+        ];
+        const int idx2 = matrix.aa2num[
+            translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon2].c_str())
+        ];
+
+        totalScore += matrix.subMatrix[idx1][idx2];
+        aaBitSum += currAABit * fromR;
+        dnaBitSum += currDnaBit * fromR;
     }
+
     return totalScore;
 }
 
-
-
-float MultiCodePattern::hammingDistScore_R(
+float MultiCodePattern::hammingDistScore(
     uint64_t kmer1, 
     uint64_t kmer2,
-    int count) const 
+    int count,
+    bool fromR) const 
 {
-    float totalScore = 0.0f;
-    const uint64_t aaPart = kmer1 >> totalDNABits;
-    int aaBitSum = 0;
-    int dnaBitSum = 0;
-    for (int i = kmerLen - 1; i >= kmerLen - count; --i) {
-        const int currAABit = aaBitList[codePattern[i]];
-        const int currCodonBit = codonBitList[codePattern[i]];
-
+    float score = 0.0f;
+    const uint64_t aaPart = kmer1 >> totalDNABits;  
+    int aaBitSum  = fromR ? 0 : totalAABits;
+    int dnaBitSum = fromR ? 0 : totalDNABits;
+    for (int step = 0; step < count; ++step) {
+        const int i = fromR
+            ? (kmerLen - 1 - step)
+            : step;
+        const int currAABit  = aaBitList[codePattern[i]];
+        const int currDnaBit = codonBitList[codePattern[i]];
+        aaBitSum -= currAABit * (!fromR);
+        dnaBitSum -= currDnaBit * (!fromR);
         const int aa = (aaPart >> aaBitSum) & ((1 << currAABit) - 1);
-        const int codon1 = (kmer1 >> dnaBitSum) & ((1 << currCodonBit) - 1);
-        const int codon2 = (kmer2 >> dnaBitSum) & ((1 << currCodonBit) - 1);
-
+        const int codon1 = (kmer1 >> dnaBitSum) & ((1 << currDnaBit) - 1);
+        const int codon2 = (kmer2 >> dnaBitSum) & ((1 << currDnaBit) - 1);
         const int hammingDist = geneticCodes[codePattern[i]]->getHammingDist(aa, codon1, codon2);
         if (hammingDist == 0) {
-            totalScore += 3.0f;
+            score += 3.0f;
         } else {
-            totalScore += 2.0f - 0.5f * hammingDist;
+            score += 2.0f - 0.5f * hammingDist;
         }
-        aaBitSum += currAABit;
-        dnaBitSum += currCodonBit; 
+        aaBitSum += currAABit * fromR;
+        dnaBitSum += currDnaBit * fromR;
     }
-   
-    return totalScore;
+    return score;
 }
 
-float MultiCodePattern::hammingDistScore_L(
-    uint64_t kmer1, 
-    uint64_t kmer2,
-    int count) const 
-{
-    float totalScore = 0.0f;
-    const uint64_t aaPart = kmer1 >> totalDNABits;
-
-    int aaBitSum = totalAABits;
-    int dnaBitSum = totalDNABits;
-    for (int i = 0; i < count; ++i) {
-        const int currAABit = aaBitList[codePattern[i]];
-        const int currCodonBit = codonBitList[codePattern[i]];
-        aaBitSum -= currAABit;
-        dnaBitSum -= currCodonBit;
-        
-        const int aa = (aaPart >> aaBitSum) & ((1 << currAABit) - 1);
-        const int codon1 = (kmer1 >> dnaBitSum) & ((1 << currCodonBit) - 1);
-        const int codon2 = (kmer2 >> dnaBitSum) & ((1 << currCodonBit) - 1);
-        
-        const int hammingDist = geneticCodes[codePattern[i]]->getHammingDist(aa, codon1, codon2);
-        if (hammingDist == 0) {
-            totalScore += 3.0f;
-        } else {
-            totalScore += 2.0f - 0.5f * hammingDist;
-        }
-    }
-   
-    return totalScore;
-}
-
-uint8_t MultiCodePattern::hammingDistSum_R(
+uint8_t MultiCodePattern::hammingDistSum(
     uint64_t kmer1, 
     uint64_t kmer2, 
-    int count) const 
+    int count,
+    bool fromR) const 
 {
     uint8_t hammingSum = 0;
     const uint64_t aaPart = kmer1 >> totalDNABits;  
-    int aaBitSum = 0;
-    int dnaBitSum = 0;
-    for (int i = kmerLen - 1; i >= kmerLen - count; --i) {
-        const int aa = (aaPart >> aaBitSum) & ((1 << aaBitList[codePattern[i]]) - 1);
-        const int codon1 = (kmer1 >> dnaBitSum) & ((1 << codonBitList[codePattern[i]]) - 1);
-        const int codon2 = (kmer2 >> dnaBitSum) & ((1 << codonBitList[codePattern[i]]) - 1);
+    int aaBitSum = (fromR) ? 0 : totalAABits;
+    int dnaBitSum = (fromR) ? 0 : totalDNABits;
+    for (int step = 0; step < count; ++step) {
+        const int i = fromR
+            ? (kmerLen - 1 - step)
+            : step;
+        const int currAABit  = aaBitList[codePattern[i]];
+        const int currDnaBit = codonBitList[codePattern[i]];
+        aaBitSum -= currAABit * (!fromR);
+        dnaBitSum -= currDnaBit * (!fromR);
+        const int aa = (aaPart >> aaBitSum) & ((1 << currAABit) - 1);
+        const int codon1 = (kmer1 >> dnaBitSum) & ((1 << currDnaBit) - 1);
+        const int codon2 = (kmer2 >> dnaBitSum) & ((1 << currDnaBit) - 1);
         hammingSum += geneticCodes[codePattern[i]]->getHammingDist(aa, codon1, codon2);
-        aaBitSum += aaBitList[codePattern[i]];
-        dnaBitSum += codonBitList[codePattern[i]]   ; 
-    }  
-    return hammingSum;
-}
-
-uint8_t MultiCodePattern::hammingDistSum_L(
-    uint64_t kmer1, 
-    uint64_t kmer2, 
-    int count) const 
-{
-    uint8_t hammingSum = 0;
-    const uint64_t aaPart = kmer1 >> totalDNABits;  
-    int aaBitSum = totalAABits;
-    int dnaBitSum = totalDNABits;
-    for (int i = 0; i < count; ++i) {
-        aaBitSum -= aaBitList[codePattern[i]];
-        dnaBitSum -= codonBitList[codePattern[i]];
-        const int aa = (aaPart >> aaBitSum) & ((1 << aaBitList[codePattern[i]]) - 1);
-        const int codon1 = (kmer1 >> dnaBitSum) & ((1 << codonBitList[codePattern[i]]) - 1);
-        const int codon2 = (kmer2 >> dnaBitSum) & ((1 << codonBitList[codePattern[i]]) - 1);
-        hammingSum += geneticCodes[codePattern[i]]->getHammingDist(aa, codon1, codon2);
+        aaBitSum += currAABit * fromR;
+        dnaBitSum += currDnaBit * fromR;
     }  
     return hammingSum;
 }

@@ -195,7 +195,8 @@ int classify(int argc, const char **argv, const Command& command) {
 #endif
 
     Classifier * classifier = new Classifier(par);
-    classifier->startClassify(par);
+    // classifier->startClassify(par);
+    classifier->classifyReads();
     delete classifier;
     return 0;
 }

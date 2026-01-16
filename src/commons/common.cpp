@@ -337,3 +337,18 @@ int hammingDist(const std::string & codon1, const std::string & codon2) {
     }
     return res;
 }
+
+size_t readDbSize(const std::string& dbDir) {
+    const std::string path = dbDir + "/db.parameters";
+    if (!fileExist(path)) return 0;
+
+    std::ifstream file(path);
+    std::string line;
+
+    while (std::getline(file, line)) {
+        auto tokens = Util::split(line, "\t");
+        if (tokens.size() > 1 && tokens[0] == "Total_seq_length")
+            return std::stoull(tokens[1]);
+    }
+    return 0;
+}

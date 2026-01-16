@@ -8,25 +8,26 @@
     {
       "id": "CtoT_tolerant",
       "codons": [
-        ["A,V", ["GCT","GCC","GCA","GCG", "GTT","GTC","GTA","GTG"]],
+        ["A,V", [
+          "GCT","GCC","GCA","GCG", 
+          "GTT","GTC","GTA","GTG"]],
         ["C,R,W", [
           "TGT","TGC",
           "CGT","CGC","CGA","CGG","AGA","AGG",
-          "TGG"
-        ]],
+          "TGG"]],
         ["F,L,P,S", [
           "TTT","TTC",
           "TTA","TTG","CTT","CTC","CTA","CTG",
           "CCT","CCC","CCA","CCG",
-          "TCT","TCC","TCA","TCG","AGT","AGC"
-        ]],
+          "TCT","TCC","TCA","TCG","AGT","AGC"]],
         ["H,Y", ["CAT","CAC", "TAT","TAC"]],
         ["I,T,M", [
           "ATT","ATC","ATA",
           "ACT","ACC","ACA","ACG",
-          "ATG"
-        ]],
-        ["Q,X", ["CAA","CAG", "TAA","TAG","TGA"]],
+          "ATG"]],
+        ["Q,X", [
+          "CAA","CAG",
+          "TAA","TAG","TGA"]],
         ["D", ["GAT","GAC"]],
         ["E", ["GAA","GAG"]],
         ["G", ["GGT","GGC","GGA","GGG"]],
@@ -58,17 +59,33 @@
     {
       "id": "GtoA_tolerant",
       "codons": [
-        ["A,T", ["GCT", "GCC", "GCA", "GCG", "ACT", "ACC", "ACA", "ACG"]], 
+        ["A,T", 
+          ["GCT", "GCC", "GCA", "GCG", 
+           "ACT", "ACC", "ACA", "ACG"]], 
         ["D,E,G,H,K,N,Q,R,S", 
           ["GAT", "GAC",
-           "GAA", "GAG", "GGT", "GGC", "GGA", "GGG", "CAT", "CAC", "AAA", "AAG", "AAT", "AAC", "CAA", "CAG", "CGT", "CGC", "CGA", "CGG", "AGA", "AGG", "TCT", "TCC", "TCA", "TCG", "AGT", "AGC"]],
-          
-        ["C,Y", ["TGT", "TGC", "TAT", "TAC"]],
-        ["I,M,V", ["ATT", "ATC", "ATA", "ATG", "GTT", "GTC", "GTA", "GTG"]],
-        ["L", ["TTA", "TTG", "CTT", "CTC", "CTA", "CTG"]],
+           "GAA", "GAG", 
+           "GGT", "GGC", "GGA", "GGG", 
+           "CAT", "CAC", 
+           "AAA", "AAG", 
+           "AAT", "AAC", 
+           "CAA", "CAG", 
+           "CGT", "CGC", "CGA", "CGG", "AGA", "AGG", 
+           "TCT", "TCC", "TCA", "TCG", "AGT", "AGC"]],
+        ["C,Y", 
+          ["TGT", "TGC",
+           "TAT", "TAC"]],
+        ["I,M,V", 
+          ["ATT", "ATC", "ATA",
+           "ATG",
+           "GTT", "GTC", "GTA", "GTG"]],
+        ["L", 
+          ["TTA", "TTG", "CTT", "CTC", "CTA", "CTG"]],
         ["F", ["TTT", "TTC"]],
         ["P", ["CCT", "CCC", "CCA", "CCG"]],
-        ["W,X", ["TGG", "TAA", "TAG", "TGA"]]
+        ["W,X", 
+          ["TGG", 
+           "TAA", "TAG", "TGA"]]
       ]
     }
   ]

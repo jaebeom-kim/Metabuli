@@ -5,96 +5,10 @@
 #include <cstdint>
 #include <iostream>
 #include "BitManipulateMacros.h"
-
-class Match { // 27 byte
+class Match { // 32 byte
 public:
     Match(){}
-    Match(QueryKmerInfo qInfo,
-          int targetId,
-          TaxID speciesId,
-          uint64_t dnaEncoding,
-          uint16_t eachHamming,
-          uint8_t hamming):
-          qInfo(qInfo), targetId(targetId), speciesId(speciesId), value(dnaEncoding),
-          rightEndHamming(eachHamming), hamming(hamming) { }
-
-    QueryKmerInfo qInfo;      // 8 // Query K-mer information
-    TaxID targetId;           // 4 // Taxonomy id infact
-    TaxID speciesId;          // 4 // Used to group matches by species
-    uint64_t value;           // 8 // Used to check if two matches are consecutive
-    uint16_t rightEndHamming; // 2 // Used to calculate score
-    uint8_t hamming;          // 1 // Used to filter redundant matches
-
-    void printMatch() const {
-        std::cout << qInfo.sequenceID << " " << qInfo.pos << " " << qInfo.frame << " "
-        << targetId << " " << speciesId << " " << rightEndHamming << " " << (int)hamming << " " << getScore() << "\n";
-    }
-
-    static int byteSize() {
-        return sizeof(Match);
-    }
-
-    float getScore(float score = 0.0f, int cnt = 0) const { 
-        int currentHamming = GET_2_BITS(rightEndHamming >> (cnt * 2));
-        if (currentHamming == 0) {
-            score += 3.0f;
-        } else {
-            score += 2.0f - 0.5f * currentHamming;
-        }
-        if (cnt == 7) {
-            return score;
-        } else {
-        return getScore(score, cnt + 1);    
-        }
-    }
-
-    virtual float getRightPartScore(const int range, float score = 0.0f, int cnt = 0) const {
-        if (cnt == range) {
-            return score;
-        }
-        int currentHamming = GET_2_BITS(rightEndHamming >> (cnt * 2));
-        if (currentHamming == 0) {
-            score += 3.0f;
-        } else {
-            score += 2.0f - 0.5f * currentHamming;
-        }
-        return getRightPartScore(range, score, cnt + 1);    
-    }
-
-    virtual float getLeftPartScore(const int range, float score = 0.0f, int cnt = 0) const {
-        if (cnt == range) {
-            return score;
-        }
-        int currentHamming = GET_2_BITS(rightEndHamming >> (14 - cnt * 2));
-        if (currentHamming == 0) {
-            score += 3.0f;
-        } else {
-            score += 2.0f - 0.5f * currentHamming;
-        }
-        return getLeftPartScore(range, score, cnt + 1);    
-    }
-
-    virtual int getRightPartHammingDist(const int range) const {
-        int sum = 0;
-        for (int i = 0; i < range; i++) {
-            sum += GET_2_BITS(rightEndHamming >> (i * 2));
-        }
-        return sum;
-    }
-
-    virtual int getLeftPartHammingDist(const int range) const {
-        int sum = 0;
-        for (int i = 0; i < range; i++) {
-            sum += GET_2_BITS(rightEndHamming >> (14 - i * 2));
-        }
-        return sum;
-    }
-};
-
-class Match2 { // 32 byte
-public:
-    Match2(){}
-    Match2(Kmer qKmer, Kmer tKmer): qKmer(qKmer), tKmer(tKmer) { }
+    Match(Kmer qKmer, Kmer tKmer): qKmer(qKmer), tKmer(tKmer) { }
 
     Kmer qKmer;
     Kmer tKmer;
@@ -104,7 +18,7 @@ public:
         << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << "\n";
     }
 
-    static bool compare(const Match2 &a, const Match2 &b) {
+    static bool compare(const Match &a, const Match &b) {
         if (a.qKmer.qInfo.sequenceID != b.qKmer.qInfo.sequenceID)
             return a.qKmer.qInfo.sequenceID < b.qKmer.qInfo.sequenceID;
         
@@ -117,7 +31,13 @@ public:
         if (a.qKmer.qInfo.pos != b.qKmer.qInfo.pos)
             return a.qKmer.qInfo.pos < b.qKmer.qInfo.pos;
 
-        return a.tKmer.tInfo.taxId < b.tKmer.tInfo.taxId;
+        if (a.tKmer.tInfo.taxId != b.tKmer.tInfo.taxId)
+            return a.tKmer.tInfo.taxId < b.tKmer.tInfo.taxId;
+
+        if (a.qKmer.value != b.qKmer.value)
+            return a.qKmer.value < b.qKmer.value;
+        
+        return a.tKmer.value < b.tKmer.value;
     }
 
 };

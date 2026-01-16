@@ -89,6 +89,7 @@ public:
     PARAMETER(EM)
     PARAMETER(NEIGHBOR_KMERS)
     PARAMETER(PDM_KMER)
+    PARAMETER(SCORE_MODE)
 
     // extract
     PARAMETER(TARGET_TAX_ID)
@@ -192,7 +193,8 @@ public:
     int maxShift;
     bool em;
     int pdmKmer;
-
+    int scoreMode;
+    
     // Extract
     int targetTaxId;
     int extractMode;

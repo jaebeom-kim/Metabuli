@@ -92,34 +92,32 @@ struct Classification {
     int length;
     double score;
 };
+
+struct MatchScore {
+    float isScore;
+    float subScore;
+};
 struct Query {
-    int queryId;
     int classification;
-    float score;
+    float idScore;
+    float subScore;
+    float eValue;
     int hammingDist;
     int queryLength;
     int queryLength2;
     int kmerCnt;
     int kmerCnt2;
     TaxID topSpeciesId; 
-    bool isClassified;
-    bool newSpecies; // 36 byte
 
     std::string name;
     std::map<TaxID,int> taxCnt; // 8 byte per element
     std::vector<std::pair<TaxID, float>> species2Score;
-    // std::vector<float> pathScores;
 
-    bool operator==(int id) const { return queryId == id;}
-
-    Query(int queryId, int classification, float score, int hammingDist, int queryLength,
-          int queryLength2, int kmerCnt, int kmerCnt2, bool isClassified, bool newSpecies, std::string name)
-            : queryId(queryId), classification(classification), score(score),
-              hammingDist(hammingDist), queryLength(queryLength), queryLength2(queryLength2), kmerCnt(kmerCnt), kmerCnt2(kmerCnt2),
-              isClassified(isClassified), newSpecies(newSpecies), name(std::move(name)) {}
-
-    Query() : queryId(0), classification(0), score(0), hammingDist(0), queryLength(0),
-              queryLength2(0), kmerCnt(0), kmerCnt2(0), isClassified(false), newSpecies(false) {}
+    Query() = default;
+    Query(int queryLength, int kmerCnt, const std::string & name)
+        : classification(0), idScore(0), subScore(0), eValue(0), hammingDist(0),
+          queryLength(queryLength), queryLength2(0), kmerCnt(kmerCnt), kmerCnt2(0),
+          name(name) {}
 };
 
 struct ProteinQuery {
@@ -472,4 +470,11 @@ inline unsigned bitsNeeded(unsigned N) {
 }
 
 int hammingDist(const std::string & codon1, const std::string & codon2);
+
+
+size_t readDbSize(const std::string& dbDir);
+
+
+
+
 #endif //ADCLASSIFIER2_COMMON_H

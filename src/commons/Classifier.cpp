@@ -5,7 +5,7 @@
 
 #include <variant>
 
-Classifier::Classifier(LocalParameters & par) {
+Classifier::Classifier(LocalParameters & par) : par(par) {
     dbDir = par.filenames[1 + (par.seqMode == 2)];
     matchPerKmer = par.matchPerKmer;
     loadDbParameters(par, par.filenames[1 + (par.seqMode == 2)]);
@@ -21,7 +21,7 @@ Classifier::Classifier(LocalParameters & par) {
     } else if (!par.customMetamer.empty()) {
         metamerPattern = new MultiCodePattern(par.customMetamer);
     } else if (kmerFormat == 2) {
-        bool multicode = true;
+        bool multicode = false;
         if (multicode) {
             if (par.reducedAA) {
                 vector<std::unique_ptr<GeneticCode>> geneticCodes;
@@ -66,9 +66,133 @@ Classifier::~Classifier() {
     if (mappingResList) delete[] mappingResList;
 }
 
+uint64_t Classifier::calculateBufferSize(
+    uint64_t queryListSize,
+    uint64_t matchPerKmer) 
+{
+    size_t totalBytes = (size_t) par.ramUsage * 1024 * 1024 * 1024;
+
+    size_t bytesPerThread =
+        2 * 1024 * 1024 * sizeof(Match) + // local match buffer
+        1024 * 1024 * 32 * sizeof(Kmer) +  // DeltaIdxReader::valueBuffer
+        1024 * 1024 * sizeof(uint16_t) +   // DeltaIdxReader::deltaBuffer
+        1024 * 1024 * sizeof(uint32_t);    // DeltaIdxReader::infoBuffer
+
+    size_t overhead = 128 * 1024 * 1024; // 128MB
+    size_t queryListBytes = queryListSize * (sizeof(Query) + 150);
+    size_t availableBytes = totalBytes - (par.threads * bytesPerThread) - overhead - queryListBytes; 
+    size_t bytePerKmer = sizeof(Kmer) + matchPerKmer * sizeof(Match);
+    uint64_t totalSize = availableBytes / bytePerKmer;
+  
+    return totalSize;
+}
+
+void Classifier::classifyReads() {
+    Buffer<Kmer> queryKmerBuffer;
+    Buffer<Match> matchBuffer;
+    vector<Query> queryList;
+    queryList.reserve(512 * 1024);
+
+    reporter->openReadClassificationFile();
+
+    bool complete = false;
+    SeqEntry * savedSeq_1 = new SeqEntry();
+    SeqEntry * savedSeq_2 = new SeqEntry(); 
+    uint64_t processedReadCnt = 0;
+
+    std::cout << "--------------------" << std::endl;
+    while (!complete) {
+        KSeqWrapper* kseq1 = KSeqFactory(par.filenames[0].c_str());
+        KSeqWrapper* kseq2 = par.seqMode == 2 ? KSeqFactory(par.filenames[1].c_str()) : nullptr;
+
+        // Move kseq to unprocessed reads
+        for (size_t i = 0; i < processedReadCnt; i++) {
+            kseq1->ReadEntry();
+            if (par.seqMode == 2) { kseq2->ReadEntry(); }
+        }
+
+        size_t queryKmerBufferSize = calculateBufferSize(queryList.size(), matchPerKmer);
+        queryKmerBuffer.reallocateMemory(queryKmerBufferSize);
+        matchBuffer.reallocateMemory(queryKmerBufferSize * matchPerKmer);
+
+        bool moreReads = true;
+        while (moreReads) {
+            queryList.clear(); // TODO: use reserve and push_back instead
+            queryKmerBuffer.init();
+            matchBuffer.startIndexOfReserve = 0;
+            // matchBuffer.init();
+
+            // 1) Extract query k-mers
+            time_t start = time(nullptr);
+            std::cout << "Query k-mer extraction : " << std::flush;
+            uint64_t seqCnt = 0;
+            moreReads = kmerExtractor->extractQueryKmers(
+                    queryKmerBuffer,
+                    queryList,
+                    processedReadCnt,
+                    savedSeq_1,
+                    savedSeq_2,
+                    kseq1,
+                    kseq2);
+            std::cout << difftime(time(nullptr), start) << " s" << std::endl;
+
+            // 2) Sort k-mers
+            start = time(nullptr);
+            std::cout << "Query k-mer sorting    : " << std::flush;
+            SORT_PARALLEL(queryKmerBuffer.buffer, queryKmerBuffer.buffer + queryKmerBuffer.startIndexOfReserve, Kmer::compareQueryKmer);
+            std::cout << difftime(time(nullptr), start) << " s" << std::endl;
+
+            // 3) Match k-mers
+            start = time(nullptr);
+            bool searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer, dbDir);
+            if (searchComplete) {
+                std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
+
+
+                // 4) Sort matches
+                kmerMatcher->sortMatches(&matchBuffer);
+
+                // 5) Assign taxonomy
+                assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+
+                // 6) Write classification results
+                start = time(nullptr);
+                std::cout << "Writing results        : " << std::flush;
+                reporter->writeReadClassification(queryList);
+                processedReadCnt += seqCnt;                    
+                std::cout << difftime(time(nullptr), start) << " s" << std::endl;
+                std::cout << "Processed read count   : " << processedReadCnt << std::endl;
+            } else {
+                matchPerKmer += 4;
+                std::cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << std::endl;
+                break;
+            }
+            std::cout << "--------------------" << std::endl;
+
+        }
+        delete kseq1;
+        if (par.seqMode == 2) {
+            delete kseq2;
+        }
+        if (!moreReads) {
+            complete = true;
+        }
+        std::cout << "--------------------" << std::endl;
+    }
+    delete savedSeq_1;
+    delete savedSeq_2;
+    
+    // Finalize original classification results
+    std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
+    reporter->closeReadClassificationFile();
+    reporter->writeReportFile(processedReadCnt, taxCounts, ReportType::Default);
+    std::cout << "Taxonomic classification completed." << std::endl;
+
+}
+
 void Classifier::startClassify(const LocalParameters &par) {
     Buffer<Kmer> queryKmerBuffer;
-    Buffer<Match2> matchBuffer;
+    Buffer<Match> matchBuffer;
     vector<Query> queryList;
     size_t numOfTatalQueryKmerCnt = 0;
     reporter->openReadClassificationFile();
@@ -118,7 +242,7 @@ void Classifier::startClassify(const LocalParameters &par) {
                 size_t remain = queryIndexer->getAvailableRam() 
                                 - (queryReadSplit[splitIdx].kmerCnt * sizeof(Kmer)) 
                                 - (queryIndexer->getReadNum_1() * 200); // TODO: check it later
-                matchBuffer.reallocateMemory(remain / sizeof(Match2));
+                matchBuffer.reallocateMemory(remain / sizeof(Match));
             } else {
                 matchBuffer.reallocateMemory(queryReadSplit[splitIdx].kmerCnt * matchPerKmer);
             }
@@ -191,7 +315,7 @@ void Classifier::startClassify(const LocalParameters &par) {
     return;
 }
 
-void Classifier::assignTaxonomy(const Match2 *matchList, 
+void Classifier::assignTaxonomy(const Match *matchList, 
                                size_t numOfMatches,
                                std::vector<Query> &queryList,
                                const LocalParameters &par) {

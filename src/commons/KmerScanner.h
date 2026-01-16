@@ -364,7 +364,7 @@ public:
 
     virtual Kmer next() {
         int aa = 0;
-        while (posStart <= seqLen - kmerSize) {
+        while ((uint32_t) posStart <= seqLen - kmerSize) {
             bool sawN = false;
             loadedCharCnt -= (loadedCharCnt == kmerSize);
             while (loadedCharCnt < kmerSize) {

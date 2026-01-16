@@ -80,7 +80,7 @@ public:
         uint32_t offset) 
     {   
         for (size_t i = 0; i < queryList.size(); ++i) {
-            if (queryList[i].isClassified) {
+            if (queryList[i].classification != 0) {
                 for (const auto &sp2score : queryList[i].species2Score) {
                     MappingRes mappingRes(i + offset, sp2score.first, sp2score.second);
                     mappingResBuffer->write(&mappingRes);

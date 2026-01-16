@@ -229,6 +229,13 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &pdmKmer,
                 "^[0-9]+$"),
+        SCORE_MODE(SCORE_MODE_ID,
+                   "--score-mode",
+                   "Scoring mode for classification",
+                   "0: DNA hamming dist. 1: BLOSUM62 score 2: Both",
+                   typeid(int),
+                   (void *) &scoreMode,
+                   "[0-2]"),
         TARGET_TAX_ID(TARGET_TAX_ID_ID,
                "--tax-id",
                "Tax. ID of clade. -1 for unclassified reads",
@@ -668,6 +675,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&PRINT_LOG);
     classify.push_back(&REDUCED_AA);
     classify.push_back(&PDM_KMER);
+    classify.push_back(&SCORE_MODE);
     // classify.push_back(&EM);
 
     assignUniref.push_back(&PARAM_THREADS);

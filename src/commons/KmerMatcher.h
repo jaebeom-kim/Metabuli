@@ -199,7 +199,7 @@ protected:
   void filterCandidates(
     Kmer qKmer,
     const std::vector<Kmer> &candidates,
-    std::vector<Match2> &filteredMatches
+    std::vector<Match> &filteredMatches
   );
 
   virtual uint8_t getHammingDistanceSum(uint64_t kmer1, uint64_t kmer2);
@@ -207,8 +207,6 @@ protected:
   virtual uint16_t getHammings(uint64_t kmer1, uint64_t kmer2);
 
   virtual uint16_t getHammings_reverse(uint64_t kmer1, uint64_t kmer2);
-
-  static bool compareMatches(const Match &a, const Match &b);
 
   void loadTaxIdList(const LocalParameters & par);
 
@@ -231,14 +229,14 @@ public:
   virtual ~KmerMatcher();
   
   bool matchKmers(const Buffer<Kmer> *queryKmerBuffer,
-                  Buffer<Match2> *matchBuffer,
+                  Buffer<Match> *matchBuffer,
                   const string &db);
 
   bool matchKmers_AA(const Buffer<Kmer> *queryKmerBuffer,
                      Buffer<Match_AA> *matchBuffer,
                      const string &db);
 
-  void sortMatches(Buffer<Match2> *matchBuffer);
+  void sortMatches(Buffer<Match> *matchBuffer);
 
 
 

@@ -61,7 +61,7 @@ class CustomGeneticCode : public GeneticCode {
             alphabetSize = customCodes.size();
             maxCodonPerAA = 0;
             for (size_t i = 0; i < customCodes.size(); i++) {
-                if (customCodes[i].second.size() > maxCodonPerAA) {
+                if ((int) customCodes[i].second.size() > maxCodonPerAA) {
                     maxCodonPerAA = customCodes[i].second.size();
                 }
                 aminoacids.append(customCodes[i].first);
@@ -75,13 +75,13 @@ class CustomGeneticCode : public GeneticCode {
                 codonCount += codons.size();
                 aa2codon.push_back({});
                 for (int j = 0; j < maxCodonPerAA; j++) {
-                    if (j < codons.size()) {
+                    if (j < (int) codons.size()) {
                         codon2AA[nuc2int(atcg[codons[j][0]])][nuc2int(atcg[codons[j][1]])][nuc2int(atcg[codons[j][2]])] = aaIdx;
                         codon2codonIdx[nuc2int(atcg[codons[j][0]])][nuc2int(atcg[codons[j][1]])][nuc2int(atcg[codons[j][2]])] = j;
                         aa2codon[aaIdx].push_back(codons[j]);
                     }
                     for (int k = 0; k < maxCodonPerAA; k++) {
-                        if (k < codons.size() && j < codons.size()) {
+                        if (k < (int) codons.size() && j < (int) codons.size()) {
                             hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + j * maxCodonPerAA + k] = hammingDist(codons[j], codons[k]);
                         } else {
                             hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + j * maxCodonPerAA + k] = 4; // or some default value
