@@ -1,9 +1,10 @@
+##Reduction of protein sequence complexity by residue grouping
 ===BEGIN_CUSTOM_METAMER===
 {
-  "name": "Standard Pattern",
-  "length": 8,
+  "name": "Reduced Alphabet (15+stop)",
+  "length": 9,
   "code_count": 1,
-  "position_codes": [0, 0, 0, 0, 0, 0, 0, 0],
+  "position_codes": [0, 0, 0, 0, 0, 0, 0, 0, 0],
   "codes": [
     {
       "id": "Standard",
@@ -13,21 +14,16 @@
         ["N", ["AAT", "AAC"]],
         ["D", ["GAT", "GAC"]],
         ["C", ["TGT", "TGC"]],
-        ["Q", ["CAA", "CAG"]],
-        ["E", ["GAA", "GAG"]],
+        ["Q,E", ["CAA", "CAG", "GAA", "GAG"]],
         ["G", ["GGT", "GGC", "GGA", "GGG"]],
         ["H", ["CAT", "CAC"]],
-        ["I", ["ATT", "ATC", "ATA"]],
-        ["L", ["TTA", "TTG", "CTT", "CTC", "CTA", "CTG"]],
+        ["I,V", ["ATT", "ATC", "ATA", "GTT", "GTC", "GTA", "GTG"]],
+        ["M,L", ["ATG", "TTA", "TTG", "CTT", "CTC", "CTA", "CTG"]],
         ["K", ["AAA", "AAG"]],
-        ["M", ["ATG"]],
-        ["F", ["TTT", "TTC"]],
+        ["F,Y,W", ["TTT", "TTC", "TAT", "TAC", "TGG"]],
         ["P", ["CCT", "CCC", "CCA", "CCG"]],
         ["S", ["TCT", "TCC", "TCA", "TCG", "AGT", "AGC"]],
         ["T", ["ACT", "ACC", "ACA", "ACG"]],
-        ["W", ["TGG"]],
-        ["Y", ["TAT", "TAC"]],
-        ["V", ["GTT", "GTC", "GTA", "GTG"]],
         ["X", ["TAA", "TAG", "TGA"]]
       ]
     }

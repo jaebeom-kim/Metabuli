@@ -270,7 +270,7 @@ protected:
 public:
     IndexCreator(const LocalParameters & par, TaxonomyWrapper * taxonomy, int kmerFormat);
     IndexCreator(const LocalParameters & par, UnirefTree * unirefTree, int kmerFormat);
-    IndexCreator(const LocalParameters & par, int kmerFormat);
+    IndexCreator(const LocalParameters & par, int kmerFormat); // Used in create_unique_kmer_list.cpp
     ~IndexCreator();
     void createIndex();
     void createCommonKmerIndex();

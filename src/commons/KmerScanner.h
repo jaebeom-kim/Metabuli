@@ -53,8 +53,10 @@ class MultiCodeScanner : public KmerScanner {
 protected:
     const MultiCodePattern * pattern;
     uint64_t dnaMask;
+    uint64_t aaMask;
     int aaLen;
     uint64_t totalDNABits = 0;
+    uint64_t totalAABits = 0;
 
     // Value per code
     std::vector<uint64_t> dnaPartList;
@@ -79,6 +81,7 @@ protected:
     // Internal values
     const GeneticCode &geneticCode;
     uint64_t dnaMask;
+    uint64_t aaMask;
 
     int aaLen;
     uint64_t dnaPart;
@@ -88,10 +91,11 @@ protected:
     int dnaBits;
 
 public:
-    MetamerScanner(const GeneticCode &geneticCode, int k = 8) 
+    MetamerScanner(const GeneticCode &geneticCode, int k) 
         : KmerScanner(k), geneticCode(geneticCode) {
         // std::cout << "KmerScanner initialized." << std::endl;
         this->dnaMask = (1ULL << (geneticCode.bitPerCodon * k)) - 1;
+        this->aaMask = (1ULL << (geneticCode.bitPerAA * k)) - 1;
         this->bitsPerCodon = geneticCode.bitPerCodon;
         this->bitsPerAA = geneticCode.bitPerAA;
         this->dnaBits = geneticCode.bitPerCodon * k;    
@@ -142,9 +146,9 @@ public:
                 continue;
             }
             if (isForward) {
-                return { (aaPart << dnaBits) | (dnaPart & dnaMask), seqStart + (posStart++) * 3 };
+                return { ((aaPart & aaMask) << dnaBits) | (dnaPart & dnaMask), seqStart + (posStart++) * 3 };
             } else {
-                return { (aaPart << dnaBits) | (dnaPart & dnaMask), seqEnd - ((posStart++) + kmerSize) * 3 + 1 };
+                return { ((aaPart & aaMask) << dnaBits) | (dnaPart & dnaMask), seqEnd - ((posStart++) + kmerSize) * 3 + 1 };
             }
         }
         return { UINT64_MAX, 0 }; // No more kmers found
@@ -157,7 +161,7 @@ class OldMetamerScanner : public MetamerScanner {
     private: 
         std::deque<size_t> dq;
     public:
-        OldMetamerScanner(const GeneticCode &geneticCode) : MetamerScanner(geneticCode) {}
+        OldMetamerScanner(const GeneticCode &geneticCode) : MetamerScanner(geneticCode, 8) {}
 
         ~OldMetamerScanner() {
             // std::cout << "OldKmerScanner destroyed." << std::endl;

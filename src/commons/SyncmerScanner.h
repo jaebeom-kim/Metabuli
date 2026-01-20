@@ -19,8 +19,9 @@ protected:
     int prevPos;
 
 public:
-    SyncmerScanner(int smerLen, const GeneticCode &geneticCode) : MetamerScanner(geneticCode) {
-        // std::cout << "SyncmerScanner initialized with smerLen: " << smerLen << std::endl;
+    SyncmerScanner(int kmerLen, int smerLen, const GeneticCode &geneticCode) 
+        : MetamerScanner(geneticCode, kmerLen) 
+    {
         this->smerLen = smerLen;
         this->smerMask = (1ULL << (5 * smerLen)) - 1;
     }

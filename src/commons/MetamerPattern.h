@@ -37,7 +37,8 @@ public:
     virtual float substitutionScore(uint64_t kmer1, uint64_t kmer2, int count, const SubstitutionMatrix& matrix, bool fromR) const = 0;
     virtual float hammingDistScore(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const = 0;
     virtual uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const = 0;
-    // virtual MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, int count) const = 0;
+    virtual uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2) const  = 0;
+    virtual MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, int count, const SubstitutionMatrix& matrix, bool fromR) const = 0;
     
     virtual bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const = 0;
     
@@ -80,7 +81,8 @@ public:
     float substitutionScore(uint64_t kmer1, uint64_t kmer2, int count, const SubstitutionMatrix& matrix, bool fromR) const override;
     float hammingDistScore(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
-    // MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, int count) const override;
+    uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2) const override;
+    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, int count, const SubstitutionMatrix& matrix, bool fromR) const override;
 
     bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const override {
         const uint64_t dnaPart1 = kmer1 & dnaMask;
@@ -189,9 +191,11 @@ public:
         dnaMask = (1ULL << totalDNABits) - 1;
     }
 
+    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, int count, const SubstitutionMatrix& matrix, bool fromR) const override;
     float substitutionScore(uint64_t kmer1, uint64_t kmer2, int count, const SubstitutionMatrix& matrix, bool fromR) const override;
     float hammingDistScore(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
+    uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2) const override;
 
     void printAA(uint64_t value) const override {
         uint64_t aaPart = value >> totalDNABits;

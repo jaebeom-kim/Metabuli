@@ -55,6 +55,8 @@ void Reporter::writeReadClassification(const vector<Query> & queryList, bool cla
                 << taxonomy->getOriginalTaxID(queryList[i].classification) << "\t"
                 << queryList[i].queryLength + queryList[i].queryLength2 << "\t"
                 << queryList[i].idScore << "\t"
+                << queryList[i].subScore << "\t"
+                << queryList[i].eValue << "\t"
                 << taxonomy->getString(taxonomy->taxonNode(queryList[i].classification)->rankIdx) << "\t";
             
             if (par.printLineage) {
@@ -72,6 +74,8 @@ void Reporter::writeReadClassification(const vector<Query> & queryList, bool cla
                 << taxonomy->getOriginalTaxID(queryList[i].classification) << "\t"
                 << queryList[i].queryLength + queryList[i].queryLength2 << "\t"
                 << queryList[i].idScore << "\t"
+                << "-" << "\t" // subScore
+                << "-" << "\t" // eValue
                 << "-" << "\t";
             
             if (par.printLineage) {

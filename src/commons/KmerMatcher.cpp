@@ -166,8 +166,8 @@ bool KmerMatcher::matchKmers(
     #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
     querySplits, qKmers, totalMatches, cout, mask)
     {
-        Buffer<Match> localMatches(1024 * 1024 * 2);
-        DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(db + "/diffIdx", db + "/info", 1024 * 1024 * 32, 1024 * 1024);
+        Buffer<Match> localMatches(1024 * 1024);
+        DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(db + "/diffIdx", db + "/info", 1024 * 1024 * 4, 1024 * 1024 * 4);
         std::vector<Kmer> candidates;
         std::vector<Match> filteredMatches;
         bool localHasOverflow = false;
@@ -180,7 +180,7 @@ bool KmerMatcher::matchKmers(
                 continue; 
 
             deltaIdxReaders->setReadPosition(querySplits[i].diffIdxSplit);
-            Kmer tKmer = deltaIdxReaders->next();       
+            Kmer tKmer = deltaIdxReaders->next();
             Kmer qKmer(UINT64_MAX, 0);
             uint64_t qKmerAA = UINT64_MAX;
             for (size_t j = querySplits[i].start; j < querySplits[i].end + 1; j++) {
@@ -359,7 +359,6 @@ bool KmerMatcher::matchKmers_AA(
                                  db + "/info", 
                                  1024 * 1024, 1024 * 1024);
         std::vector<Match_AA> tempMatches;  
-        bool hasOverflow = false;
     
         #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < querySplits.size(); i++) {
@@ -374,7 +373,6 @@ bool KmerMatcher::matchKmers_AA(
                         #pragma omp critical
                         {
                         if (!Buffer<Match_AA>::moveSmallToLarge(&localMatches, totalMatches)) {
-                            hasOverflow = true;
                             totalOverFlowCnt++;
                             // break;
                         }
@@ -411,7 +409,6 @@ bool KmerMatcher::matchKmers_AA(
                                             #pragma omp critical
                         {
                     if (!Buffer<Match_AA>::moveSmallToLarge(&localMatches, totalMatches)) {
-                        hasOverflow = true;
                         totalOverFlowCnt++;
                         // break;
                     }
@@ -427,7 +424,6 @@ bool KmerMatcher::matchKmers_AA(
                                     #pragma omp critical
                         {
             if (!Buffer<Match_AA>::moveSmallToLarge(&localMatches, totalMatches)) {
-                hasOverflow = true;
                 totalOverFlowCnt++;
             }
             }
@@ -458,17 +454,33 @@ void KmerMatcher::filterCandidates(
 ) {
     std::vector<uint8_t> hammings(candidates.size());
     uint8_t hDistCutoff = UINT8_MAX;
+
+    // if (candidates.size() != 0) {
+    //     metamerPattern->printDNA(qKmer.value); 
+    //     std::cout << "\t";
+    //     metamerPattern->printAA(qKmer.value);
+    //     std::cout << std::endl;
+    // }
     for (size_t i = 0; i < candidates.size(); i++) {
-        hammings[i] = metamerPattern->hammingDistSum(qKmer.value, candidates[i].value, metamerPattern->kmerLen, true);
+        hammings[i] = metamerPattern->hammingDistSum(qKmer.value, candidates[i].value);
         hDistCutoff = min(hDistCutoff, hammings[i]);
+        // metamerPattern->printDNA(candidates[i].value); 
+        // std::cout << "\t";
+        // metamerPattern->printAA(candidates[i].value);
+        // std::cout << "\tHamming Distance: " << (int) hammings[i] << std::endl;
     }
-    hDistCutoff = min(hDistCutoff * 2, 7);
+    hDistCutoff = min(hDistCutoff * 2, kmerLen - 1);
     for (size_t h = 0; h < candidates.size(); h++) {
         if (hammings[h] <= hDistCutoff) {
             filteredMatches.emplace_back(qKmer, candidates[h]);
             filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candidates[h].id];
+            // metamerPattern->printDNA(filteredMatches.back().tKmer.value);
+            // std::cout << "\t";
+            // metamerPattern->printAA(filteredMatches.back().tKmer.value);
+            // std::cout <<
         }
     }
+
 }
 
 // It compares query k-mers to target k-mers.

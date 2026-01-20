@@ -1,35 +1,38 @@
 #ifndef METABULI_TAXONOMER_H
 #define METABULI_TAXONOMER_H
+
+#include <unordered_map>
+#include <unordered_set>
+#include <algorithm>
+#include <cstdint>
+
 #include "TaxonomyWrapper.h"
 #include "LocalParameters.h"
 #include "Match.h"
 #include "common.h"
 #include "BitManipulateMacros.h"
 #include "MetamerPattern.h"
-#include <unordered_map>
-#include <unordered_set>
-#include <algorithm>
-#include <cstdint>
+#include "EvalueComputation.h"
 
 using namespace std;
 
 struct TaxonScore {
     TaxID taxId;
-    float score;
+    MatchScore score;
     int hammingDist;
     bool LCA;
-    TaxonScore(TaxID taxId, float score, int hammingDist, bool LCA) :
+    TaxonScore(TaxID taxId, MatchScore score, int hammingDist, bool LCA) :
             taxId(taxId), score(score), hammingDist(hammingDist), LCA(LCA) {}
-    TaxonScore() : taxId(0), score(0.0f), hammingDist(0), LCA(false) {}
+    TaxonScore() : taxId(0), score(), hammingDist(0), LCA(false) {}
 };
 
 struct MatchPath {
-    MatchPath(int start, int end, float score, int hammingDist, int depth, const Match * startMatch, const Match * endMatch) :
+    MatchPath() : start(0), end(0), score(), hammingDist(0), depth(0), startMatch(nullptr), endMatch(nullptr) {}
+
+    MatchPath(int start, int end, MatchScore score, int hammingDist, int depth, const Match * startMatch, const Match * endMatch) :
          start(start), end(end), score(score), hammingDist(hammingDist), depth(depth), startMatch(startMatch), endMatch(endMatch) {}
-    MatchPath() : start(0), end(0), score(0.f), hammingDist(0), depth(0), startMatch(nullptr), endMatch(nullptr) {}
 
-
-    MatchPath(const Match * startMatch, float score, int hammingDist) 
+    MatchPath(const Match * startMatch, MatchScore score, int hammingDist) 
         : start(startMatch->qKmer.qInfo.pos),
           end(startMatch->qKmer.qInfo.pos + 23),
           score(score),
@@ -40,14 +43,14 @@ struct MatchPath {
     
     int start;                // query coordinate
     int end;                  // query coordinate
-    float score;
+    MatchScore score;
     int hammingDist;
     int depth;
     const Match * startMatch;
     const Match * endMatch;
 
     void printMatchPath() {
-        std::cout << start << " " << end << " " << score << " " << hammingDist << " " << depth << std::endl;
+        std::cout << start << " " << end << " " << score.idScore << " " << score.subScore << " " << hammingDist << " " << depth << std::endl;
     }
 };
 
@@ -56,8 +59,8 @@ private:
     const LocalParameters & par;
     TaxonomyWrapper * taxonomy;
     const MetamerPattern *metamerPattern = nullptr;
-    const SubstitutionMatrix * substitutionMatrix = nullptr;
-    
+    SubstitutionMatrix * substitutionMatrix = nullptr;
+    EvalueComputation *evaluer = nullptr;
 
     // spaced k-mer
     int unmaskedPos[9];
@@ -135,20 +138,17 @@ private:
         const Match * match
     );
 
-    float calScoreIncrement(
-        const Match * match,
-        int shift,
-        bool fromR
-    );
-
-    float combineMatchPaths(
+    MatchScore combineMatchPaths(
         vector<MatchPath> & matchPaths,
         size_t matchPathStart,
         vector<MatchPath> & combMatchPaths,
-        size_t combMatchPathStart);
+        size_t combMatchPathStart,
+        int queryLength);
         
     bool isMatchPathOverlapped(const MatchPath & matchPath1, const MatchPath & matchPath2);
     void trimMatchPath(MatchPath & path1, const MatchPath & path2, int overlapLength);
+
+    void sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i);
 
 public:
     Taxonomer(
@@ -181,13 +181,6 @@ public:
     // Getters
     unordered_map<TaxID, unsigned int> & getTaxCounts() { return taxCounts; }
 
-    bool compareMatchPaths(const MatchPath& a, const MatchPath& b) const {
-        if (a.score != b.score)
-            return a.score < b.score;
-        if (a.hammingDist != b.hammingDist)
-            return a.hammingDist < b.hammingDist;
-        return a.start < b.start;
-    }
 };
 
 

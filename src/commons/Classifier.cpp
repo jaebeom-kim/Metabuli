@@ -79,14 +79,14 @@ uint64_t Classifier::calculateBufferSize(
 {
     size_t totalBytes = (size_t) par.ramUsage * 1024 * 1024 * 1024;
 
-    size_t bytesPerThread =
-        2 * 1024 * 1024 * sizeof(Match) + // local match buffer
-        1024 * 1024 * 32 * sizeof(Kmer) +  // DeltaIdxReader::valueBuffer
-        1024 * 1024 * sizeof(uint16_t) +   // DeltaIdxReader::deltaBuffer
-        1024 * 1024 * sizeof(uint32_t);    // DeltaIdxReader::infoBuffer
+    size_t bytesPerThread = 
+        1024 * 1024 * sizeof(Match) + // local match buffer 32 MB
+        1024 * 1024 * 4 * sizeof(Kmer) +  // DeltaIdxReader::valueBuffer 64 MB
+        1024 * 1024 * 4 * sizeof(uint16_t) +   // DeltaIdxReader::deltaBuffer 2 MB
+        1024 * 1024 * 4 * sizeof(uint32_t);    // DeltaIdxReader::infoBuffer 4 MB
 
     size_t overhead = 128 * 1024 * 1024; // 128MB
-    size_t queryListBytes = queryListSize * (sizeof(Query) + 150);
+    size_t queryListBytes = queryListSize * (sizeof(Query) + 150); //  104,857,600
     size_t availableBytes = totalBytes - (par.threads * bytesPerThread) - overhead - queryListBytes; 
     size_t bytePerKmer = sizeof(Kmer) + matchPerKmer * sizeof(Match);
     uint64_t totalSize = availableBytes / bytePerKmer;
@@ -154,7 +154,6 @@ void Classifier::classifyReads() {
             bool searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer, dbDir);
             if (searchComplete) {
                 std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
-
 
                 // 4) Sort matches
                 kmerMatcher->sortMatches(&matchBuffer);

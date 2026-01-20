@@ -30,7 +30,7 @@ int expand_diffidx(int argc, const char **argv, const Command &command){
         uint64_t kmer = kmerDbReader->next();
         if (idx >= startIdx && idx < endIdx) {
             Kmer kmerObj(kmer, 0);
-            kmerObj.printAA(geneticCode, 12); cout << endl;
+            // kmerObj.printAA(geneticCode, 12); cout << endl;
             // seqIterator->printKmerInDNAsequence(kmer); cout << "\t";
             // print_binary64(64, kmer); cout << "\n";  
         }

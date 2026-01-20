@@ -32,6 +32,8 @@ private:
     WriteBuffer<MappingRes> * mappingResBuffer = nullptr;
     bool isFirstTime = true;
 
+    
+
 public:
     Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const std::string &customReportFileName = "");
 

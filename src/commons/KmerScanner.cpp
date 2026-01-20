@@ -14,8 +14,10 @@ MultiCodeScanner::MultiCodeScanner(const MultiCodePattern * pattern)
     aaPartList.resize(pattern->geneticCodes.size(), 0);
     for (size_t i = 0; i < pattern->codePattern.size(); ++i) {
         totalDNABits += codonBitList[pattern->codePattern[i]];
+        totalAABits += aaBitList[pattern->codePattern[i]];
     }
     dnaMask = (1ULL << totalDNABits) - 1;
+    aaMask = (1ULL << totalAABits) - 1;
 }
 
 void MultiCodeScanner::initScanner(const char * seq, size_t seqStart, size_t seqEnd, bool isForward) {
@@ -75,9 +77,9 @@ Kmer MultiCodeScanner::next() {
             combinedDNA = (combinedDNA << codonBitList[codeIdx]) | dna;
         }
         if (isForward) {
-            return { (combinedAA << totalDNABits) | (combinedDNA & dnaMask), seqStart + (posStart++) * 3 };
+            return { ((combinedAA & aaMask) << totalDNABits) | (combinedDNA & dnaMask), seqStart + (posStart++) * 3 };
         } else {
-            return { (combinedAA << totalDNABits) | (combinedDNA & dnaMask), seqEnd - ((posStart++) + kmerSize) * 3 + 1 };
+            return { ((combinedAA & aaMask) << totalDNABits) | (combinedDNA & dnaMask), seqEnd - ((posStart++) + kmerSize) * 3 + 1 };
         }
 
     }

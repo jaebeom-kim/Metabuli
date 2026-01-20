@@ -30,8 +30,13 @@ IndexCreator::IndexCreator(
 
     if (kmerFormat == 1) { // Use the legacy metamer pattern
         metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
-    } else if (par.customMetamer.empty() == false) {
-        metamerPattern = new MultiCodePattern(par.customMetamer);
+    } else if (!par.customMetamer.empty()) {
+        int codeNum = getCodeNum(par.customMetamer);
+        if (codeNum == 1) {
+            metamerPattern = new SingleCodePattern(par.customMetamer);
+        } else if (codeNum > 1) {
+            metamerPattern = new MultiCodePattern(par.customMetamer);
+        }
     } else {
         if (par.reducedAA) {
             metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
@@ -412,9 +417,11 @@ void IndexCreator::createIndex() {
 }
 
 
-string IndexCreator::addToLibrary(const std::string & dbDir,
-                                  const std::string & fnaListFileName,
-                                  const std::string & acc2taxIdFileName) {
+string IndexCreator::addToLibrary(
+    const std::string & dbDir,
+    const std::string & fnaListFileName,
+    const std::string & acc2taxIdFileName) 
+{
     // Make library directory
     time_t now = time(0);
     tm *ltm = localtime(&now);
@@ -1086,7 +1093,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
 
             if (par.syncmer) {
                 estimatedKmerCnt = static_cast<size_t>(
-                    (totalLength * 1.3 / 3.0) / ((8 - par.smerLen + 1) / 2.0)
+                    (totalLength * 1.3 / 3.0) / ((kmerLen - par.smerLen + 1) / 2.0)
                 );
             } else {
                 estimatedKmerCnt = static_cast<size_t>(

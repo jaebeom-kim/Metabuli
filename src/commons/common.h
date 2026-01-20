@@ -94,9 +94,47 @@ struct Classification {
 };
 
 struct MatchScore {
-    float isScore;
+    float idScore;
     float subScore;
+    float eValue;
+
+    MatchScore() : idScore(0.0f), subScore(0.0f), eValue(0.0f) {}
+    MatchScore(float idScore, float subScore) : idScore(idScore), subScore(subScore), eValue(0.0f) {}
+
+    bool isLargerThan(const MatchScore & other, int mode) const {
+        if (mode == 0) {
+            return idScore > other.idScore;
+        } else if (mode == 1) {
+            return subScore > other.subScore;
+        } else {
+            return (idScore + subScore) > (other.idScore + other.subScore);
+        }
+    }
+
+    MatchScore operator*(float factor) const {
+        return MatchScore(idScore * factor, subScore * factor);
+    }
+
+    MatchScore & operator+=(const MatchScore & other) {
+        idScore += other.idScore;
+        subScore += other.subScore;
+        return *this;
+    }
+
+    MatchScore & operator-=(const MatchScore & other) {
+        idScore -= other.idScore;
+        subScore -= other.subScore;
+        return *this;
+    }
+
 };
+
+
+inline MatchScore operator+(MatchScore lhs, const MatchScore& rhs) {
+    lhs += rhs;
+    return lhs;
+}
+
 struct Query {
     int classification;
     float idScore;

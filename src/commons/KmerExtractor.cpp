@@ -16,18 +16,19 @@ KmerExtractor::KmerExtractor(
             kmerScanners.push_back(std::make_unique<OldMetamerScanner>(*geneticCode));
         } else if (kmerFormat == 2) {
             if (par.syncmer) {
-                kmerScanners.push_back(std::make_unique<SyncmerScanner>(par.smerLen, *geneticCode));
+                kmerScanners.push_back(std::make_unique<SyncmerScanner>(kmerLen, par.smerLen, *geneticCode));
             } else {
-                kmerScanners.push_back(std::make_unique<MetamerScanner>(*geneticCode));
+                kmerScanners.push_back(std::make_unique<MetamerScanner>(*geneticCode, kmerLen));
             }
         } else if (kmerFormat == 3) {
-            kmerScanners.push_back(std::make_unique<KmerScanner_dna2aa>(*geneticCode, 12));
             kmerLen = 12;
+            kmerScanners.push_back(std::make_unique<KmerScanner_dna2aa>(*geneticCode, kmerLen));
         } else if (kmerFormat == 4) {
-            kmerScanners.push_back(std::make_unique<KmerScanner_aa2aa>(12));
-        } else if (kmerFormat == 5) {
-            kmerScanners.push_back(std::make_unique<SyncmerScanner_dna2aa>(*geneticCode, 12, par.smerLen));
             kmerLen = 12;
+            kmerScanners.push_back(std::make_unique<KmerScanner_aa2aa>(kmerLen));
+        } else if (kmerFormat == 5) {
+            kmerLen = 12;
+            kmerScanners.push_back(std::make_unique<SyncmerScanner_dna2aa>(*geneticCode, kmerLen, par.smerLen));
         } else {
             std::cerr << "Error: Invalid k-mer format specified." << std::endl;
             exit(EXIT_FAILURE);
@@ -195,12 +196,12 @@ bool KmerExtractor::extractQueryKmers(
 
     BlockingQueue<int> freeBufferQueue;
     BlockingQueue<WorkItem> filledBufferQueue;
-    for (int i = 1; i <= par.threads; ++i) {
+    for (int i = 1; i < par.threads; ++i) {
         freeBufferQueue.push(i);
     }
     int producerBufferIndex = 0;
     bool moreReads = true;
-    #pragma omp parallel default(none) shared(par, kmerBuffer, queryList, savedSeq_1, savedSeq_2, \
+    #pragma omp parallel default(none) shared(par, cout, kmerBuffer, queryList, savedSeq_1, savedSeq_2, \
     freeBufferQueue, filledBufferQueue, kseq_1, kseq_2, queryIdx, chunkSize, processedSeqCnt, \
     producerBufferIndex, moreReads, readsPerThread_1, readsPerThread_2)
     {
@@ -215,9 +216,7 @@ bool KmerExtractor::extractQueryKmers(
         if (threadId == 0) {
             bool bufferNotFull = true;
             while (moreReads && bufferNotFull) {
-                // while (queryIdx + chunkSize - 1 >= queryList.size()) {
-                //     queryList.reserve(queryList.size() * 2);
-                // }
+                // std::cout << "Producer buffer index: " << producerBufferIndex << std::endl;
                 std::vector<string> * seqChunk_1 = &readsPerThread_1[producerBufferIndex];
                 std::vector<string> * seqChunk_2 = nullptr;
                 if (kseq_2 != nullptr) {
@@ -274,14 +273,18 @@ bool KmerExtractor::extractQueryKmers(
                         kseq_1->entry.name.s
                     );
 
-                    seqChunk_1->at(seqCnt) = (currentKmerCnt_1 > 0) ? kseq_1->entry.sequence.s : "";
+                    // if (currentKmerCnt_1 > 0) {
+                    //     (*seqChunk_1)[seqCnt] = kseq_1->entry.sequence.s;
+                    // }
+                    (*seqChunk_1)[seqCnt] = (currentKmerCnt_1 > 0) ? kseq_1->entry.sequence.s : ""; //error 
 
                     if (kseq_2 != nullptr) {
                         queryList.back().queryLength2 = par.pdmKmer > 0 ?
                             static_cast<int>(kseq_2->entry.sequence.l) :
                             LocalUtil::getMaxCoveredLength(static_cast<int>(kseq_2->entry.sequence.l));
                         queryList.back().kmerCnt2 = currentKmerCnt_2;
-                        seqChunk_2->at(seqCnt) = (currentKmerCnt_2 > 0) ? kseq_2->entry.sequence.s : "";
+
+                        (*seqChunk_2)[seqCnt] = (currentKmerCnt_2 > 0) ? kseq_2->entry.sequence.s : "";
                     }
                 }
                 if (seqCnt > 0) {
