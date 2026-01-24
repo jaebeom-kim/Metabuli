@@ -7,7 +7,7 @@
 #include "fasta_validate.h"
 #include "validateDatabase.h"
 
-void setDefaults_build(LocalParameters & par){
+void setDefaults_build(LocalParameters & par) {
     par.syncmer = 0;
     par.smerLen = 5;
     par.gtdb = 0;

@@ -7,6 +7,7 @@
 #include <iostream>
 #include <unordered_set>
 #include "FileUtil.h"
+// #include "Match.h"
 #include <cstdint>
 
 #include <queue>
@@ -93,47 +94,8 @@ struct Classification {
     double score;
 };
 
-struct MatchScore {
-    float idScore;
-    float subScore;
-    float eValue;
-
-    MatchScore() : idScore(0.0f), subScore(0.0f), eValue(0.0f) {}
-    MatchScore(float idScore, float subScore) : idScore(idScore), subScore(subScore), eValue(0.0f) {}
-
-    bool isLargerThan(const MatchScore & other, int mode) const {
-        if (mode == 0) {
-            return idScore > other.idScore;
-        } else if (mode == 1) {
-            return subScore > other.subScore;
-        } else {
-            return (idScore + subScore) > (other.idScore + other.subScore);
-        }
-    }
-
-    MatchScore operator*(float factor) const {
-        return MatchScore(idScore * factor, subScore * factor);
-    }
-
-    MatchScore & operator+=(const MatchScore & other) {
-        idScore += other.idScore;
-        subScore += other.subScore;
-        return *this;
-    }
-
-    MatchScore & operator-=(const MatchScore & other) {
-        idScore -= other.idScore;
-        subScore -= other.subScore;
-        return *this;
-    }
-
-};
 
 
-inline MatchScore operator+(MatchScore lhs, const MatchScore& rhs) {
-    lhs += rhs;
-    return lhs;
-}
 
 struct Query {
     int classification;
@@ -198,10 +160,8 @@ struct Buffer {
     };
 
     void reallocateMemory(size_t sizeOfBuffer) {
-        if (sizeOfBuffer > bufferSize) {
-            buffer = (T *) realloc(buffer, sizeof(T) * sizeOfBuffer);
-            bufferSize = sizeOfBuffer;
-        }
+        buffer = (T *) realloc(buffer, sizeof(T) * sizeOfBuffer);
+        bufferSize = sizeOfBuffer;
     };
 
     void init() {
@@ -432,7 +392,6 @@ void getObservedAccessionList(const std::string & fnaListFileName,
 void fillAcc2TaxIdMap(std::unordered_map<std::string, TaxID> & acc2taxid,
                       const std::string & acc2taxidFileName);
                                 
-bool haveRedundancyInfo(const std::string & dbDir);
 
 
 struct SeqEntry {
@@ -512,7 +471,23 @@ int hammingDist(const std::string & codon1, const std::string & codon2);
 
 size_t readDbSize(const std::string& dbDir);
 
+inline double computeLEM_logE(
+    int queryLengthNt,
+    int matchStartNt,
+    int matchEndNt,
+    size_t dbSizeNt,
+    double logP)
+{
+    const double aaQueryLen = queryLengthNt / 3.0;    
+    const double aaMatchLen = (matchEndNt - matchStartNt + 1) / 3.0;
+    return std::log((aaQueryLen - aaMatchLen + 1) * 6.0) + 
+        std::log(dbSizeNt / 3.0) +
+        logP;
+}
 
+uint32_t parseMask(const char* s);
 
+uint32_t safe_right_shift_32(uint32_t value, unsigned int shift);
+uint32_t safe_left_shift_32(uint32_t value, unsigned int shift);
 
 #endif //ADCLASSIFIER2_COMMON_H

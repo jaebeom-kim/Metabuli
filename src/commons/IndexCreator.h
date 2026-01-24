@@ -139,6 +139,7 @@ protected:
     std::unordered_set<TaxID> taxIdSet;
     vector<string> fastaPaths;
     size_t numOfFlush=0;
+    size_t totalLength=0;
 
     // Database splits
     std::vector<std::string> deltaIdxFileNames;

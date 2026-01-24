@@ -26,34 +26,6 @@ struct TaxonScore {
     TaxonScore() : taxId(0), score(), hammingDist(0), LCA(false) {}
 };
 
-struct MatchPath {
-    MatchPath() : start(0), end(0), score(), hammingDist(0), depth(0), startMatch(nullptr), endMatch(nullptr) {}
-
-    MatchPath(int start, int end, MatchScore score, int hammingDist, int depth, const Match * startMatch, const Match * endMatch) :
-         start(start), end(end), score(score), hammingDist(hammingDist), depth(depth), startMatch(startMatch), endMatch(endMatch) {}
-
-    MatchPath(const Match * startMatch, MatchScore score, int hammingDist) 
-        : start(startMatch->qKmer.qInfo.pos),
-          end(startMatch->qKmer.qInfo.pos + 23),
-          score(score),
-          hammingDist(hammingDist),
-          depth(1),
-          startMatch(startMatch),
-          endMatch(startMatch) {}
-    
-    int start;                // query coordinate
-    int end;                  // query coordinate
-    MatchScore score;
-    int hammingDist;
-    int depth;
-    const Match * startMatch;
-    const Match * endMatch;
-
-    void printMatchPath() {
-        std::cout << start << " " << end << " " << score.idScore << " " << score.subScore << " " << hammingDist << " " << depth << std::endl;
-    }
-};
-
 class Taxonomer {
 private:
     const LocalParameters & par;
@@ -66,6 +38,7 @@ private:
     int unmaskedPos[9];
     int spaceNum;
     int kmerLen;
+    int windowSize;
 
     // Parameters from user
     int maxGap;
@@ -83,9 +56,11 @@ private:
     uint32_t lastCodonMask;
     int maxCodonShift;
     int dnaShift;
-    int smerLength;
+    // int smerLength;
     int minSubSpeciesMatch;
     size_t dbSize;
+    double logMaxEValue;
+    bool useEvalueFilter = false;
 
     // vector<const Match *> speciesMatches;
 
@@ -132,10 +107,21 @@ private:
         const Match * matchList,
         size_t matchNum,
         vector<MatchPath> & matchPaths,
+        TaxID speciesId);
+
+    void getMatchPaths2(
+        const Match * matchList,
+        size_t matchNum,
+        vector<MatchPath> & matchPaths,
         TaxID speciesId); 
 
     MatchPath makeMatchPath(
         const Match * match
+    );
+
+    void makeMatchPath(
+        const Match * match,
+        size_t index
     );
 
     MatchScore combineMatchPaths(
@@ -147,7 +133,6 @@ private:
         
     bool isMatchPathOverlapped(const MatchPath & matchPath1, const MatchPath & matchPath2);
     void trimMatchPath(MatchPath & path1, const MatchPath & path2, int overlapLength);
-
     void sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i);
 
 public:

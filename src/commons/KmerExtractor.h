@@ -22,6 +22,7 @@ private:
     int maskMode;
     float maskProb;
     int kmerLen;
+    int windowSize;
 
     // For masking reads
     ProbabilityMatrix * probMatrix;
@@ -144,7 +145,7 @@ public:
     bool extractQueryKmers(
         Buffer<Kmer> &kmerBuffer,
         vector<Query> & queryList,
-        uint64_t & processedSeqCnt,
+        uint64_t & seqCnt,
         SeqEntry * savedSeq_1,
         SeqEntry * savedSeq_2,
         KSeqWrapper* kseq_1,
@@ -167,8 +168,7 @@ public:
         int threadID,
         char *maskedSeq,
         size_t & maxReadLength,
-        const vector<Query> & queryList,
-        bool isReverse
+        const std::vector<std::string> * pairedReads = nullptr
     );
 
     void processSequenceChunk_aa2aa(

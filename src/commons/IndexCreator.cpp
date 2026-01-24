@@ -39,9 +39,19 @@ IndexCreator::IndexCreator(
         }
     } else {
         if (par.reducedAA) {
-            metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
+            if (par.spaceMask.empty()) {
+                metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
+            } else {
+                uint32_t mask = parseMask(par.spaceMask.c_str());
+                metamerPattern = new SpacedPattern(std::make_unique<ReducedGeneticCode>(), __builtin_popcount(mask), mask);
+            }
         } else {
-            metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
+            if (par.spaceMask.empty()) {
+                metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
+            } else {
+                uint32_t mask = parseMask(par.spaceMask.c_str());
+                metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
+            }
         }
     }
     kmerExtractor = new KmerExtractor(par, metamerPattern);
@@ -804,6 +814,7 @@ void IndexCreator::getAccessionBatches(std::vector<Accession> & observedAccessio
                     trainingSeq = observedAccessionsVec[i].order;
                 }
                 lengthSum += observedAccessionsVec[i].length;
+                totalLength += observedAccessionsVec[i].length;
                 kmerCntSum += static_cast<size_t>(observedAccessionsVec[i].length * 0.4);
                 orders.push_back(observedAccessionsVec[i].order);
                 lengths.push_back(observedAccessionsVec[i].length);
@@ -1300,7 +1311,7 @@ void IndexCreator::writeDbParameters() {
     fprintf(handle, "Creation_date\t%s\n", par.dbDate.c_str());
     fprintf(handle, "Metabuli commit used to create the DB\t%s\n", version);
     fprintf(handle, "Reduced_alphabet\t%d\n", par.reducedAA);
-    // fprintf(handle, "Spaced_kmer_mask\t%s\n", spaceMask.c_str());
+    fprintf(handle, "Spaced_kmer_mask\t%s\n", par.spaceMask.c_str());
     fprintf(handle, "Accession_level\t%d\n", par.accessionLevel);
     fprintf(handle, "Mask_mode\t%d\n", par.maskMode);
     fprintf(handle, "Mask_prob\t%f\n", par.maskProb);
@@ -1310,6 +1321,7 @@ void IndexCreator::writeDbParameters() {
         fprintf(handle, "Syncmer_len\t%d\n", par.smerLen);
     }
     fprintf(handle, "Kmer_format\t%d\n", kmerFormat);
+    fprintf(handle, "Total_seq_length\t%lu\n", totalLength);
 
     if (!par.customMetamer.empty()) {
         // Read the custom metamer file and write to parameter file

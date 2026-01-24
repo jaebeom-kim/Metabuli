@@ -117,44 +117,30 @@ public:
     }
 
 
-    Kmer next() override {
-        int aa = 0;
-        int codon = 0;
-        while (posStart <= aaLen - kmerSize) {
-            bool sawN = false;
-            loadedCharCnt -= (loadedCharCnt == kmerSize);
-            while (loadedCharCnt < kmerSize) {
-                int ci;
-                if (isForward) {
-                    ci = seqStart + (posStart + loadedCharCnt) * 3;
-                    aa = geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
-                    codon = geneticCode.getCodon(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
-                } else {
-                    ci = seqEnd - (posStart + loadedCharCnt) * 3;
-                    aa = geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);          
-                    codon = geneticCode.getCodon(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
-                }
-                if (aa < 0) { sawN = true; break; }
-                dnaPart = (dnaPart << bitsPerCodon) | (uint64_t)codon;
-                aaPart = (aaPart << bitsPerAA) | (uint64_t)aa;
-                loadedCharCnt++;
-            }
-            if (sawN) {
-                posStart += loadedCharCnt + 1;
-                dnaPart = aaPart = 0;
-                loadedCharCnt = 0;
-                continue;
-            }
-            if (isForward) {
-                return { ((aaPart & aaMask) << dnaBits) | (dnaPart & dnaMask), seqStart + (posStart++) * 3 };
-            } else {
-                return { ((aaPart & aaMask) << dnaBits) | (dnaPart & dnaMask), seqEnd - ((posStart++) + kmerSize) * 3 + 1 };
-            }
-        }
-        return { UINT64_MAX, 0 }; // No more kmers found
-    }
+    Kmer next() override;
 };
 
+class SpacedMetamerScanner : public MetamerScanner {
+protected:
+    int aaBuf[32];
+    int codonBuf[32];
+    uint32_t spaceMask;
+    int spaceNum;
+    int windowSize;
+
+public:
+    SpacedMetamerScanner(const GeneticCode &geneticCode, int k, uint32_t spaceMask) 
+        : MetamerScanner(geneticCode, k), spaceMask(spaceMask) 
+    {
+        int clz = __builtin_clz(spaceMask);
+        windowSize = 32 - clz;
+        spaceNum = windowSize - k;
+        // dnaMask = (1ULL << (geneticCode.bitPerCodon * windowSize)) - 1;
+        // aaMask = (1ULL << (geneticCode.bitPerAA * windowSize)) - 1;
+    }
+
+    Kmer next() override;
+};
 // OldKmerScanner is made to support searching old-format databases
 // Implementation is very efficient and puzzling, but it works
 class OldMetamerScanner : public MetamerScanner {

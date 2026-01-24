@@ -42,10 +42,20 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
             }
         } else {
             if (par.reducedAA) {
-                metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
+                if (par.spaceMask == "11111111") {
+                    metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
+                } else {
+                    uint32_t mask = parseMask(par.spaceMask.c_str());
+                    metamerPattern = new SpacedPattern(std::make_unique<ReducedGeneticCode>(), __builtin_popcount(mask), mask);
+                } 
             } else {
-                std::cout << "Using standard k-mer format." << std::endl;
-                metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
+                if (par.spaceMask == "11111111") {
+                    cout << "Using regular genetic code." <<  endl;
+                    metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
+                } else {
+                    uint32_t mask = parseMask(par.spaceMask.c_str());
+                    metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
+                }
             }
         }
     }
@@ -136,7 +146,7 @@ void Classifier::classifyReads() {
             moreReads = kmerExtractor->extractQueryKmers(
                     queryKmerBuffer,
                     queryList,
-                    processedReadCnt,
+                    seqCnt,
                     savedSeq_1,
                     savedSeq_2,
                     kseq1,

@@ -109,14 +109,13 @@ LocalParameters::LocalParameters() :
                   typeid(float),
                   (void *) &minScore,
                   "^0(\\.[0-9]+)?|1(\\.0+)?$"),
-        // SPACED(SPACED_ID,
-        //        "--spacing-mask",
-        //        "Binary patterned mask for spaced k-mer.\nThe same mask must be used for DB creation and classification",
-        //        "Binary patterned mask for spaced k-mer. The same mask must be used for DB creation and classification.\n"
-        //        "A mask should contain at least eight '1's, and '0' means skip.",
-        //        typeid(std::string),
-        //        (void *) &spaceMask,
-        //        "^.*$"),
+        SPACE_MASK(SPACE_MASK_ID,
+               "--space-mask",
+               "Mask for spaced k-mer",
+               "Mask for spaced k-mer",
+               typeid(std::string),
+               (void *) &spaceMask,
+               "^.*$"),
         HAMMING_MARGIN(HAMMING_MARGIN_ID,
                        "--hamming-margin",
                        "Allowed extra Hamming distance", 
@@ -236,6 +235,20 @@ LocalParameters::LocalParameters() :
                    typeid(int),
                    (void *) &scoreMode,
                    "[0-2]"),
+        DB_TOTAL_LENGTH(DB_TOTAL_LENGTH_ID,
+                        "--db-size",
+                        "Total length of sequences in the database (nt)",
+                        "Total length of sequences in the database (nt)",
+                        typeid(size_t),
+                        (void *) &dbTotalLength,
+                        "^[0-9]+$"),
+        MAX_E_VALUE(MAX_E_VALUE_ID,
+                        "-e",
+                        "Ignore matches with larger E-value",
+                        "Ignore matches with larger E-value",
+                        typeid(double),
+                        (void *) &maxEValue,
+                        "^([-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?)|[0-9]*(\\.[0-9]+)?$"),
         TARGET_TAX_ID(TARGET_TAX_ID_ID,
                "--tax-id",
                "Tax. ID of clade. -1 for unclassified reads",
@@ -620,6 +633,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&SMER_LEN);
     build.push_back(&REDUCED_AA);
     build.push_back(&PARAM_CUSTOM_METAMER);
+    build.push_back(&SPACE_MASK);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
     createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);
@@ -676,6 +690,9 @@ LocalParameters::LocalParameters() :
     classify.push_back(&REDUCED_AA);
     classify.push_back(&PDM_KMER);
     classify.push_back(&SCORE_MODE);
+    classify.push_back(&MAX_E_VALUE);
+    classify.push_back(&DB_TOTAL_LENGTH);
+    classify.push_back(&MAX_SHIFT);
     // classify.push_back(&EM);
 
     assignUniref.push_back(&PARAM_THREADS);

@@ -76,4 +76,97 @@ struct MatchBlock {
 };
 
 
+struct MatchScore {
+    float idScore;
+    float subScore;
+    float logE;
+    double logP; // 2 * sigma(logPi)
+
+    MatchScore() : idScore(0.0f), subScore(0.0f), logE(0.0f), logP(0.0) {}
+    MatchScore(float idScore, float subScore) : idScore(idScore), subScore(subScore), logE(0.0f), logP(0.0) {}
+    MatchScore(float idScore, float subScore, double logP) : idScore(idScore), subScore(subScore), logE(0.0f), logP(logP) {}
+
+    void print() const {
+        std::cout << "ID Score: " << idScore << ", Substitution Score: " << subScore << ", logE: " << logE << ", logP: " << logP << std::endl;
+    }
+
+    bool isLargerThan(const MatchScore & other, int mode) const {
+        if (mode == 0) {
+            return idScore > other.idScore;
+        } else if (mode == 1) {
+            return subScore > other.subScore;
+        } else {
+            return (idScore + subScore) > (other.idScore + other.subScore);
+        }
+    }
+
+    MatchScore operator*(float factor) const {
+        return MatchScore(idScore * factor, subScore * factor);
+    }
+
+    MatchScore & operator+=(const MatchScore & other) {
+        idScore += other.idScore;
+        subScore += other.subScore;
+        logP += other.logP;
+        return *this;
+    }
+
+    MatchScore & operator-=(const MatchScore & other) {
+        idScore -= other.idScore;
+        subScore -= other.subScore;
+        logP -= other.logP;
+        return *this;
+    }
+
+};
+
+inline MatchScore operator+(MatchScore lhs, const MatchScore& rhs) {
+    lhs += rhs;
+    return lhs;
+}
+
+struct MatchPath {
+    MatchPath() : start(0), end(0), score(), hammingDist(0), depth(0), startMatch(nullptr), endMatch(nullptr), historyMask(0), firstHistoryMask(0) {}
+
+    MatchPath(int start, int end, MatchScore score, int hammingDist, int depth, const Match * startMatch, const Match * endMatch) :
+         start(start), end(end), score(score), hammingDist(hammingDist), depth(depth), startMatch(startMatch), endMatch(endMatch), historyMask(0), firstHistoryMask(0) {}
+
+    
+    MatchPath(const Match * startMath, int windowSizeNt) 
+        : start(startMath->qKmer.qInfo.pos),
+          end(startMath->qKmer.qInfo.pos + windowSizeNt - 1), // TODO: make it dynamic
+          score(),
+          hammingDist(0),
+          depth(1),
+          startMatch(startMath),
+          endMatch(startMath),
+          historyMask(0),
+          firstHistoryMask(0) {}
+    
+    MatchPath(const Match * startMatch, MatchScore score, int hammingDist, int kmerLenNt) 
+        : start(startMatch->qKmer.qInfo.pos),
+          end(startMatch->qKmer.qInfo.pos + kmerLenNt - 1), // TODO: make it dynamic
+          score(score),
+          hammingDist(hammingDist),
+          depth(1),
+          startMatch(startMatch),
+          endMatch(startMatch),
+          historyMask(0),
+          firstHistoryMask(0) {}
+    
+    int start;                // query coordinate
+    int end;                  // query coordinate
+    MatchScore score;
+    int hammingDist;
+    int depth;
+    const Match * startMatch;
+    const Match * endMatch;
+    uint32_t historyMask;      // For spaced pattern with history
+    uint32_t firstHistoryMask; // For spaced pattern with history
+
+    void printMatchPath() {
+        std::cout << start << " " << end << " " << score.idScore << " " << score.subScore << " " << hammingDist << " " << depth << std::endl;
+    }
+};
+
 #endif //ADCLASSIFIER2_MATCH_H

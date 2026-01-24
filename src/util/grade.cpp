@@ -365,18 +365,21 @@ par, cout, printColumnsIdx, cerr, names, nodes, merged)
             }
 
 
-            // Print Grade Result of each file
-            cout << readClassificationFileName << endl;
-            cout << "The number of reads: " << rightAnswers.size() << endl;
-            cout << "The number of reads classified: " << numberOfClassifications << endl;
-            for (const string &rank: ranks_local) {
-                cout << rank << " " << results[i].countsAtRanks[rank].total << " "
-                     << results[i].countsAtRanks[rank].TP + results[i].countsAtRanks[rank].FP << " "
-                     << results[i].countsAtRanks[rank].TP << " " << results[i].countsAtRanks[rank].FP << " "
-                     << results[i].countsAtRanks[rank].precision << " "
-                     << results[i].countsAtRanks[rank].sensitivity << " " << results[i].countsAtRanks[rank].f1 << endl;
+            #pragma omp critical
+            {   
+                // Print Grade Result of each file
+                cout << readClassificationFileName << endl;
+                cout << "The number of reads: " << rightAnswers.size() << endl;
+                cout << "The number of reads classified: " << numberOfClassifications << endl;
+                for (const string &rank: ranks_local) {
+                    cout << rank << " " << results[i].countsAtRanks[rank].total << " "
+                         << results[i].countsAtRanks[rank].TP + results[i].countsAtRanks[rank].FP << " "
+                         << results[i].countsAtRanks[rank].TP << " " << results[i].countsAtRanks[rank].FP << " "
+                         << results[i].countsAtRanks[rank].precision << " "
+                         << results[i].countsAtRanks[rank].sensitivity << " " << results[i].countsAtRanks[rank].f1 << endl;
+                }
+                cout << endl;
             }
-            cout << endl;
         }
     } // End of parallel region
 

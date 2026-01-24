@@ -85,3 +85,99 @@ Kmer MultiCodeScanner::next() {
     }
     return { UINT64_MAX, 0 }; // No more kmers found
 }
+
+
+Kmer MetamerScanner::next() 
+{
+    int aa = 0;
+    int codon = 0;
+    while (posStart <= aaLen - kmerSize) {
+        bool sawN = false;
+        loadedCharCnt -= (loadedCharCnt == kmerSize);
+        while (loadedCharCnt < kmerSize) {
+            int ci;
+            if (isForward) {
+                ci = seqStart + (posStart + loadedCharCnt) * 3;
+                aa = geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
+                codon = geneticCode.getCodon(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
+            } else {
+                ci = seqEnd - (posStart + loadedCharCnt) * 3;
+                aa = geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);          
+                codon = geneticCode.getCodon(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
+            }
+            if (aa < 0) { sawN = true; break; }
+            dnaPart = (dnaPart << bitsPerCodon) | (uint64_t)codon;
+            aaPart = (aaPart << bitsPerAA) | (uint64_t)aa;
+            loadedCharCnt++;
+        }
+        if (sawN) {
+            posStart += loadedCharCnt + 1;
+            dnaPart = aaPart = 0;
+            loadedCharCnt = 0;
+            continue;
+        }
+        if (isForward) {
+            return { ((aaPart & aaMask) << dnaBits) | (dnaPart & dnaMask), seqStart + (posStart++) * 3 };
+        } else {
+            return { ((aaPart & aaMask) << dnaBits) | (dnaPart & dnaMask), seqEnd - ((posStart++) + kmerSize) * 3 + 1 };
+        }
+    }
+    return { UINT64_MAX, 0 }; // No more kmers found
+}
+
+
+Kmer SpacedMetamerScanner::next() 
+{
+    int aa = 0;
+    int codon = 0;
+    while (posStart <= aaLen - windowSize) {
+        bool sawN = false;
+        loadedCharCnt -= (loadedCharCnt == windowSize);
+        while (loadedCharCnt < windowSize) {
+            int ci;
+            if (isForward) {
+                ci = seqStart + (posStart + loadedCharCnt) * 3;
+                aa = geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
+                codon = geneticCode.getCodon(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
+            } else {
+                ci = seqEnd - (posStart + loadedCharCnt) * 3;
+                aa = geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);          
+                codon = geneticCode.getCodon(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
+            }
+            if (aa < 0) { sawN = true; break; }
+            dnaPart = (dnaPart << bitsPerCodon) | codon;
+            aaPart = (aaPart << bitsPerAA) | aa;
+            loadedCharCnt++;
+        }
+        if (sawN) {
+            posStart += loadedCharCnt + 1;
+            dnaPart = aaPart = 0;
+            loadedCharCnt = 0;
+            continue;
+        }
+
+        // const uint64_t currDnaPart = dnaPart & dnaMask;
+        // const uint64_t currAaPart = aaPart & aaMask;
+
+        uint64_t aaPartResult = 0;
+        uint64_t dnaPartResult = 0;
+        int out = 0;
+        for (int i = 0; i < windowSize; ++i) {
+            if (spaceMask & (1u << i)) {
+                const uint64_t curAA    = (aaPart >> (i * bitsPerAA)) & ((1u << bitsPerAA) - 1);
+                const uint64_t curCodon = (dnaPart >> (i * bitsPerCodon)) & ((1u << bitsPerCodon) - 1);
+                aaPartResult  |= (curAA    << (out * bitsPerAA));
+                dnaPartResult |= (curCodon << (out * bitsPerCodon));   
+                out++;
+            }
+        }
+
+
+        if (isForward) {
+            return { (aaPartResult << dnaBits) | (dnaPartResult), seqStart + (posStart++) * 3 };
+        } else {
+            return { (aaPartResult << dnaBits) | (dnaPartResult), seqEnd - ((posStart++) + windowSize) * 3 + 1 };
+        }
+    }
+    return { UINT64_MAX, 0 }; // No more kmers found
+}

@@ -47,6 +47,7 @@ KmerExtractor::KmerExtractor(
     : par(par), metamerPattern(metamerPattern) {
     // Initialize k-mer scanners for each thread
     kmerLen = metamerPattern->kmerLen;
+    windowSize = metamerPattern->windowSize;
     kmerScanners = metamerPattern->createScanners(par.threads);
     spaceNum = 0;
     maskMode = par.maskMode;
@@ -74,9 +75,9 @@ int KmerExtractor::getKmerCount(
     int seqLen) 
 {
     if (!par.pdmKmer) {
-        return LocalUtil::getQueryKmerNumber<int>(seqLen, this->kmerLen);
+        return LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize);
     } else {
-        return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->kmerLen);
+        return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize);
     }
 }
 
@@ -85,7 +86,7 @@ int KmerExtractor::getPDMKmerCount(
     int seqLen) 
 {
     int kmerCount = 0;
-    int dnaKmerLen = kmerLen * 3;
+    int dnaKmerLen = windowSize * 3;
     for (int frame = 0; frame < 3; ++frame) {
         for (int start = frame; start <= seqLen - dnaKmerLen; start += 3) {
             bool overlapFirstN = (start < par.pdmKmer);
@@ -320,8 +321,7 @@ bool KmerExtractor::extractQueryKmers(
                     threadId,
                     maskedSeq1,
                     maxReadLength1,
-                    queryList,
-                    false
+                    nullptr
                 );
 
                 if (kseq_2 != nullptr) {
@@ -334,8 +334,7 @@ bool KmerExtractor::extractQueryKmers(
                         threadId,
                         maskedSeq2,
                         maxReadLength2,
-                        queryList,
-                        true
+                        &readsPerThread_1[workItem.bufferIndex]
                     );
                 }
             
@@ -732,7 +731,7 @@ void KmerExtractor::generatePDMNeighborKmers(
 
     char kmer[64];
     char mutatedKmer[64];
-    int dnaKmerLen = kmerLen * 3;
+    int dnaKmerLen = windowSize * 3;
 
     for (int start = seqStart; start <= seqLen - dnaKmerLen; start += 3) {
         bool overlapFirstN = (start < par.pdmKmer);
@@ -879,7 +878,7 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
             }
 
             // Check if the read is too short
-            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, this->kmerLen);
+            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, this->windowSize);
             if (kmerCnt < 1) {
                 reads[i] = "";
                 emptyReads[i] = true;
@@ -902,7 +901,7 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
             // queryList[processedQueryNum].queryLength = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
 
             // Check if the read is too short
-            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, this->kmerLen);
+            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, this->windowSize);
             if (kmerCnt < 1) {
                 reads[i] = "";
                 emptyReads[i] = true;
@@ -1309,9 +1308,8 @@ void KmerExtractor::processSequenceChunk(
     int threadID,
     char *maskedSeq,
     size_t & maxReadLength,
-    const vector<Query> & queryList,
-    bool isReverse
-) {
+    const std::vector<std::string> * pairedReads) 
+{
     const char * seq = nullptr;
     for (size_t i = 0; i < seqNum; ++i) {
         size_t queryIdx = queryOffset + i;
@@ -1334,14 +1332,14 @@ void KmerExtractor::processSequenceChunk(
             seq = reads[i].c_str();
         }
 
-        if (isReverse) {
+        if (pairedReads != nullptr) {
             fillQueryKmerBuffer(
                 seq,
                 (int) reads[i].length(),
                 kmerBuffer,
                 writePos, 
                 (uint32_t) queryIdx + 1,
-                queryList[queryIdx].queryLength+3);
+                (*pairedReads)[i].length() + 3);
         } else {
             fillQueryKmerBuffer(
                 seq, 
