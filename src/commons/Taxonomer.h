@@ -39,6 +39,7 @@ private:
     int spaceNum;
     int kmerLen;
     int windowSize;
+    uint32_t windowMask;
 
     // Parameters from user
     int maxGap;
@@ -133,6 +134,7 @@ private:
         
     bool isMatchPathOverlapped(const MatchPath & matchPath1, const MatchPath & matchPath2);
     void trimMatchPath(MatchPath & path1, const MatchPath & path2, int overlapLength);
+    void trimMatchPath2(MatchPath & path1, const MatchPath & path2, int overlapLength);
     void sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i);
 
 public:

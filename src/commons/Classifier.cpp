@@ -22,52 +22,34 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
     } else if (!par.customMetamer.empty()) {
         int codeNum = getCodeNum(par.customMetamer);
         if (codeNum == 1) {
-            metamerPattern = new SingleCodePattern(par.customMetamer);
+            if (par.spaceMask.empty()) {
+                metamerPattern = new SingleCodePattern(par.customMetamer);
+            } else {
+                uint32_t mask = parseMask(par.spaceMask.c_str());
+                metamerPattern = new SpacedPattern(par.customMetamer, mask);
+            }
         } else if (codeNum > 1) {
             metamerPattern = new MultiCodePattern(par.customMetamer);
         }
     } else if (kmerFormat == 2) {
-        bool multicode = false;
-        if (multicode) {
-            if (par.reducedAA) {
-                vector<std::unique_ptr<GeneticCode>> geneticCodes;
-                geneticCodes.push_back(std::make_unique<ReducedGeneticCode>());
-                vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
-                metamerPattern = new MultiCodePattern(std::move(geneticCodes), codePatterns);
+        if (par.reducedAA) {
+            if (par.spaceMask == "11111111") {
+                metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
             } else {
-                vector<std::unique_ptr<GeneticCode>> geneticCodes;
-                geneticCodes.push_back(std::make_unique<RegularGeneticCode>());
-                vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
-                metamerPattern = new MultiCodePattern(std::move(geneticCodes), codePatterns);
-            }
+                uint32_t mask = parseMask(par.spaceMask.c_str());
+                metamerPattern = new SpacedPattern(std::make_unique<ReducedGeneticCode>(), __builtin_popcount(mask), mask);
+            } 
         } else {
-            if (par.reducedAA) {
-                if (par.spaceMask == "11111111") {
-                    metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
-                } else {
-                    uint32_t mask = parseMask(par.spaceMask.c_str());
-                    metamerPattern = new SpacedPattern(std::make_unique<ReducedGeneticCode>(), __builtin_popcount(mask), mask);
-                } 
+            if (par.spaceMask == "11111111") {
+                metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
             } else {
-                if (par.spaceMask == "11111111") {
-                    cout << "Using regular genetic code." <<  endl;
-                    metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
-                } else {
-                    uint32_t mask = parseMask(par.spaceMask.c_str());
-                    metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
-                }
+                uint32_t mask = parseMask(par.spaceMask.c_str());
+                metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
             }
         }
     }
     kmerExtractor = new KmerExtractor(par, metamerPattern);
     queryIndexer = new QueryIndexer(par);
-    // kmerExtractor = new KmerExtractor(par, metamerPattern);
-    // kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
-    // if (par.reducedAA) {
-    //     kmerMatcher = new ReducedKmerMatcher(par, taxonomy, kmerFormat);
-    // } else {
-    //     kmerMatcher = new KmerMatcher(par, taxonomy, kmerFormat);
-    // }
     kmerMatcher = new KmerMatcher(par, taxonomy, metamerPattern);
     reporter = new Reporter(par, taxonomy);
 }

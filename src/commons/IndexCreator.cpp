@@ -33,7 +33,12 @@ IndexCreator::IndexCreator(
     } else if (!par.customMetamer.empty()) {
         int codeNum = getCodeNum(par.customMetamer);
         if (codeNum == 1) {
-            metamerPattern = new SingleCodePattern(par.customMetamer);
+            if (par.spaceMask.empty()) {
+                metamerPattern = new SingleCodePattern(par.customMetamer);
+            } else {
+                uint32_t mask = parseMask(par.spaceMask.c_str());
+                metamerPattern = new SpacedPattern(par.customMetamer, mask);
+            }
         } else if (codeNum > 1) {
             metamerPattern = new MultiCodePattern(par.customMetamer);
         }

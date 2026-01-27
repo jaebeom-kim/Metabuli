@@ -9,6 +9,7 @@
 
 void setClassifyDefaults(LocalParameters & par){
     par.maxEValue = 1000;
+    par.spaceMask = "11111111";
     par.syncmer = 0;
     par.smerLen = 5;
     par.kmerFormat = 1;

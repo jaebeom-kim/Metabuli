@@ -14,24 +14,25 @@
 #include "TranslateNucl.h"
 #include "Match.h"
 #include "printBinary.h"
+#include "TaxonomyWrapper.h"
 
 int getCodeNum(const std::string & customFile);
 
-static const double lnP[26] = {
-/* A */ -2.495, /* B */ 0,
-/* C */ -4.287, /* D */ -2.907,
-/* E */ -2.696, /* F */ -3.253,
-/* G */ -2.649, /* H */ -3.785,
-/* I */ -2.820, /* J */ 0,
-/* K */ -2.840, /* L */ -2.337,
-/* M */ -3.720, /* N */ -3.202,
-/* O */ 0,      /* P */ -3.058,
-/* Q */ -3.237, /* R */ -2.895,
-/* S */ -2.725, /* T */ -2.929,
-/* U */ 0,      /* V */ -2.679,
-/* W */ -4.527, /* X */ 0,
-/* Y */ -3.532, /* Z */ 0
-};
+// static const double lnP[26] = {
+// /* A */ -2.495, /* B */ 0,
+// /* C */ -4.287, /* D */ -2.907,
+// /* E */ -2.696, /* F */ -3.253,
+// /* G */ -2.649, /* H */ -3.785,
+// /* I */ -2.820, /* J */ 0,
+// /* K */ -2.840, /* L */ -2.337,
+// /* M */ -3.720, /* N */ -3.202,
+// /* O */ 0,      /* P */ -3.058,
+// /* Q */ -3.237, /* R */ -2.895,
+// /* S */ -2.725, /* T */ -2.929,
+// /* U */ 0,      /* V */ -2.679,
+// /* W */ -4.527, /* X */ 0,
+// /* Y */ -3.532, /* Z */ 0
+// };
 
 inline uint64_t pdep_u64(uint64_t source, uint64_t mask) {
 #if defined(__x86_64__) || defined(_M_X64)
@@ -76,6 +77,23 @@ public:
     int windowSize;
     uint32_t spaceMask; // Pattern mask for scoring
     TranslateNucl * translateNucl = nullptr;
+    double aaFreq[26] = {
+        /*A*/ 0.077, /*B*/ 0.0,
+        /*C*/ 0.017, /*D*/ 0.052,
+        /*E*/ 0.062, /*F*/ 0.040,
+        /*G*/ 0.074, /*H*/ 0.022,
+        /*I*/ 0.053, /*J*/ 0.0,
+        /*K*/ 0.059, /*L*/ 0.091,
+        /*M*/ 0.024, /*N*/ 0.043,
+        /*O*/ 0.0,   /*P*/ 0.051,
+        /*Q*/ 0.043, /*R*/ 0.051,
+        /*S*/ 0.081, /*T*/ 0.059,
+        /*U*/ 0.0,   /*V*/ 0.069,
+        /*W*/ 0.014, /*X*/ 0.0,
+        /*Y*/ 0.032, /*Z*/ 0.0
+    };
+
+    double lnFreq[26];
 
 
     MetamerPattern() : dnaMask(0), totalDNABits(0), totalAABits(0), kmerLen(0), windowSize(0) {
@@ -89,6 +107,15 @@ public:
     virtual ~MetamerPattern() {
         delete translateNucl;
     }
+    void initializeLnFreq() {
+        for (int i = 0; i < 26; ++i) {
+            if (aaFreq[i] > 0) {
+                lnFreq[i] = std::log(aaFreq[i]);
+            } else {
+                lnFreq[i] = 0;
+            }
+        }
+    }
 
     virtual std::vector<std::unique_ptr<KmerScanner>> createScanners(int num) const = 0;    
 
@@ -97,8 +124,10 @@ public:
     virtual float hammingDistScore(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const = 0;
     virtual uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const = 0;
     virtual uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2) const  = 0;
-    virtual MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, const SubstitutionMatrix& matrix, bool fromR) const = 0;
-    virtual MatchScore calMatchScore2(MatchPath & matchPath, uint32_t validPosMask, const SubstitutionMatrix& matrix) const = 0;
+    virtual MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, const SubstitutionMatrix& matrix, bool fromR = false) const = 0;
+    virtual MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, const SubstitutionMatrix& matrix) const = 0;
+    // virtual MatchScore calMatchScore2(uint64_t kmer1, uint64_t kmer2, uint32_t validPosMask, const SubstitutionMatrix& matrix) const = 0;
+    
     
     
     virtual bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const = 0;
@@ -143,8 +172,8 @@ public:
     float hammingDistScore(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2) const override;
-    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, const SubstitutionMatrix& matrix, bool fromR) const override;
-    MatchScore calMatchScore2(MatchPath & matchPath, uint32_t validPosMask, const SubstitutionMatrix& matrix) const override;
+    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, const SubstitutionMatrix& matrix, bool fromR = false) const override;
+    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, const SubstitutionMatrix& matrix) const override;
 
     bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const override {
         const uint64_t dnaPart1 = kmer1 & dnaMask;
@@ -186,8 +215,6 @@ public:
 
 class SpacedPattern : public SingleCodePattern {
 public:
-    uint64_t dnaExpansionMask = 0;
-    uint64_t aaExpansionMask = 0;
     int spaceNum;
     uint32_t historyMask = 0;
 
@@ -195,21 +222,32 @@ public:
     std::vector<uint8_t> aaShifts;
     std::vector<uint8_t> dnaShifts;
 
-    // SpacedPattern(const std::string & customFile);
+    SpacedPattern(const std::string & customFile, uint32_t spaceMask)
+        : SingleCodePattern(customFile)
+    {
+        this->spaceMask = spaceMask;
+        int clz = __builtin_clz(spaceMask);
+        windowSize = 32 - clz;
+        spaceNum = windowSize - kmerLen;
+
+        // Initialize lookup tables
+        aaShifts.assign(windowSize, 0);
+        dnaShifts.assign(windowSize, 0);
+        int packedIdx = 0;
+        for (int i = 0; i < windowSize; ++i) {
+            if (spaceMask & (1U << i)) {
+                aaShifts[i]  = packedIdx * bitPerAA;
+                dnaShifts[i] = packedIdx * bitPerCodon;
+                packedIdx++;
+            }
+        }
+        
+    }
+
     SpacedPattern(std::unique_ptr<GeneticCode> geneticCode, int kmerLen, uint32_t spaceMask) 
         : SingleCodePattern(std::move(geneticCode), kmerLen)
     {
         this->spaceMask = spaceMask;
-        for (int i = 0, j = 0; i < 32; ++i) {
-            if (spaceMask & (1U << i)) {
-                dnaExpansionMask |= (codonMask << (i * bitPerCodon));
-                aaExpansionMask |= (aaMask << (i * bitPerAA));
-                j++;
-                if (j >= kmerLen) {
-                    break;
-                }
-            }
-        }
         int clz = __builtin_clz(spaceMask);
         windowSize = 32 - clz;
         spaceNum = windowSize - kmerLen;
@@ -239,21 +277,9 @@ public:
 
     }
 
-    // float substitutionScore(uint64_t kmer1, uint64_t kmer2, int count, const SubstitutionMatrix& matrix, bool fromR) const override;
-    // float hammingDistScore(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
-    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, const SubstitutionMatrix& matrix, bool fromR) const override;
-    MatchScore calMatchScore2(MatchPath & matchPath, uint32_t validPosMask, const SubstitutionMatrix& matrix) const override;
-
-    // bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const override {
-    //     const uint64_t expanded1 = pdep_u64(kmer1, dnaExpansionMask);
-    //     const uint64_t expanded2 = pdep_u64(kmer2, dnaExpansionMask);
-    //     const int bitShift = shift * bitPerCodon;
-    //     const uint64_t aligned2 = expanded2 >> bitShift;
-    //     const uint64_t alignedExpansionMask = dnaExpansionMask >> bitShift;
-    //     const uint64_t validOverlapMask = dnaExpansionMask & alignedExpansionMask;
-    //     return ((expanded1 ^ aligned2) & validOverlapMask) == 0;
-    // }
+    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, const SubstitutionMatrix& matrix) const override;
+    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t validPosMask, const SubstitutionMatrix& matrix, bool fromR = false) const override;
 
     bool checkOverlap(uint64_t kmer1, uint64_t kmer2, int shift) const override {
         uint32_t overlapMask = spaceMask & (spaceMask >> shift);
@@ -376,8 +402,8 @@ public:
         dnaMask = (1ULL << totalDNABits) - 1;
     }
 
-    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, const SubstitutionMatrix& matrix, bool fromR) const override;
-    MatchScore calMatchScore2(MatchPath & matchPath, uint32_t validPosMask, const SubstitutionMatrix& matrix) const override;
+    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, const SubstitutionMatrix& matrix, bool fromR = false) const override;
+    MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, const SubstitutionMatrix& matrix) const override;
     float substitutionScore(uint64_t kmer1, uint64_t kmer2, int count, const SubstitutionMatrix& matrix, bool fromR) const override;
     float hammingDistScore(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;

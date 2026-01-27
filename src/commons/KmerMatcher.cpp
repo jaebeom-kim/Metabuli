@@ -454,33 +454,17 @@ void KmerMatcher::filterCandidates(
 ) {
     std::vector<uint8_t> hammings(candidates.size());
     uint8_t hDistCutoff = UINT8_MAX;
-
-    // if (candidates.size() != 0) {
-    //     metamerPattern->printDNA(qKmer.value); 
-    //     std::cout << "\t";
-    //     metamerPattern->printAA(qKmer.value);
-    //     std::cout << std::endl;
-    // }
     for (size_t i = 0; i < candidates.size(); i++) {
         hammings[i] = metamerPattern->hammingDistSum(qKmer.value, candidates[i].value);
         hDistCutoff = min(hDistCutoff, hammings[i]);
-        // metamerPattern->printDNA(candidates[i].value); 
-        // std::cout << "\t";
-        // metamerPattern->printAA(candidates[i].value);
-        // std::cout << "\tHamming Distance: " << (int) hammings[i] << std::endl;
     }
     hDistCutoff = min(hDistCutoff * 2, kmerLen - 1);
     for (size_t h = 0; h < candidates.size(); h++) {
         if (hammings[h] <= hDistCutoff) {
             filteredMatches.emplace_back(qKmer, candidates[h]);
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candidates[h].id];
-            // metamerPattern->printDNA(filteredMatches.back().tKmer.value);
-            // std::cout << "\t";
-            // metamerPattern->printAA(filteredMatches.back().tKmer.value);
-            // std::cout <<
+            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId.at(candidates[h].id);
         }
     }
-
 }
 
 // It compares query k-mers to target k-mers.

@@ -206,7 +206,7 @@ LocalParameters::LocalParameters() :
                     "Max triplet shift between two consecutive k-mers (8-smerLen by default)",
                     typeid(int),
                     (void *) &maxShift,
-                    "[1-7]"),
+                    "[1-9]"),
         EM(EM_ID,
                 "--em",
                 "Use Expectation-Maximization for classification",

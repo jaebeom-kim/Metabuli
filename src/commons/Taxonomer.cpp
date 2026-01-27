@@ -9,8 +9,13 @@
 #include <unordered_map>
 
 
-Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, const MetamerPattern *metamerPattern) 
-    :  par(par), taxonomy(taxonomy), metamerPattern(metamerPattern), kmerLen(metamerPattern->kmerLen), windowSize(metamerPattern->windowSize)
+Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, const MetamerPattern *metamerPattern) :  
+    par(par), 
+    taxonomy(taxonomy), 
+    metamerPattern(metamerPattern), 
+    kmerLen(metamerPattern->kmerLen), 
+    windowSize(metamerPattern->windowSize),
+    windowMask((1U << windowSize) - 1)
 {
     if (par.substitutionMatrices.empty()) {
         substitutionMatrix = nullptr;
@@ -317,7 +322,11 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
                 i ++;
             }
             if (i - start > 1) {
-                getMatchPaths2(matchList + start, i - start, matchPaths, currentSpecies);
+                if (windowSize == kmerLen) {
+                    getMatchPaths(matchList + start, i - start, matchPaths, currentSpecies);
+                } else {
+                    getMatchPaths2(matchList + start, i - start, matchPaths, currentSpecies);
+                }
             }
         }
         size_t pathSize = matchPaths.size();
@@ -501,7 +510,6 @@ void Taxonomer::trimMatchPath(
     const MatchPath & path2, 
     int overlapLength) 
 {
-    const int shift = overlapLength / 3;
     if (newPath.start < path2.start) { 
         newPath.end = path2.start - 1;
         if (newPath.endMatch->qKmer.qInfo.frame < 3) {
@@ -517,11 +525,6 @@ void Taxonomer::trimMatchPath(
                 overlapLength/3,
                 *substitutionMatrix,
                 true);
-            
-            // newPath.score -= metamerPattern->calMatchScore2(
-            //     newPath,
-            //     newPath.historyMask ,
-            //     *substitutionMatrix);    
 
             newPath.score.idScore -= overlapLength % 3;
         } else {
@@ -574,6 +577,75 @@ void Taxonomer::trimMatchPath(
     }
 }
 
+// void Taxonomer::trimMatchPath2(
+//     MatchPath & newPath, 
+//     const MatchPath & path2, 
+//     int overlapLength) 
+// {
+//     const int shift = overlapLength / 3;
+//     if (newPath.start < path2.start) { 
+//         newPath.end = path2.start - 1;
+//         if (newPath.endMatch->qKmer.qInfo.frame < 3) {
+//             newPath.hammingDist = max(0, newPath.hammingDist - metamerPattern->hammingDistSum(
+//                 newPath.endMatch->qKmer.value,
+//                 newPath.endMatch->tKmer.value,
+//                 overlapLength/3,
+//                 true));
+            
+//             newPath.score -= metamerPattern->calMatchScore(
+//                 newPath.endMatch->qKmer.value,
+//                 newPath.endMatch->tKmer.value,
+//                 newPath.historyMask & ((1U << shift) - 1),
+//                 *substitutionMatrix);    
+
+//             newPath.score.idScore -= overlapLength % 3;
+//         } else {
+//             newPath.hammingDist = max(0, newPath.hammingDist - metamerPattern->hammingDistSum(
+//                 newPath.endMatch->qKmer.value,
+//                 newPath.endMatch->tKmer.value, 
+//                 overlapLength/3,
+//                 false));
+            
+//             newPath.score -= metamerPattern->calMatchScore(
+//                 newPath.endMatch->qKmer.value,
+//                 newPath.endMatch->tKmer.value,
+//                 newPath.historyMask & (~0U << (32 - shift)),
+//                 *substitutionMatrix);    
+
+//             newPath.score.idScore -= overlapLength % 3;
+//         }
+//     } else {
+//         newPath.start = path2.end + 1;
+//         if (newPath.startMatch->qKmer.qInfo.frame < 3) {
+//             newPath.hammingDist = max(0, newPath.hammingDist - metamerPattern->hammingDistSum(
+//                 newPath.startMatch->qKmer.value,
+//                 newPath.startMatch->tKmer.value, 
+//                 overlapLength/3,
+//                 false));
+            
+//             newPath.score -= metamerPattern->calMatchScore(
+//                 newPath.startMatch->qKmer.value,
+//                 newPath.startMatch->tKmer.value,
+//                 newPath.firstHistoryMask & (~0U << (32 - shift)),
+//                 *substitutionMatrix); 
+//             newPath.score.idScore -= overlapLength % 3;
+//         } else {
+//             newPath.hammingDist = max(0, newPath.hammingDist - metamerPattern->hammingDistSum(
+//                 newPath.startMatch->qKmer.value,
+//                 newPath.startMatch->tKmer.value, 
+//                 overlapLength/3,
+//                 true));
+
+//             newPath.score -= metamerPattern->calMatchScore(
+//                 newPath.startMatch->qKmer.value,
+//                 newPath.startMatch->tKmer.value,
+//                 newPath.firstHistoryMask & ((1U << shift) - 1),
+//                 *substitutionMatrix);
+//             newPath.score.idScore -= overlapLength % 3;
+//         }
+//     }
+// }
+
 
 MatchPath Taxonomer::makeMatchPath(
     const Match * match) 
@@ -588,9 +660,7 @@ MatchPath Taxonomer::makeMatchPath(
             true),
         metamerPattern->hammingDistSum(
             match->qKmer.value, 
-            match->tKmer.value, 
-            metamerPattern->windowSize,
-            true),
+            match->tKmer.value),
         metamerPattern->windowSize * 3);
 }
 
@@ -760,9 +830,9 @@ void Taxonomer::makeMatchPath(
     size_t index)
 {
     localMatchPaths[index] = MatchPath(match, metamerPattern->windowSize * 3);
-    localMatchPaths[index].score = metamerPattern->calMatchScore2(
-                                        localMatchPaths[index],
-                                        metamerPattern->spaceMask,
+    localMatchPaths[index].score = metamerPattern->calMatchScore(
+                                        match->qKmer.value, 
+                                        match->tKmer.value,
                                         *substitutionMatrix);
 
     localMatchPaths[index].hammingDist = metamerPattern->hammingDistSum(
@@ -818,12 +888,12 @@ void Taxonomer::getMatchPaths2(
                     for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {                    
                         if (metamerPattern->checkOverlap(matchList[curIdx].tKmer.value, matchList[nextIdx].tKmer.value, shift)) {
                             connectedToNext[curIdx] = true;
-                            const uint32_t shiftedHistoryMask = (localMatchPaths[curIdx].historyMask << shift) & ((1ULL << metamerPattern->windowSize) - 1);
+                            const uint32_t shiftedHistoryMask = (localMatchPaths[curIdx].historyMask << shift) & windowMask;
                             const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
-                            
                             const MatchScore totalScore = localMatchPaths[curIdx].score +
-                                                            metamerPattern->calMatchScore2(
-                                                                localMatchPaths[nextIdx], 
+                                                            metamerPattern->calMatchScore(
+                                                                matchList[nextIdx].qKmer.value, 
+                                                                matchList[nextIdx].tKmer.value, 
                                                                 validPosMask,
                                                                 *substitutionMatrix);
 
@@ -896,8 +966,9 @@ void Taxonomer::getMatchPaths2(
                             const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
                             const MatchScore totalScore = 
                                 localMatchPaths[curIdx].score + 
-                                metamerPattern->calMatchScore2(
-                                    localMatchPaths[nextIdx], 
+                                metamerPattern->calMatchScore(
+                                    matchList[nextIdx].qKmer.value, 
+                                    matchList[nextIdx].tKmer.value, 
                                     validPosMask,
                                     *substitutionMatrix);
 
@@ -921,6 +992,7 @@ void Taxonomer::getMatchPaths2(
                         localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
                         localMatchPaths[nextIdx].firstHistoryMask = 
                             bestPath->firstHistoryMask | safe_left_shift_32(metamerPattern->spaceMask, (localMatchPaths[nextIdx].depth - 1));
+                        localMatchPaths[nextIdx].firstHistoryMask &= windowMask;
                     }
                 }
             } 
