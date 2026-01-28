@@ -1109,7 +1109,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
 
             if (par.syncmer) {
                 estimatedKmerCnt = static_cast<size_t>(
-                    (totalLength * 1.3 / 3.0) / ((kmerLen - par.smerLen + 1) / 2.0)
+                    (totalLength * 1.3 / 3.0) / ((metamerPattern->kmerLen - par.smerLen + 1) / 2.0)
                 );
             } else {
                 estimatedKmerCnt = static_cast<size_t>(

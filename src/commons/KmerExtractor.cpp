@@ -48,7 +48,7 @@ KmerExtractor::KmerExtractor(
     // Initialize k-mer scanners for each thread
     kmerLen = metamerPattern->kmerLen;
     windowSize = metamerPattern->windowSize;
-    kmerScanners = metamerPattern->createScanners(par.threads);
+    kmerScanners = metamerPattern->createScanners(par);
     spaceNum = 0;
     maskMode = par.maskMode;
     maskProb = par.maskProb;
@@ -318,7 +318,6 @@ bool KmerExtractor::extractQueryKmers(
                     workItem.sequenceIdOffset,
                     readsPerThread_1[workItem.bufferIndex],
                     workItem.sequenceCount,
-                    threadId,
                     maskedSeq1,
                     maxReadLength1,
                     nullptr
@@ -331,7 +330,6 @@ bool KmerExtractor::extractQueryKmers(
                         workItem.sequenceIdOffset,
                         readsPerThread_2[workItem.bufferIndex],
                         workItem.sequenceCount,
-                        threadId,
                         maskedSeq2,
                         maxReadLength2,
                         &readsPerThread_1[workItem.bufferIndex]
@@ -779,14 +777,17 @@ void KmerExtractor::generatePDMNeighborKmers(
                 for (size_t i = 0; i < na; ++i)
                     if (ma & (1ULL << i))
                         mutatedKmer[apos[i]] = 'G';
+                
+                // cout << "K-mer  : " << kmer << endl; 
+                // cout << "Mutated: " << mutatedKmer << endl; 
 
                 kmerScanners[threadID]->initScanner(mutatedKmer, 0, dnaKmerLen - 1, true);
                 Kmer kmer = kmerScanners[threadID]->next();
                 if (kmer.value != UINT64_MAX) {
                     kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset + start, (uint8_t) frame};
+                    // cout << (int) frame << "\t" << kmer.pos + offset + start << "\t" << flush;
+                    // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
                 }
-                // cout << (int) frame << "\t" << kmer.pos + offset + start << "\t";
-                // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
 
                 kmerScanners[threadID]->initScanner(mutatedKmer, 0, dnaKmerLen - 1, false);
                 kmer = kmerScanners[threadID]->next();
@@ -1305,7 +1306,6 @@ void KmerExtractor::processSequenceChunk(
     uint32_t queryOffset,
     const std::vector<std::string> & reads, 
     size_t seqNum,
-    int threadID,
     char *maskedSeq,
     size_t & maxReadLength,
     const std::vector<std::string> * pairedReads) 

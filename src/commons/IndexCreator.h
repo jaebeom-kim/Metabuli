@@ -109,7 +109,6 @@ protected:
     const LocalParameters & par;
     bool isUpdating;
     int kmerFormat;
-    int kmerLen;
 
     uint64_t MARKER;
     BaseMatrix *subMat;

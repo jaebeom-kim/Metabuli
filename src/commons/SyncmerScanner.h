@@ -5,6 +5,7 @@
 #include <deque>
 
 #include "KmerScanner.h"
+#include "printBinary.h"
 
 class SyncmerScanner : public MetamerScanner {
 protected:
@@ -364,13 +365,6 @@ public:
                 const uint64_t curAA = (aaPart >> (i * bitsPerAA)) & aaMaskPerCodon;
                 packedAA |= (curAA << aaShifts[i]);
             }
-            // for (int i = 0; i < windowSize; ++i) {
-            //     if (aaShifts[i] != -1) {
-            //         // Extract AA at physical position 'i' and place at 'packedIdx'
-            //         uint64_t curAA = (aaPart >> (i * bitsPerAA)) & aaMask;
-            //         packedAA |= (curAA << aaShifts[i]);
-            //     }
-            // }
 
             // --- Phase 3: Check "True Spaced Syncmer" ---
             // Find the minimum s-mer within the PACKED k-mer
@@ -380,7 +374,7 @@ public:
             // We iterate over the ACTIVE positions (0 to kmerLen - s)
             for (int i = 0; i <= kmerSize - smerLen; ++i) {
                 // Extract s-mer from packed sequence
-                uint64_t sVal = (packedAA >> (i * bitsPerAA)) & smerMask;
+                const uint64_t sVal = (packedAA >> (i * bitsPerAA)) & smerMask;
                 
                 // Simple hash mixing to randomize AA order (optional but recommended)
                 // sVal = hash64(sVal); 
@@ -397,13 +391,13 @@ public:
             // bool isSelected = (minPos == 0); 
             
             // For "Closed Syncmer" (more sensitive):
-            bool isSelected = (minPos == 0 || minPos == (kmerSize - smerLen));
+            const bool isSelected = (minPos == 0 || minPos == (kmerSize - smerLen));
 
             if (isSelected) {
                 // --- Phase 4: Construct Packed DNA K-mer ---
                 // Only now do we expend the effort to pack the DNA part
                 uint64_t packedDNA = 0;
-                uint32_t validPosMask = spaceMask;
+                validPosMask = spaceMask;
                 while (validPosMask) {
                     int i = __builtin_ctz(validPosMask);
                     validPosMask &= (validPosMask - 1);
@@ -420,7 +414,7 @@ public:
                 // }
 
                 // Prepare result
-                uint64_t finalKmer = (packedAA << dnaBits) | packedDNA;
+                const uint64_t finalKmer = (packedAA << dnaBits) | packedDNA;
                 uint32_t finalPos;
                 
                 if (isForward) finalPos = seqStart + posStart * 3;

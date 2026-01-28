@@ -158,6 +158,7 @@ public:
         totalDNABits = kmerLen * geneticCode->bitPerCodon;
         totalAABits = kmerLen * geneticCode->bitPerAA;
         dnaMask = (1ULL << totalDNABits) - 1;
+        initializeLnFreq();
     }
 
     std::vector<std::unique_ptr<KmerScanner>> createScanners(const LocalParameters & par) const override {
@@ -223,8 +224,8 @@ public:
     uint32_t historyMask = 0;
 
     // Lookup tables: Map Physical Index 'i' -> Shift Amount in Packed Integer
-    std::vector<uint8_t> aaShifts;
-    std::vector<uint8_t> dnaShifts;
+    std::vector<int8_t> aaShifts;
+    std::vector<int8_t> dnaShifts;
 
     SpacedPattern(const std::string & customFile, uint32_t spaceMask)
         : SingleCodePattern(customFile)
@@ -235,8 +236,8 @@ public:
         spaceNum = windowSize - kmerLen;
 
         // Initialize lookup tables
-        aaShifts.assign(windowSize, 0);
-        dnaShifts.assign(windowSize, 0);
+        aaShifts.assign(windowSize, -1);
+        dnaShifts.assign(windowSize, -1);
         int packedIdx = 0;
         for (int i = 0; i < windowSize; ++i) {
             if (spaceMask & (1U << i)) {
@@ -257,8 +258,8 @@ public:
         spaceNum = windowSize - kmerLen;
 
         // Initialize lookup tables
-        aaShifts.assign(windowSize, 0);
-        dnaShifts.assign(windowSize, 0);
+        aaShifts.assign(windowSize, -1);
+        dnaShifts.assign(windowSize, -1);
         int packedIdx = 0;
         for (int i = 0; i < windowSize; ++i) {
             if (spaceMask & (1U << i)) {
@@ -267,6 +268,7 @@ public:
                 packedIdx++;
             }
         }
+        initializeLnFreq();
     }
 
     std::vector<std::unique_ptr<KmerScanner>> createScanners(const LocalParameters & par) const override {
@@ -318,11 +320,13 @@ public:
     }
     
     void printDNA(uint64_t value) const override {
+        // print_binary64(64, value); std::cout << std::endl;
         uint64_t dnaPart = value & dnaMask;
         uint64_t aaPart = value >> totalDNABits;
         for (int i = kmerLen - 1; i >= 0; --i) {
             int aa = (aaPart >> (i * bitPerAA)) & aaMask;
             int codon = (dnaPart >> (i * bitPerCodon)) & codonMask;
+            // std::cout << "\nhere " << aa << " " << codon << " " <<std::endl;
             std::cout << geneticCode->aa2codon[aa][codon];
         }
     }
@@ -395,6 +399,7 @@ public:
             totalAABits += aaBitList[codePattern[i]];
         }
         dnaMask = (1ULL << totalDNABits) - 1;
+        initializeLnFreq();
     }
 
     void init() {

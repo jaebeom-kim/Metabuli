@@ -130,6 +130,7 @@ Kmer SpacedMetamerScanner::next()
 {
     int aa = 0;
     int codon = 0;
+    // std::cout << posStart << " " << aaLen << " " << windowSize << std::endl;
     while (posStart <= aaLen - windowSize) {
         bool sawN = false;
         loadedCharCnt -= (loadedCharCnt == windowSize);

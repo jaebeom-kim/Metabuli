@@ -165,7 +165,6 @@ public:
         uint32_t queryOffset,
         const std::vector<std::string> & reads, 
         size_t seqNum,
-        int threadID,
         char *maskedSeq,
         size_t & maxReadLength,
         const std::vector<std::string> * pairedReads = nullptr

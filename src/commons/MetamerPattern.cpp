@@ -456,6 +456,7 @@ MultiCodePattern::MultiCodePattern(const std::string & customFile) {
 
         geneticCodes.push_back(std::make_unique<CustomGeneticCode>(translationTable));
     }
+    initializeLnFreq();
 
     // Validate total bits do not exceed 64 bits
     int totalBits = 0;

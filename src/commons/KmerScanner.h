@@ -130,8 +130,8 @@ protected:
     int spaceNum;
     int windowSize;
 
-    std::vector<uint8_t> dnaShifts;
-    std::vector<uint8_t> aaShifts;
+    std::vector<int8_t> dnaShifts;
+    std::vector<int8_t> aaShifts;
 
 public:
     SpacedMetamerScanner(const GeneticCode &gc, int k, uint32_t spaceMask) 
@@ -141,8 +141,8 @@ public:
         windowSize = 32 - clz;
         spaceNum = windowSize - k;
 
-        aaShifts.assign(windowSize, 0);
-        dnaShifts.assign(windowSize, 0);
+        aaShifts.assign(windowSize, -1);
+        dnaShifts.assign(windowSize, -1);
         int packedIdx = 0;
         for (int i = 0; i < windowSize; ++i) {
             if (spaceMask & (1U << i)) {

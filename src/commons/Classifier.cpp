@@ -41,8 +41,10 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
             } 
         } else {
             if (par.spaceMask == "11111111") {
+                cout << "Using SingleCodePattern with RegularGeneticCode" << endl;
                 metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
             } else {
+                cout << "Using SpacedPattern with RegularGeneticCode" << endl;
                 uint32_t mask = parseMask(par.spaceMask.c_str());
                 metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
             }

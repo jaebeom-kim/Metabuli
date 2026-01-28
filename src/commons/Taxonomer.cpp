@@ -30,13 +30,14 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
     minConsCntEuk = (size_t) par.minConsCntEuk;
     eukaryotaTaxId = taxonomy->getEukaryotaTaxID();
     tieRatio = par.tieRatio;
-    if (par.syncmer) {
-        dnaShift = (8 - par.smerLen) * 3;
-        maxCodonShift = 8 - par.smerLen;
-    } else {
+
+
         maxCodonShift = par.maxShift;
         dnaShift = maxCodonShift * 3;
-    }
+    // if (par.syncmer) {
+    //     dnaShift = (8 - par.smerLen) * 3;
+    //     maxCodonShift = 8 - par.smerLen;
+    // }
 
     if (par.seqMode == 1 || par.seqMode == 2) {
         denominator = 100;
