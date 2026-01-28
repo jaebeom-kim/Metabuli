@@ -161,17 +161,26 @@ Kmer SpacedMetamerScanner::next()
 
         uint64_t aaPartResult = 0;
         uint64_t dnaPartResult = 0;
-        int out = 0;
-        for (int i = 0; i < windowSize; ++i) {
-            if (spaceMask & (1u << i)) {
-                const uint64_t curAA    = (aaPart >> (i * bitsPerAA)) & ((1u << bitsPerAA) - 1);
-                const uint64_t curCodon = (dnaPart >> (i * bitsPerCodon)) & ((1u << bitsPerCodon) - 1);
-                aaPartResult  |= (curAA    << (out * bitsPerAA));
-                dnaPartResult |= (curCodon << (out * bitsPerCodon));   
-                out++;
-            }
-        }
+        // int out = 0;
+        // for (int i = 0; i < windowSize; ++i) {
+        //     if (spaceMask & (1u << i)) {
+        //         const uint64_t curAA    = (aaPart  >> (i * bitsPerAA))    & aaMaskPerCodon;
+        //         const uint64_t curCodon = (dnaPart >> (i * bitsPerCodon)) & codonMask;
+        //         aaPartResult  |= (curAA    <<  aaShifts[i]); //(out * bitsPerAA)
+        //         dnaPartResult |= (curCodon << dnaShifts[i]);   // (out * bitsPerCodon)
+        //         out++;
+        //     }
+        // }
 
+        uint32_t validPosMask = spaceMask;
+        while (validPosMask) {
+            const int i = __builtin_ctz(validPosMask);
+            validPosMask &= validPosMask - 1;
+            const uint64_t myAA  = (aaPart  >> (i * bitsPerAA))    & aaMaskPerCodon;
+            const uint64_t curCodon = (dnaPart >> (i * bitsPerCodon)) & codonMask;
+            aaPartResult  |= (myAA  << aaShifts[i]);
+            dnaPartResult |= (curCodon << dnaShifts[i]);   
+        }
 
         if (isForward) {
             return { (aaPartResult << dnaBits) | (dnaPartResult), seqStart + (posStart++) * 3 };

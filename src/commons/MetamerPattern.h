@@ -8,7 +8,7 @@
     #include <immintrin.h> // For _pdep_u64
 #endif
 
-#include "KmerScanner.h"
+#include "SyncmerScanner.h"
 #include "GeneticCode.h"
 #include "SubstitutionMatrix.h"
 #include "TranslateNucl.h"
@@ -117,7 +117,7 @@ public:
         }
     }
 
-    virtual std::vector<std::unique_ptr<KmerScanner>> createScanners(int num) const = 0;    
+    virtual std::vector<std::unique_ptr<KmerScanner>> createScanners(const LocalParameters & par) const = 0;    
 
 
     virtual float substitutionScore(uint64_t kmer1, uint64_t kmer2, int count, const SubstitutionMatrix& matrix, bool fromR) const = 0;
@@ -160,10 +160,14 @@ public:
         dnaMask = (1ULL << totalDNABits) - 1;
     }
 
-    std::vector<std::unique_ptr<KmerScanner>> createScanners(int num) const override {
+    std::vector<std::unique_ptr<KmerScanner>> createScanners(const LocalParameters & par) const override {
         std::vector<std::unique_ptr<KmerScanner>> scanners;
-        for (int i = 0; i < num; ++i) {
-            scanners.push_back(std::make_unique<MetamerScanner>(*geneticCode, kmerLen));
+        for (int i = 0; i < par.threads; ++i) {
+            if (par.syncmer) {
+                scanners.push_back(std::make_unique<SyncmerScanner>(kmerLen, par.smerLen, *geneticCode));
+            } else {
+                scanners.push_back(std::make_unique<MetamerScanner>(*geneticCode, kmerLen));
+            }
         }
         return scanners;
     }
@@ -265,10 +269,14 @@ public:
         }
     }
 
-    std::vector<std::unique_ptr<KmerScanner>> createScanners(int num) const override {
+    std::vector<std::unique_ptr<KmerScanner>> createScanners(const LocalParameters & par) const override {
         std::vector<std::unique_ptr<KmerScanner>> scanners;
-        for (int i = 0; i < num; ++i) {
-            scanners.push_back(std::make_unique<SpacedMetamerScanner>(*geneticCode, kmerLen, spaceMask));
+        for (int i = 0; i < par.threads; ++i) {
+            if (par.syncmer) {
+                scanners.push_back(std::make_unique<SpacedSyncmerScanner>(*geneticCode, kmerLen, spaceMask, par.smerLen));
+            } else {
+                scanners.push_back(std::make_unique<SpacedMetamerScanner>(*geneticCode, kmerLen, spaceMask));
+            }
         }
         return scanners;
     }
@@ -338,9 +346,9 @@ public:
     LegacyPattern(std::unique_ptr<GeneticCode> geneticCode, int kmerLen) 
         : SingleCodePattern(std::move(geneticCode), kmerLen) {}
 
-    std::vector<std::unique_ptr<KmerScanner>> createScanners(int num) const override {
+    std::vector<std::unique_ptr<KmerScanner>> createScanners(const LocalParameters & par) const override {
         std::vector<std::unique_ptr<KmerScanner>> scanners;
-        for (int i = 0; i < num; ++i) {
+        for (int i = 0; i < par.threads; ++i) {
             scanners.push_back(std::make_unique<OldMetamerScanner>(*geneticCode));
         }
         return scanners;
@@ -365,9 +373,9 @@ public:
 
     MultiCodePattern(const std::string & customFile);
 
-    std::vector<std::unique_ptr<KmerScanner>> createScanners(int num) const override {
+    std::vector<std::unique_ptr<KmerScanner>> createScanners(const LocalParameters & par) const override {
         std::vector<std::unique_ptr<KmerScanner>> scanners;
-        for (int i = 0; i < num; ++i) {
+        for (int i = 0; i < par.threads; ++i) {
             scanners.push_back(std::make_unique<MultiCodeScanner>(this));
         }
         return scanners;

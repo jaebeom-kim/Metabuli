@@ -80,8 +80,10 @@ class MetamerScanner : public KmerScanner {
 protected:
     // Internal values
     const GeneticCode &geneticCode;
-    uint64_t dnaMask;
-    uint64_t aaMask;
+    uint64_t dnaMask;        // Used to extract DNA part
+    uint64_t aaMask;         // Used to extract AA part
+    uint64_t codonMask;      // Used to extract one codon
+    uint64_t aaMaskPerCodon; // Used to extract one amino acid
 
     int aaLen;
     uint64_t dnaPart;
@@ -97,7 +99,9 @@ public:
         this->dnaMask = (1ULL << (geneticCode.bitPerCodon * k)) - 1;
         this->aaMask = (1ULL << (geneticCode.bitPerAA * k)) - 1;
         this->bitsPerCodon = geneticCode.bitPerCodon;
+        this->codonMask = (1ULL << geneticCode.bitPerCodon) - 1;
         this->bitsPerAA = geneticCode.bitPerAA;
+        this->aaMaskPerCodon = (1ULL << geneticCode.bitPerAA) - 1;
         this->dnaBits = geneticCode.bitPerCodon * k;    
     }
 
@@ -122,21 +126,31 @@ public:
 
 class SpacedMetamerScanner : public MetamerScanner {
 protected:
-    int aaBuf[32];
-    int codonBuf[32];
     uint32_t spaceMask;
     int spaceNum;
     int windowSize;
 
+    std::vector<uint8_t> dnaShifts;
+    std::vector<uint8_t> aaShifts;
+
 public:
-    SpacedMetamerScanner(const GeneticCode &geneticCode, int k, uint32_t spaceMask) 
-        : MetamerScanner(geneticCode, k), spaceMask(spaceMask) 
+    SpacedMetamerScanner(const GeneticCode &gc, int k, uint32_t spaceMask) 
+        : MetamerScanner(gc, k), spaceMask(spaceMask) 
     {
         int clz = __builtin_clz(spaceMask);
         windowSize = 32 - clz;
         spaceNum = windowSize - k;
-        // dnaMask = (1ULL << (geneticCode.bitPerCodon * windowSize)) - 1;
-        // aaMask = (1ULL << (geneticCode.bitPerAA * windowSize)) - 1;
+
+        aaShifts.assign(windowSize, 0);
+        dnaShifts.assign(windowSize, 0);
+        int packedIdx = 0;
+        for (int i = 0; i < windowSize; ++i) {
+            if (spaceMask & (1U << i)) {
+                aaShifts[i]  = packedIdx * bitsPerAA;
+                dnaShifts[i] = packedIdx * bitsPerCodon;
+                packedIdx++;
+            }
+        }
     }
 
     Kmer next() override;
