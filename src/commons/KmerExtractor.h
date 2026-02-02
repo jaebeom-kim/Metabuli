@@ -35,7 +35,7 @@ private:
         {5, 4, 3}   // n = 2
     };
 
-    static constexpr int MAX_N = 12;
+    static constexpr int MAX_N = 32;
     size_t binom[MAX_N + 1][MAX_N + 1];
     
 
@@ -98,12 +98,7 @@ private:
 
     int getKmerCount(
         const char *seq,
-        int seqLen);
-
-    int getPDMKmerCount2(
-    const char *seq,
-    int seqLen);
-    
+        int seqLen);    
     
         int getPDMKmerCount(
     const char *seq,
@@ -111,14 +106,11 @@ private:
 
     inline size_t countMutationComb(size_t nt, size_t na, int maxDamage) {
         size_t count = 0;
+        size_t N = nt + na;
 
         for (int d = 1; d <= maxDamage; ++d) {
-            for (int t = 0; t <= d; ++t) {
-                int a = d - t;
-                if (t <= (int)nt && a <= (int)na) {
-                    count += binom[nt][t] * binom[na][a];
-                }
-            }
+            if (d > N) break;
+            count += binom[N][d];
         }
         return count;
     }

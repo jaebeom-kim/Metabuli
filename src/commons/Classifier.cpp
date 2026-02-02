@@ -143,6 +143,12 @@ void Classifier::classifyReads() {
             SORT_PARALLEL(queryKmerBuffer.buffer, queryKmerBuffer.buffer + queryKmerBuffer.startIndexOfReserve, Kmer::compareQueryKmer);
             std::cout << difftime(time(nullptr), start) << " s" << std::endl;
 
+            // for (size_t i = 0; i < queryKmerBuffer.startIndexOfReserve; i++) {
+            //     if (queryKmerBuffer.buffer[i].qInfo.sequenceID == 1003) {
+            //         cout << "Sorted Kmer: ";
+            //         metamerPattern->printDNA(queryKmerBuffer.buffer[i].value); cout << endl;
+            //     }
+            // }
             // 3) Match k-mers
             start = time(nullptr);
             bool searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer, dbDir);
@@ -327,7 +333,7 @@ void Classifier::assignTaxonomy(const Match *matchList,
     size_t matchIdx = 0;
     size_t blockIdx = 0;
     uint32_t currentQuery;
-    if (par.printLog) {
+    if (par.printLog==1) {
 #ifdef OPENMP
         omp_set_num_threads(1);
 #endif

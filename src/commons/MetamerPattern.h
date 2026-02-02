@@ -297,13 +297,16 @@ public:
             const int i = __builtin_ctz(overlapMask);
             overlapMask &= overlapMask - 1;
 
-            const int shitf1 = dnaShifts[i];
-            const int shift2 = dnaShifts[i + shift];
-
-            const uint64_t codon1 = (kmer1 >> shitf1) & codonMask;
-            const uint64_t codon2 = (kmer2 >> shift2) & codonMask;
-
+            const uint64_t codon1 = codonMask & (kmer1 >> dnaShifts[i]);
+            const uint64_t codon2 = codonMask & (kmer2 >> dnaShifts[i + shift]);
             if (codon1 != codon2) {
+                return false;
+            }
+
+            const uint64_t aa1 = aaMask & (kmer1 >> (totalDNABits + aaShifts[i]));
+            const uint64_t aa2 = aaMask & (kmer2 >> (totalDNABits + aaShifts[i + shift]));
+            
+            if (aa1 != aa2) {
                 return false;
             }
         }

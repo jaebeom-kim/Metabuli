@@ -290,14 +290,15 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
     combinedMatchPaths.clear();
     vector<pair<TaxID, MatchScore>> sp2score;
     int queryLength = query.queryLength + query.queryLength2;
-    if (par.printLog) {
+    if (par.printLog==1) {
         cout << "## " << query.name << " ##" << endl;
     }
     TaxonScore bestScore;
     MatchScore bestSpScore;
     size_t i = offset;
     size_t meaningfulSpecies = 0;
-    if (par.printLog) {
+    if (matchList[i].qKmer.qInfo.sequenceID == 1476656) {
+        cout << "## " << query.name << " ##" << endl;
         for (size_t j = offset; j < end + 1; j++) {
             metamerPattern->printDNA(matchList[j].qKmer.value);
             cout << " " ;
@@ -332,7 +333,7 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
         }
         size_t pathSize = matchPaths.size();
         // Combine MatchPaths
-        if (par.printLog) {
+        if (par.printLog==1) {
             if (pathSize > previousPathSize) {
                 cout << "Current species: " << taxonomy->getOriginalTaxID(currentSpecies) << " " << currentSpecies << endl;
                 for (size_t kk = previousPathSize; kk < matchPaths.size(); kk++) {
@@ -342,7 +343,7 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
         }
         if (pathSize > previousPathSize) {
             MatchScore score = combineMatchPaths(matchPaths, previousPathSize, combinedMatchPaths, combinedMatchPaths.size(), queryLength);
-            if (par.printLog) {   
+            if (par.printLog==1) {   
                 cout << "Combined score: " << score.idScore << " " << score.subScore << endl;
             }
             score.idScore = score.idScore / queryLength;

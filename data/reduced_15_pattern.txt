@@ -7,7 +7,7 @@
   "position_codes": [0, 0, 0, 0, 0, 0, 0, 0, 0],
   "codes": [
     {
-      "id": "Standard",
+      "id": "Reduced Alphabet (15+stop)",
       "codons": [
         ["A", ["GCT", "GCC", "GCA", "GCG"]],
         ["R", ["CGT", "CGC", "CGA", "CGG", "AGA", "AGG"]],
