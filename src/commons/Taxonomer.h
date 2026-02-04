@@ -116,6 +116,12 @@ private:
         vector<MatchPath> & matchPaths,
         TaxID speciesId); 
 
+    void getMatchPaths3(
+        const Match * matchList,
+        size_t matchNum,
+        vector<MatchPath> & matchPaths,
+        TaxID speciesId); 
+
     MatchPath makeMatchPath(
         const Match * match
     );

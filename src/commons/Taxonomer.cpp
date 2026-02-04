@@ -297,7 +297,7 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
     MatchScore bestSpScore;
     size_t i = offset;
     size_t meaningfulSpecies = 0;
-    if (matchList[i].qKmer.qInfo.sequenceID == 1476656) {
+    if (par.printLog==1) {
         cout << "## " << query.name << " ##" << endl;
         for (size_t j = offset; j < end + 1; j++) {
             metamerPattern->printDNA(matchList[j].qKmer.value);
@@ -1029,4 +1029,232 @@ void Taxonomer::ensureArraySize(size_t newSize) {
     }
     std::memset(bestMatchForQuotient, 0, newSize * sizeof(const Match*));
     std::memset(minHammingForQuotient, std::numeric_limits<uint8_t>::max(), newSize * sizeof(uint8_t));
+}
+
+
+void Taxonomer::getMatchPaths3(
+    const Match * matchList,
+    size_t matchNum,
+    vector<MatchPath> & filteredMatchPaths,
+    TaxID speciesId) 
+{
+    if (matchNum == 0) return;
+
+    int MIN_DEPTH = (int) minConsCnt;
+    if (taxonomy->IsAncestor(eukaryotaTaxId, speciesId)) {
+        MIN_DEPTH = (int) minConsCntEuk;
+    }
+    
+    // --- Step 1: Pre-calculate Groups (Start/End indices for each Position) ---
+    // This replaces the complex 'while' loops with a clean structure we can jump around in.
+    struct MatchGroup {
+        uint32_t pos;
+        size_t start;
+        size_t end; // exclusive
+    };
+    std::vector<MatchGroup> groups;
+
+    // Reset DP states
+    connectedToNext.resize(matchNum);
+    fill(connectedToNext.begin(), connectedToNext.end(), false);
+    localMatchPaths.clear();
+    localMatchPaths.resize(matchNum);
+
+    // Scan input to build groups
+    for (size_t i = 0; i < matchNum; ) {
+        uint32_t currentPos = matchList[i].qKmer.qInfo.pos;
+        size_t groupStart = i;
+
+        // Process all matches with the same position
+        while (i < matchNum && matchList[i].qKmer.qInfo.pos == currentPos) {
+            makeMatchPath(matchList + i, i);
+            i++; 
+        }
+
+        // i now represents the exclusive end of this group
+        groups.push_back({currentPos, groupStart, i});
+    }
+
+    // Only process Forward Frame as per original code logic
+    // (Note: You might want to handle reverse frame similarly if needed)
+    if (matchList[0].qKmer.qInfo.frame < 3) { 
+        
+        // --- Step 2: Flexible Chaining Loop ---
+        
+        // Outer Loop: Iterate through every group acting as the "Destination"
+        for (size_t destG = 0; destG < groups.size(); ++destG) {
+            
+            const MatchGroup& destGroup = groups[destG];
+
+            // For every match in the Destination Group...
+            for (size_t nextIdx = destGroup.start; nextIdx < destGroup.end; ++nextIdx) {
+                
+                const MatchPath * bestPath = nullptr;
+                MatchScore bestScore; // Defaults to -inf or 0
+                bool foundParent = false;
+                int winningShift = 0;
+
+                // Inner Loop: Look BACKWARDS at previous groups ("Sources")
+                // We check as many groups as allowed by maxCodonShift
+                for (int srcG = (int)destG - 1; srcG >= 0; --srcG) {
+                    
+                    const MatchGroup& srcGroup = groups[srcG];
+                    
+                    int shift = (destGroup.pos - srcGroup.pos) / 3;
+
+                    // If we exceeded the max gap, stop looking further back
+                    if (shift > maxCodonShift) break; 
+
+                    bool connectedToThisGroup = false;
+
+                    // Compare Destination Match vs All Candidates in this Source Group
+                    for (size_t curIdx = srcGroup.start; curIdx < srcGroup.end; ++curIdx) {
+                        
+                        // Check geometrical overlap
+                        if (metamerPattern->checkOverlap(matchList[curIdx].tKmer.value, matchList[nextIdx].tKmer.value, shift)) {
+                            
+                            // Mark the source as having a valid successor (it is not a tail)
+                            connectedToNext[curIdx] = true; 
+                            connectedToThisGroup = true;
+
+                            const uint32_t shiftedHistoryMask = (localMatchPaths[curIdx].historyMask << shift) & windowMask;
+                            const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
+                            
+                            const MatchScore totalScore = localMatchPaths[curIdx].score +
+                                                            metamerPattern->calMatchScore(
+                                                                matchList[nextIdx].qKmer.value, 
+                                                                matchList[nextIdx].tKmer.value, 
+                                                                validPosMask,
+                                                                *substitutionMatrix);
+
+                            // We want the BEST score across ALL checked source groups
+                            if (!foundParent || totalScore.isLargerThan(bestScore, par.scoreMode)) {
+                                bestPath = &localMatchPaths[curIdx];
+                                bestScore = totalScore;
+                                localMatchPaths[nextIdx].historyMask = shiftedHistoryMask | metamerPattern->spaceMask;
+                                winningShift = shift;
+                                foundParent = true;
+                            }
+                        }
+                    }
+                    if (connectedToThisGroup) {
+                           break; 
+                    }
+                } // End Source Group Loop
+
+                // If we found a valid parent among any of the previous allowable groups, update the state
+                if (foundParent && bestPath != nullptr) {
+                    localMatchPaths[nextIdx].start = bestPath->start;                        
+                    localMatchPaths[nextIdx].score = bestScore;
+                    localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
+                        metamerPattern->hammingDistSum(
+                            matchList[nextIdx].qKmer.value, 
+                            matchList[nextIdx].tKmer.value, 
+                            winningShift,
+                            true);
+                    localMatchPaths[nextIdx].depth = bestPath->depth + winningShift;
+                    localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
+                    localMatchPaths[nextIdx].firstHistoryMask = 
+                        bestPath->firstHistoryMask | safe_right_shift_32(metamerPattern->spaceMask, (localMatchPaths[nextIdx].depth - 1));
+                 }
+            }
+        }
+
+        // --- Step 3: Collect Results ---
+        // Any match that didn't connect to a next one (is a "tail") and is deep enough is a valid path.
+        for (size_t i = 0; i < matchNum; ++i) {
+            if (!connectedToNext[i] && localMatchPaths[i].depth >= MIN_DEPTH) {
+                filteredMatchPaths.push_back(localMatchPaths[i]);
+            }
+        }
+    } else {
+        for (size_t destG = 0; destG < groups.size(); ++destG) {
+            
+            const MatchGroup& destGroup = groups[destG];
+
+            // For every match in the Destination Group...
+            for (size_t nextIdx = destGroup.start; nextIdx < destGroup.end; ++nextIdx) {
+                
+                const MatchPath * bestPath = nullptr;
+                MatchScore bestScore; // Defaults to -inf or 0
+                bool foundParent = false;
+                int winningShift = 0;
+
+                // Inner Loop: Look BACKWARDS at previous groups ("Sources")
+                // We check as many groups as allowed by maxCodonShift
+                for (int srcG = (int)destG - 1; srcG >= 0; --srcG) {
+                    
+                    const MatchGroup& srcGroup = groups[srcG];
+                    
+                    int shift = (destGroup.pos - srcGroup.pos) / 3;
+
+                    // If we exceeded the max gap, stop looking further back
+                    if (shift > maxCodonShift) break; 
+
+                    bool connectedToThisGroup = false;
+
+                    // Compare Destination Match vs All Candidates in this Source Group
+                    for (size_t curIdx = srcGroup.start; curIdx < srcGroup.end; ++curIdx) {
+                        
+                        // Check geometrical overlap
+                        if (metamerPattern->checkOverlap(matchList[nextIdx].tKmer.value, matchList[curIdx].tKmer.value, shift)) {
+                            
+                            // Mark the source as having a valid successor (it is not a tail)
+                            connectedToNext[curIdx] = true; 
+                            connectedToThisGroup = true;
+
+                            const uint32_t shiftedHistoryMask = (localMatchPaths[curIdx].historyMask >> shift); 
+                            const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
+                            
+                            const MatchScore totalScore = localMatchPaths[curIdx].score +
+                                                            metamerPattern->calMatchScore(
+                                                                matchList[nextIdx].qKmer.value, 
+                                                                matchList[nextIdx].tKmer.value, 
+                                                                validPosMask,
+                                                                *substitutionMatrix);
+
+                            // We want the BEST score across ALL checked source groups
+                            if (!foundParent || totalScore.isLargerThan(bestScore, par.scoreMode)) {
+                                bestPath = &localMatchPaths[curIdx];
+                                bestScore = totalScore;
+                                localMatchPaths[nextIdx].historyMask = shiftedHistoryMask | metamerPattern->spaceMask;
+                                winningShift = shift;
+                                foundParent = true;
+                            }
+                        }
+                    }
+
+                    if (connectedToThisGroup) {
+                       break; 
+                    }
+                } // End Source Group Loop
+
+                // If we found a valid parent among any of the previous allowable groups, update the state
+                if (foundParent && bestPath != nullptr) {
+                    localMatchPaths[nextIdx].start = bestPath->start;                        
+                    localMatchPaths[nextIdx].score = bestScore;
+                    localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
+                        metamerPattern->hammingDistSum(
+                            matchList[nextIdx].qKmer.value, 
+                            matchList[nextIdx].tKmer.value, 
+                            winningShift,
+                            false);
+                    localMatchPaths[nextIdx].depth = bestPath->depth + winningShift;
+                    localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
+                    localMatchPaths[nextIdx].firstHistoryMask = 
+                        bestPath->firstHistoryMask | safe_left_shift_32(metamerPattern->spaceMask, (localMatchPaths[nextIdx].depth - 1));
+                    localMatchPaths[nextIdx].firstHistoryMask &= windowMask;
+                 }
+            }
+        }
+
+        // --- Step 3: Collect Results ---
+        // Any match that didn't connect to a next one (is a "tail") and is deep enough is a valid path.
+        for (size_t i = 0; i < matchNum; ++i) {
+            if (!connectedToNext[i] && localMatchPaths[i].depth >= MIN_DEPTH) {
+                filteredMatchPaths.push_back(localMatchPaths[i]);
+            }
+        }
+
+    }
 }
