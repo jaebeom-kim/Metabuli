@@ -1,0 +1,32 @@
+##Reduction of protein sequence complexity by residue grouping
+===BEGIN_CUSTOM_METAMER===
+{
+  "name": "Reduced Alphabet (15+stop)",
+  "length": 9,
+  "code_count": 1,
+  "position_codes": [0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "codes": [
+    {
+      "id": "Reduced Alphabet (15+stop)",
+      "codons": [
+        ["A", ["GCT", "GCC", "GCA", "GCG"]],
+        ["R", ["CGT", "CGC", "CGA", "CGG", "AGA", "AGG"]],
+        ["N", ["AAT", "AAC"]],
+        ["D", ["GAT", "GAC"]],
+        ["C", ["TGT", "TGC"]],
+        ["QE", ["CAA", "CAG", "GAA", "GAG"]],
+        ["G", ["GGT", "GGC", "GGA", "GGG"]],
+        ["H", ["CAT", "CAC"]],
+        ["IV", ["ATT", "ATC", "ATA", "GTT", "GTC", "GTA", "GTG"]],
+        ["ML", ["ATG", "TTA", "TTG", "CTT", "CTC", "CTA", "CTG"]],
+        ["K", ["AAA", "AAG"]],
+        ["FYW", ["TTT", "TTC", "TAT", "TAC", "TGG"]],
+        ["P", ["CCT", "CCC", "CCA", "CCG"]],
+        ["S", ["TCT", "TCC", "TCA", "TCG", "AGT", "AGC"]],
+        ["T", ["ACT", "ACC", "ACA", "ACG"]],
+        ["X", ["TAA", "TAG", "TGA"]]
+      ]
+    }
+  ]
+}
+===END_CUSTOM_METAMER===

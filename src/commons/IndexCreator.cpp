@@ -28,28 +28,77 @@ IndexCreator::IndexCreator(
     versionFileName = dbDir + "/db.version";
     paramterFileName = dbDir + "/db.parameters";
 
-    if (par.reducedAA == 1){
-        MARKER = 0Xffffffff;
-        MARKER = ~ MARKER;
+    if (kmerFormat == 1) { // Use the legacy metamer pattern
+        metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
+    } else if (!par.customMetamer.empty()) {
+        int codeNum = getCodeNum(par.customMetamer);
+        if (codeNum == 1) {
+            if (par.spaceMask.empty()) {
+                metamerPattern = new SingleCodePattern(par.customMetamer);
+            } else {
+                uint32_t mask = parseMask(par.spaceMask.c_str());
+                metamerPattern = new SpacedPattern(par.customMetamer, mask);
+            }
+        } else if (codeNum > 1) {
+            metamerPattern = new MultiCodePattern(par.customMetamer);
+        }
     } else {
-        MARKER = 16777215;
-        MARKER = ~ MARKER;
+        if (par.reducedAA) {
+            if (par.spaceMask.empty()) {
+                metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
+            } else {
+                uint32_t mask = parseMask(par.spaceMask.c_str());
+                metamerPattern = new SpacedPattern(std::make_unique<ReducedGeneticCode>(), __builtin_popcount(mask), mask);
+            }
+        } else {
+            if (par.spaceMask.empty()) {
+                metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
+            } else {
+                uint32_t mask = parseMask(par.spaceMask.c_str());
+                metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
+            }
+        }
     }
-    geneticCode = new GeneticCode(par.reducedAA == 1);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, kmerFormat);
+    kmerExtractor = new KmerExtractor(par, metamerPattern);
+    MARKER = ~ metamerPattern->dnaMask;
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
 }
+
+// IndexCreator::IndexCreator(
+//     const LocalParameters & par, 
+//     TaxonomyWrapper * taxonomy,
+//     const MetamerPattern * metamerPattern) 
+//     : par(par), taxonomy(taxonomy), metamerPattern(metamerPattern) 
+// {
+//     dbDir = par.filenames[0];
+//     fnaListFileName = par.filenames[1];
+//     if (par.filenames.size() >= 3) {
+//         acc2taxidFileName = par.filenames[2];
+//     }
+//     taxidListFileName = dbDir + "/taxID_list";
+//     taxonomyBinaryFileName = dbDir + "/taxonomyDB";
+//     versionFileName = dbDir + "/db.version";
+//     paramterFileName = dbDir + "/db.parameters";
+//     MARKER = ~metamerPattern->dnaMask;
+//     kmerExtractor = new KmerExtractor(par, metamerPattern);
+//     isUpdating = false;
+//     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
+// }
 
 IndexCreator::IndexCreator(
     const LocalParameters & par, 
     UnirefTree * unirefTree,
     int kmerFormat) 
-    : par(par), unirefTree(unirefTree), kmerFormat(kmerFormat) 
+    : par(par), kmerFormat(kmerFormat), unirefTree(unirefTree)
 {
     dbDir = par.filenames[0];
-    geneticCode = new GeneticCode(par.reducedAA == 1);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, kmerFormat);
+    if (par.reducedAA) {
+        geneticCode = new ReducedGeneticCode();
+    } else {
+        geneticCode = new RegularGeneticCode();
+    }
+    kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     isUpdating = false;
 }
 
@@ -58,15 +107,22 @@ IndexCreator::IndexCreator(
     int kmerFormat) : par(par), kmerFormat(kmerFormat) 
 {
     dbDir = par.filenames[0];
-    geneticCode = new GeneticCode(par.reducedAA == 1);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, kmerFormat);
+    if (par.reducedAA) {
+        geneticCode = new ReducedGeneticCode();
+    } else {
+        geneticCode = new RegularGeneticCode();
+    }
+    kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
 }
 
 
 IndexCreator::~IndexCreator() {
-    delete geneticCode;
+    delete metamerPattern;
+    if (geneticCode != nullptr) {
+        delete geneticCode;
+    }   
     delete kmerExtractor;
     delete subMat;
 }
@@ -79,7 +135,6 @@ void IndexCreator::createLcaKmerIndex() {
     string fileName = par.filenames[1];
     KSeqWrapper * kseq = KSeqFactory(fileName.c_str());
     std::unordered_map<string, uint32_t> name2id;
-    uint32_t idOffset = 0;
 
     std::cout << "Filling UniRef100 name to ID mapping ... " << std::endl;
     time_t start = time(nullptr);
@@ -352,6 +407,7 @@ void IndexCreator::createIndex() {
         SORT_PARALLEL(kmerBuffer.buffer, kmerBuffer.buffer + kmerBuffer.startIndexOfReserve,
                       Kmer::compareTargetKmer);
         time_t sort = time(nullptr);
+        cout << kmerBuffer.startIndexOfReserve << " k-mers extracted" << endl;
         cout << "Reference k-mer sort : " << sort - start << endl;
 
         // Reduce redundancy
@@ -376,9 +432,11 @@ void IndexCreator::createIndex() {
 }
 
 
-string IndexCreator::addToLibrary(const std::string & dbDir,
-                                  const std::string & fnaListFileName,
-                                  const std::string & acc2taxIdFileName) {
+string IndexCreator::addToLibrary(
+    const std::string & dbDir,
+    const std::string & fnaListFileName,
+    const std::string & acc2taxIdFileName) 
+{
     // Make library directory
     time_t now = time(0);
     tm *ltm = localtime(&now);
@@ -761,6 +819,7 @@ void IndexCreator::getAccessionBatches(std::vector<Accession> & observedAccessio
                     trainingSeq = observedAccessionsVec[i].order;
                 }
                 lengthSum += observedAccessionsVec[i].length;
+                totalLength += observedAccessionsVec[i].length;
                 kmerCntSum += static_cast<size_t>(observedAccessionsVec[i].length * 0.4);
                 orders.push_back(observedAccessionsVec[i].order);
                 lengths.push_back(observedAccessionsVec[i].length);
@@ -837,7 +896,6 @@ void IndexCreator::writeTargetFilesAndSplits(
     numOfFlush++;
     size_t bufferSize = 1024 * 1024 * 32;
     uint64_t lastKmer = 0;
-    size_t splitIdx = 1;
     WriteBuffer<uint16_t> diffBuffer(dbDir + "/diffIdx", bufferSize);
     
     WriteBuffer<uint32_t> infoBuffer(dbDir + "/info", bufferSize); 
@@ -1051,7 +1109,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
 
             if (par.syncmer) {
                 estimatedKmerCnt = static_cast<size_t>(
-                    (totalLength * 1.3 / 3.0) / ((8 - par.smerLen + 1) / 2.0)
+                    (totalLength * 1.3 / 3.0) / ((metamerPattern->kmerLen - par.smerLen + 1) / 2.0)
                 );
             } else {
                 estimatedKmerCnt = static_cast<size_t>(
@@ -1258,7 +1316,7 @@ void IndexCreator::writeDbParameters() {
     fprintf(handle, "Creation_date\t%s\n", par.dbDate.c_str());
     fprintf(handle, "Metabuli commit used to create the DB\t%s\n", version);
     fprintf(handle, "Reduced_alphabet\t%d\n", par.reducedAA);
-    // fprintf(handle, "Spaced_kmer_mask\t%s\n", spaceMask.c_str());
+    fprintf(handle, "Spaced_kmer_mask\t%s\n", par.spaceMask.c_str());
     fprintf(handle, "Accession_level\t%d\n", par.accessionLevel);
     fprintf(handle, "Mask_mode\t%d\n", par.maskMode);
     fprintf(handle, "Mask_prob\t%f\n", par.maskProb);
@@ -1268,6 +1326,21 @@ void IndexCreator::writeDbParameters() {
         fprintf(handle, "Syncmer_len\t%d\n", par.smerLen);
     }
     fprintf(handle, "Kmer_format\t%d\n", kmerFormat);
+    fprintf(handle, "Total_seq_length\t%lu\n", totalLength);
+
+    if (!par.customMetamer.empty()) {
+        // Read the custom metamer file and write to parameter file
+        ifstream metamerFile(par.customMetamer);
+        if (!metamerFile.is_open()) {
+            Debug(Debug::ERROR) << "Could not open " << par.customMetamer << " for reading\n";
+            EXIT(EXIT_FAILURE);
+        }
+        string line;
+        while (getline(metamerFile, line)) {
+            fprintf(handle, "%s\n", line.c_str());
+        }
+        metamerFile.close();
+    }
     fclose(handle);
 }
 

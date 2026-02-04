@@ -18,10 +18,14 @@ GroupGenerator::GroupGenerator(LocalParameters & par) : par(par) {
                     taxDbDir + "/merged.dmp",
                     true);
     
-    geneticCode = new GeneticCode(par.reducedAA == 1);
+    if (par.reducedAA) {
+        geneticCode = new ReducedGeneticCode();
+    } else {
+        geneticCode = new RegularGeneticCode();
+    }
     queryIndexer = new QueryIndexer(par);
     queryIndexer->setKmerLen(12);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, kmerFormat);
+    kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     updatedResultFileName = outDir + "/updated_classifications.tsv";
     updatedReportFileName = outDir + "/updated_report.tsv";
 
@@ -379,7 +383,7 @@ void GroupGenerator::filterCommonKmers2(
     size_t remainder = queryKmerNum % par.threads;
     size_t startIdx = blankCnt;
     size_t endIdx = 0; // endIdx is inclusive
-    for (size_t i = 0; i < par.threads; i++) {
+    for (int i = 0; i < par.threads; i++) {
         endIdx = startIdx + quotient - 1;
         if (remainder > 0) {
             endIdx++;

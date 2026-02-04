@@ -67,6 +67,8 @@ public:
     PARAMETER(SMER_LEN)
     PARAMETER(KMER_FORMAT)
     PARAMETER(UNIREF_XML)
+    PARAMETER(PARAM_CUSTOM_METAMER)
+    PARAMETER(SPACE_MASK)
 
     // Classify
     PARAMETER(SEQ_MODE)
@@ -87,6 +89,10 @@ public:
     PARAMETER(MAX_SHIFT)
     PARAMETER(EM)
     PARAMETER(NEIGHBOR_KMERS)
+    PARAMETER(PDM_KMER)
+    PARAMETER(SCORE_MODE)
+    PARAMETER(DB_TOTAL_LENGTH)
+    PARAMETER(MAX_E_VALUE)
 
     // extract
     PARAMETER(TARGET_TAX_ID)
@@ -165,12 +171,13 @@ public:
     int smerLen;
     int kmerFormat;
     std::string unirefXml;
+    std::string customMetamer;
 
     // Classify
     int seqMode;
     int reducedAA;
     float minScore;
-    // std::string spaceMask;
+    std::string spaceMask;
     int minConsCnt;
     uint8_t hammingMargin;
     float minSpScore;
@@ -188,7 +195,11 @@ public:
     int printLineage;
     int maxShift;
     bool em;
-
+    int pdmKmer;
+    int scoreMode;
+    size_t dbTotalLength;
+    double maxEValue;
+    
     // Extract
     int targetTaxId;
     int extractMode;

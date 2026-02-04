@@ -41,12 +41,14 @@ using namespace std;
 class Classifier {
 protected:
     // Parameters
+    LocalParameters & par;
     string dbDir;
     size_t matchPerKmer;
     int kmerFormat;
 
     // Agents
     GeneticCode * geneticCode = nullptr;
+    MetamerPattern * metamerPattern = nullptr;
     QueryIndexer * queryIndexer = nullptr;
     KmerExtractor * kmerExtractor = nullptr;
     KmerMatcher * kmerMatcher = nullptr;
@@ -74,6 +76,13 @@ protected:
 public:
     void startClassify(const LocalParameters &par);
 
+    void classifyReads();
+
+    uint64_t calculateBufferSize(
+        uint64_t queryListSize,
+        uint64_t matchPerKmer);
+
+
     void assignTaxonomy(const Match *matchList,
                         size_t numOfMatches,
                         std::vector<Query> & queryList,
@@ -87,7 +96,7 @@ public:
 
     void getTopSpecies(const std::vector<Query> & queries) {
         for (const auto & query : queries) {
-            if (query.isClassified) {
+            if (query.classification != 0) {
                 topSpeciesSet.insert(query.topSpeciesId);
             }
         }

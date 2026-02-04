@@ -7,7 +7,8 @@
 #include "fasta_validate.h"
 #include "validateDatabase.h"
 
-void setDefaults_build(LocalParameters & par){
+void setDefaults_build(LocalParameters & par) {
+    par.spaceMask = "";
     par.syncmer = 0;
     par.smerLen = 5;
     par.gtdb = 0;
@@ -16,7 +17,8 @@ void setDefaults_build(LocalParameters & par){
     par.ramUsage = 128;
     par.validateInput = 0;
     par.validateDb = 0;
-    par.taxonomyPath = "" ;
+    par.taxonomyPath = "";
+    par.customMetamer = "";
     par.splitNum = 4096;
     par.maskProb = 0.9;
     par.maskMode = 1;

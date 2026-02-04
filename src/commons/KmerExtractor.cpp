@@ -3,9 +3,9 @@
 
 KmerExtractor::KmerExtractor(
     const LocalParameters &par,
-    const GeneticCode & geneticCode,
+    const GeneticCode * geneticCode,
     int kmerFormat) 
-    : par(par), geneticCode(geneticCode), kmerScanners(new KmerScanner*[par.threads]) {
+    : par(par), geneticCode(geneticCode) {
     // Initialize k-mer scanners for each thread
     kmerLen = 8;
     for (int i = 0; i < par.threads; ++i) {
@@ -13,21 +13,22 @@ KmerExtractor::KmerExtractor(
             if (i == 0) {
                 std::cout << "Using OldMetamerScanner." << std::endl;
             }
-            kmerScanners[i] = new OldMetamerScanner(geneticCode);
+            kmerScanners.push_back(std::make_unique<OldMetamerScanner>(*geneticCode));
         } else if (kmerFormat == 2) {
             if (par.syncmer) {
-                kmerScanners[i] = new SyncmerScanner(par.smerLen, geneticCode);
+                kmerScanners.push_back(std::make_unique<SyncmerScanner>(kmerLen, par.smerLen, *geneticCode));
             } else {
-                kmerScanners[i] = new MetamerScanner(geneticCode);
+                kmerScanners.push_back(std::make_unique<MetamerScanner>(*geneticCode, kmerLen));
             }
         } else if (kmerFormat == 3) {
-            kmerScanners[i] = new KmerScanner_dna2aa(geneticCode, 12);
             kmerLen = 12;
+            kmerScanners.push_back(std::make_unique<KmerScanner_dna2aa>(*geneticCode, kmerLen));
         } else if (kmerFormat == 4) {
-            kmerScanners[i] = new KmerScanner_aa2aa(12);
-        } else if (kmerFormat == 5) {
-            kmerScanners[i] = new SyncmerScanner_dna2aa(geneticCode, 12, par.smerLen);
             kmerLen = 12;
+            kmerScanners.push_back(std::make_unique<KmerScanner_aa2aa>(kmerLen));
+        } else if (kmerFormat == 5) {
+            kmerLen = 12;
+            kmerScanners.push_back(std::make_unique<SyncmerScanner_dna2aa>(*geneticCode, kmerLen, par.smerLen));
         } else {
             std::cerr << "Error: Invalid k-mer format specified." << std::endl;
             exit(EXIT_FAILURE);
@@ -40,13 +41,332 @@ KmerExtractor::KmerExtractor(
     probMatrix = new ProbabilityMatrix(*(subMat));
 }
 
+KmerExtractor::KmerExtractor(
+    const LocalParameters &par,
+    const MetamerPattern * metamerPattern)
+    : par(par), metamerPattern(metamerPattern) {
+    // Initialize k-mer scanners for each thread
+    kmerLen = metamerPattern->kmerLen;
+    windowSize = metamerPattern->windowSize;
+    kmerScanners = metamerPattern->createScanners(par);
+    spaceNum = 0;
+    maskMode = par.maskMode;
+    maskProb = par.maskProb;
+    subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
+    probMatrix = new ProbabilityMatrix(*(subMat));
+    if (par.pdmKmer > 0) {
+        // Precompute binomial coefficients
+        for (int n = 0; n <= MAX_N; ++n) {
+            binom[n][0] = binom[n][n] = 1;
+            for (int k = 1; k < n; ++k) {
+                binom[n][k] = binom[n - 1][k - 1] + binom[n - 1][k];
+            }
+        }
+    }
+}
+
 KmerExtractor::~KmerExtractor() {
     delete probMatrix;
     delete subMat;
-    for (int i = 0; i < par.threads; ++i) {
-        delete kmerScanners[i];
+}
+
+int KmerExtractor::getKmerCount(
+    const char *seq,
+    int seqLen) 
+{
+    if (!par.pdmKmer) {
+        return LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, true);
+    } else {
+        return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, false);
     }
-    delete[] kmerScanners;
+}
+
+int KmerExtractor::getPDMKmerCount( 
+    const char *seq,
+    int seqLen) 
+{
+    int kmerCount = 0;
+    int dnaKmerLen = windowSize * 3;
+    for (int frame = 0; frame < 3; ++frame) {
+        for (int start = frame; start <= seqLen - dnaKmerLen; start += 3) {
+            bool overlapFirstN = (start < par.pdmKmer);
+            bool overlapLastN  = (start + dnaKmerLen > seqLen - par.pdmKmer);
+
+            if (!overlapFirstN && !overlapLastN) {
+                continue;
+            }
+
+            size_t nt = 0, na = 0;
+            for (int i = 0; i < dnaKmerLen; ++i) {
+                int pos = start + i;
+                char c = seq[pos];
+                if (overlapFirstN && pos < par.pdmKmer && c == 'T') {
+                    nt++;
+                }
+                if (overlapLastN && pos >= seqLen - par.pdmKmer &&  c == 'A') {
+                    na++;
+                }
+            }
+            
+            if (nt == 0 && na == 0) {
+                continue;
+            }
+
+            // forward + reverse translations
+            kmerCount += countMutationComb(nt, na, 3) * 2;
+        }
+    }
+    // cout << "PDM k-mer count: " << kmerCount << endl;
+    return kmerCount;
+}
+
+bool KmerExtractor::extractQueryKmers(
+    Buffer<Kmer> &kmerBuffer,
+    vector<Query> & queryList,
+    uint64_t & processedSeqCnt,
+    SeqEntry * savedSeq_1,
+    SeqEntry * savedSeq_2,
+    KSeqWrapper* kseq_1,
+    KSeqWrapper* kseq_2) 
+{
+    uint32_t queryIdx = 0;
+    if (!savedSeq_1->name.empty()) {
+        // Forward
+        int queryLength = par.pdmKmer > 0 ?
+            static_cast<int>(savedSeq_1->s.length()) :
+            LocalUtil::getMaxCoveredLength(static_cast<int>(savedSeq_1->s.length()));
+        int kmerCnt = getKmerCount(savedSeq_1->s.c_str(), static_cast<int>(savedSeq_1->s.length()));
+
+        queryList.emplace_back(
+            queryLength,
+            kmerCnt,
+            savedSeq_1->name);
+            
+        if (kmerCnt > 0) {
+            size_t posToWrite = kmerBuffer.reserveMemory(kmerCnt);
+            fillQueryKmerBuffer(
+                savedSeq_1->s.c_str(),
+                static_cast<int>(savedSeq_1->s.length()),
+                kmerBuffer,
+                posToWrite,
+                queryIdx + 1,
+                0);
+        }
+        savedSeq_1->name.clear();
+        savedSeq_1->s.clear();
+
+        // Reverse
+        if (kseq_2 != nullptr) {
+            queryList.back().queryLength2 = par.pdmKmer > 0 ?
+                static_cast<int>(savedSeq_2->s.length()) :
+                LocalUtil::getMaxCoveredLength(static_cast<int>(savedSeq_2->s.length()));
+            queryList.back().kmerCnt2 = getKmerCount(savedSeq_2->s.c_str(), static_cast<int>(savedSeq_2->s.length()));
+            if (queryList.back().kmerCnt2 > 0) {
+                size_t posToWrite = kmerBuffer.reserveMemory(queryList.back().kmerCnt2);
+                fillQueryKmerBuffer(
+                    savedSeq_2->s.c_str(),
+                    static_cast<int>(savedSeq_2->s.length()),
+                    kmerBuffer,
+                    posToWrite,
+                    queryIdx + 1,
+                    queryLength+3);
+            }
+            savedSeq_2->name.clear();
+            savedSeq_2->s.clear();
+        }
+        
+        queryIdx++;
+        processedSeqCnt++;
+    }
+
+    size_t readLength = 1000;
+    size_t chunkSize = 1000;
+    std::vector<std::vector<string>> readsPerThread_1(par.threads);
+    std::vector<std::vector<string>> readsPerThread_2(par.threads);
+    for (int i = 0; i < par.threads; ++i) {
+        readsPerThread_1[i].resize(chunkSize);
+        for (size_t j = 0; j < chunkSize; ++j) {
+            readsPerThread_1[i][j].reserve(readLength);
+        }
+
+        if (kseq_2 == nullptr) { continue; }
+        readsPerThread_2[i].resize(chunkSize);
+        for (size_t j = 0; j < chunkSize; ++j) {
+            readsPerThread_2[i][j].reserve(readLength);
+        }
+    }
+
+    BlockingQueue<int> freeBufferQueue;
+    BlockingQueue<WorkItem> filledBufferQueue;
+    for (int i = 1; i < par.threads; ++i) {
+        freeBufferQueue.push(i);
+    }
+    int producerBufferIndex = 0;
+    bool moreReads = true;
+
+    #pragma omp parallel default(none) shared(par, cout, kmerBuffer, queryList, savedSeq_1, savedSeq_2, \
+    freeBufferQueue, filledBufferQueue, kseq_1, kseq_2, queryIdx, chunkSize, processedSeqCnt, \
+    producerBufferIndex, moreReads, readsPerThread_1, readsPerThread_2)
+    {
+        int threadId = omp_get_thread_num();
+        size_t maxReadLength1 = 1000;
+        size_t maxReadLength2 = 1000;
+        char *maskedSeq1 = new char[maxReadLength1];
+        char *maskedSeq2 = new char[maxReadLength2];   
+        char *seq1 = nullptr;
+        char *seq2 = nullptr; 
+
+        if (threadId == 0) {
+            bool bufferNotFull = true;
+            while (moreReads && bufferNotFull) {
+                // std::cout << "Producer buffer index: " << producerBufferIndex << std::endl;
+                std::vector<string> * seqChunk_1 = &readsPerThread_1[producerBufferIndex];
+                std::vector<string> * seqChunk_2 = nullptr;
+                if (kseq_2 != nullptr) {
+                    seqChunk_2 = &readsPerThread_2[producerBufferIndex];
+                }
+                size_t kmerCnt = 0;
+                uint32_t seqCnt = 0;
+
+                for (; seqCnt < chunkSize; ++seqCnt) {
+                    int currentKmerCnt_1 = 0;
+                    int currentKmerCnt_2 = 0;
+                    if (kseq_2 == nullptr) {
+                        if (!kseq_1->ReadEntry()) {
+                            moreReads = false;
+                            break;
+                        }
+                        currentKmerCnt_1= getKmerCount(
+                            kseq_1->entry.sequence.s,
+                            static_cast<int>(kseq_1->entry.sequence.l));
+                    } else {
+                        if (!kseq_1->ReadEntry() || !kseq_2->ReadEntry()) {
+                            moreReads = false;
+                            break;
+                        }
+                        currentKmerCnt_1 = getKmerCount(
+                            kseq_1->entry.sequence.s,
+                            static_cast<int>(kseq_1->entry.sequence.l));
+                        currentKmerCnt_2 = getKmerCount(
+                            kseq_2->entry.sequence.s,
+                            static_cast<int>(kseq_2->entry.sequence.l));
+                    }
+
+                    if (!kmerBuffer.afford(kmerCnt + currentKmerCnt_1 + currentKmerCnt_2)) {
+                        savedSeq_1->s = kseq_1->entry.sequence.s;
+                        savedSeq_1->name = kseq_1->entry.name.s;
+                        if (kseq_2 != nullptr) {
+                            savedSeq_2->s = kseq_2->entry.sequence.s;
+                            savedSeq_2->name = kseq_2->entry.name.s;
+                        }
+                        bufferNotFull = false;
+                        break;
+                    }
+
+                    kmerCnt += currentKmerCnt_1 + currentKmerCnt_2;
+
+                    int queryLength = par.pdmKmer > 0 ?
+                        static_cast<int>(kseq_1->entry.sequence.l) :
+                        LocalUtil::getMaxCoveredLength(static_cast<int>(kseq_1->entry.sequence.l));
+   
+                    queryList.emplace_back(
+                        queryLength,
+                        currentKmerCnt_1,
+                        kseq_1->entry.name.s
+                    );
+
+                    (*seqChunk_1)[seqCnt] = (currentKmerCnt_1 > 0) ? kseq_1->entry.sequence.s : ""; 
+
+                    if (kseq_2 != nullptr) {
+                        queryList.back().queryLength2 = par.pdmKmer > 0 ?
+                            static_cast<int>(kseq_2->entry.sequence.l) :
+                            LocalUtil::getMaxCoveredLength(static_cast<int>(kseq_2->entry.sequence.l));
+                        queryList.back().kmerCnt2 = currentKmerCnt_2;
+                        (*seqChunk_2)[seqCnt] = (currentKmerCnt_2 > 0) ? kseq_2->entry.sequence.s : "";
+                    }
+                }
+                if (seqCnt > 0) {
+                    size_t writePos = kmerBuffer.reserveMemory(kmerCnt);
+                    
+                    if (par.threads == 1) {
+                        // [SINGLE THREAD FIX] Process data immediately in this thread
+                        processSequenceChunk(
+                            kmerBuffer, writePos, queryIdx, 
+                            *seqChunk_1, seqCnt, 
+                            maskedSeq1, maxReadLength1, nullptr
+                        );
+
+                        if (kseq_2 != nullptr) {
+                            processSequenceChunk(
+                                kmerBuffer, writePos, queryIdx, 
+                                *seqChunk_2, seqCnt, 
+                                maskedSeq2, maxReadLength2, seqChunk_1
+                            );
+                        }
+                        // Reuse buffer index 0 for next iteration
+                        producerBufferIndex = 0; 
+                    } else {
+                        // [MULTI THREAD] Dispatch to consumer queue
+                        filledBufferQueue.push({
+                            producerBufferIndex,                    // thread ID as buffer index
+                            seqCnt,                                 // number of sequences of this chunk   
+                            writePos,                               // write position in kmer buffer
+                            static_cast<uint32_t>(queryIdx)});      // starting query index
+
+                        // Wait for a free buffer from consumers    
+                        if (moreReads && bufferNotFull) {
+                            freeBufferQueue.wait_and_pop(producerBufferIndex);
+                        }
+                    }
+
+                    queryIdx += seqCnt;
+                    processedSeqCnt += seqCnt;
+                }
+            }
+
+            // Indicate end of production
+            if (par.threads > 1) {
+                for (int i = 0; i < par.threads - 1; ++i) {
+                    filledBufferQueue.push({-1, 0, 0, 0});
+                }
+            }
+        } else {
+            WorkItem workItem;
+            while (true) {
+                filledBufferQueue.wait_and_pop(workItem);
+                if (workItem.bufferIndex == -1) { break; }
+
+                processSequenceChunk(
+                    kmerBuffer,
+                    workItem.writePos,
+                    workItem.sequenceIdOffset,
+                    readsPerThread_1[workItem.bufferIndex],
+                    workItem.sequenceCount,
+                    maskedSeq1,
+                    maxReadLength1,
+                    nullptr
+                );
+
+                if (kseq_2 != nullptr) {
+                    processSequenceChunk(
+                        kmerBuffer,
+                        workItem.writePos,
+                        workItem.sequenceIdOffset,
+                        readsPerThread_2[workItem.bufferIndex],
+                        workItem.sequenceCount,
+                        maskedSeq2,
+                        maxReadLength2,
+                        &readsPerThread_1[workItem.bufferIndex]
+                    );
+                }
+            
+                freeBufferQueue.push(workItem.bufferIndex);
+            }
+        }
+        delete[] maskedSeq1;
+        delete[] maskedSeq2;
+    }
+    return moreReads;
 }
 
 void KmerExtractor::extractQueryKmers(Buffer<Kmer> &kmerBuffer,
@@ -317,9 +637,8 @@ void KmerExtractor::processSequence(
             seq = const_cast<char *>(reads[i].c_str());
         }
 
-        size_t posToWrite = 0;
         if (isReverse) {
-            posToWrite = kmerBuffer.reserveMemory(queryList[queryIdx].kmerCnt2);
+            size_t posToWrite = kmerBuffer.reserveMemory(queryList[queryIdx].kmerCnt2);
             fillQueryKmerBuffer(
                 seq,
                 (int) reads[i].length(),
@@ -328,7 +647,7 @@ void KmerExtractor::processSequence(
                 (uint32_t) queryIdx+1,
                 queryList[queryIdx].queryLength+3);
         } else {
-            posToWrite = kmerBuffer.reserveMemory(queryList[queryIdx].kmerCnt);
+            size_t posToWrite = kmerBuffer.reserveMemory(queryList[queryIdx].kmerCnt);
             fillQueryKmerBuffer(
                 seq, 
                 (int) reads[i].length(), 
@@ -343,11 +662,11 @@ void KmerExtractor::fillQueryKmerBuffer(
     const char *seq,
     int seqLen, 
     Buffer<Kmer> &kmerBuffer, 
-    size_t &posToWrite, 
-    uint32_t seqID, 
+    size_t & posToWrite, 
+    uint32_t seqID,
     uint32_t offset) 
 {
-    int usedLen = LocalUtil::getMaxCoveredLength(seqLen);
+    
 #ifdef OPENMP
     size_t threadID = omp_get_thread_num();
 #else
@@ -355,21 +674,152 @@ void KmerExtractor::fillQueryKmerBuffer(
 #endif
     for (int frame = 0; frame < 6; frame++) {
         bool isForward = frame < 3;
-        int begin = 0;
-        if (isForward) {
-            begin = frame % 3;
-        } else {
-            begin = (seqLen % 3) - (frame % 3);
-            if (begin < 0) {
-                begin += 3;
+        if (par.pdmKmer == 0) {
+            int begin = 0;
+            if (isForward) {
+                begin = frame;
+            } else {
+                begin = (seqLen % 3) - (frame % 3);
+                if (begin < 0) {
+                    begin += 3;
+                }
             }
-        }
-        kmerScanners[threadID]->initScanner(seq, begin, begin + usedLen - 1, isForward);
-        Kmer kmer;
-        while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
-            kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
+            int usedLen = LocalUtil::getMaxCoveredLength(seqLen);
+            kmerScanners[threadID]->initScanner(seq, begin, begin + usedLen - 1, isForward);
+            Kmer kmer;
+            while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
+                kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
+                // if (seqID == 1003) {
+                //     cout << (int) frame << "\t" << kmer.pos << "\t";
+                //     metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
+                // } 
+            }
+        } else {
+            int begin, end;
+            if (isForward) {
+                begin = frame;
+                end = seqLen - 1;
+            } else {
+                begin = 0;
+                end = seqLen - 1 - (frame % 3);
+            }
+            kmerScanners[threadID]->initScanner(seq, begin, end, isForward);
+            Kmer kmer;
+            while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
+                kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
+                // if (seqID == 1003) {
+                //     cout << (int) frame << "\t" << kmer.pos << "\t";
+                //     metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
+                // }
+            }
+
+            // Extract neighbor k-mers considering post-mortem DNA damage 
+            if (frame < 3) {
+                // cout << "PDM" << endl;
+                generatePDMNeighborKmers(
+                    seq,
+                    begin,
+                    seqLen,
+                    kmerBuffer,
+                    threadID,
+                    posToWrite,
+                    frame,
+                    seqID,
+                    offset);
+                // cout << "___" << endl;
+            }
+
         }
     }
+}
+
+void KmerExtractor::generatePDMNeighborKmers(
+    const char *seq,
+    size_t seqStart, 
+    int seqLen,
+    Buffer<Kmer> &kmerBuffer,
+    int threadID,
+    size_t & posToWrite,
+    int frame,
+    uint32_t seqID, 
+    uint32_t offset) 
+{
+    std::vector<std::string> out;
+
+    std::vector<int> tpos;
+    std::vector<int> apos;
+
+    char kmer[64];
+    char mutatedKmer[64];
+    int dnaKmerLen = windowSize * 3;
+
+    for (int start = seqStart; start <= seqLen - dnaKmerLen; start += 3) {
+        bool overlapFirstN = (start < par.pdmKmer);
+        bool overlapLastN  = (start + dnaKmerLen > seqLen - par.pdmKmer);
+        
+        if (!overlapFirstN && !overlapLastN) {
+            continue;
+        }
+
+        std::memcpy(kmer, seq + start, dnaKmerLen);
+        tpos.clear();
+        apos.clear();
+
+        for (int i = 0; i < dnaKmerLen; ++i) {
+            int readPos = start + i;
+
+            if (overlapFirstN && readPos < par.pdmKmer && kmer[i] == 'T')
+                tpos.push_back(i);
+
+            if (overlapLastN && readPos >= seqLen - par.pdmKmer && kmer[i] == 'A')
+                apos.push_back(i);
+        }
+
+        const size_t nt = tpos.size();
+        const size_t na = apos.size();
+
+        if (nt == 0 && na == 0)
+            continue; 
+
+        for (size_t mt = 0; mt < (1ULL << nt); ++mt) {
+            for (size_t ma = 0; ma < (1ULL << na); ++ma) {
+
+                if (mt == 0 && ma == 0)
+                    continue; // exclude original
+
+                if (__builtin_popcountll(mt) + __builtin_popcountll(ma) > 3)
+                    continue; // limit to 3  mutations
+
+                std::memcpy(mutatedKmer, kmer, dnaKmerLen) ;
+
+                for (size_t i = 0; i < nt; ++i)
+                    if (mt & (1ULL << i))
+                        mutatedKmer[tpos[i]] = 'C';
+
+                for (size_t i = 0; i < na; ++i)
+                    if (ma & (1ULL << i))
+                        mutatedKmer[apos[i]] = 'G';
+
+                kmerScanners[threadID]->initScanner(mutatedKmer, 0, dnaKmerLen - 1, true);
+                Kmer kmer = kmerScanners[threadID]->next();
+                if (kmer.value != UINT64_MAX) {
+                    kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset + start, (uint8_t) frame};
+                    // cout << (int) frame << "\t" << kmer.pos + offset + start << "\t" << flush;
+                    // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
+                }
+
+                kmerScanners[threadID]->initScanner(mutatedKmer, 0, dnaKmerLen - 1, false);
+                kmer = kmerScanners[threadID]->next();
+                if (kmer.value != UINT64_MAX) {
+                    kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset + start, (uint8_t)frameCoversion[seqLen % 3][frame]}; 
+                    // cout << (int) frameCoversion[seqLen % 3][frame] << "\t" << kmer.pos + offset + start << "\t" << flush;
+                    // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
+                }
+            }
+        }
+    }
+
+
 }
 
 void KmerExtractor::extractKmer_dna2aa(
@@ -389,7 +839,7 @@ void KmerExtractor::extractKmer_dna2aa(
         bool isForward = frame < 3;
         int begin = 0;
         if (isForward) {
-            begin = frame % 3;
+            begin = frame;
         } else {
             begin = (seqLen % 3) - (frame % 3);
             if (begin < 0) {
@@ -438,7 +888,9 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
     if (isReverse) {
         for (size_t i = 0; i < chunkSize && processedQueryNum < chunkEnd; ++i, ++processedQueryNum) {
             kseq->ReadEntry();
-            queryList[processedQueryNum].queryLength2 = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);   
+            // queryList[processedQueryNum].queryLength2 = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);   
+            queryList[processedQueryNum].queryLength2 = par.pdmKmer > 0 ?
+                (int) kseq->entry.sequence.l : LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
             
             if (emptyReads[i]) { 
                 count ++;
@@ -446,7 +898,7 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
             }
 
             // Check if the read is too short
-            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, spaceNum, this->kmerLen);
+            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, this->windowSize, true);
             if (kmerCnt < 1) {
                 reads[i] = "";
                 emptyReads[i] = true;
@@ -462,10 +914,14 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
         for (size_t i = 0; i < chunkSize && processedQueryNum < chunkEnd; ++i, ++processedQueryNum) {
             kseq->ReadEntry();
             queryList[processedQueryNum].name = string(kseq->entry.name.s);
-            queryList[processedQueryNum].queryLength = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
+            queryList[processedQueryNum].queryLength = par.pdmKmer > 0 ?
+                (int) kseq->entry.sequence.l :
+                LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
+            // queryList[processedQueryNum].queryLength = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
+            // queryList[processedQueryNum].queryLength = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
 
             // Check if the read is too short
-            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, spaceNum, this->kmerLen);
+            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, this->windowSize, true);
             if (kmerCnt < 1) {
                 reads[i] = "";
                 emptyReads[i] = true;
@@ -862,3 +1318,61 @@ void KmerExtractor::processSequenceChunk_aa2aa(
         }
     }
 }
+
+void KmerExtractor::processSequenceChunk(
+    Buffer<Kmer> &kmerBuffer,
+    size_t & writePos,
+    uint32_t queryOffset,
+    const std::vector<std::string> & reads, 
+    size_t seqNum,
+    char *maskedSeq,
+    size_t & maxReadLength,
+    const std::vector<std::string> * pairedReads) 
+{
+    const char * seq = nullptr;
+    for (size_t i = 0; i < seqNum; ++i) {
+        size_t queryIdx = queryOffset + i;
+        if (reads[i].empty()) {continue;}
+
+        if (par.maskMode) {
+            if (maxReadLength < reads[i].length() + 1) {
+                maxReadLength = reads[i].length() + 1;
+                delete[] maskedSeq;
+                maskedSeq = new char[maxReadLength];
+            }
+            SeqIterator::maskLowComplexityRegions(
+                (unsigned char *) reads[i].c_str(), 
+                (unsigned char *) maskedSeq,
+                *probMatrix, 
+                maskProb, 
+                subMat);
+            seq = maskedSeq;
+        } else {
+            seq = reads[i].c_str();
+        }
+
+        if (pairedReads != nullptr) {
+            // Process reverse read
+            fillQueryKmerBuffer(
+                seq,
+                (int) reads[i].length(),
+                kmerBuffer,
+                writePos, 
+                (uint32_t) queryIdx + 1,
+                (*pairedReads)[i].length() + 3);
+        } else {
+            // Process forward read
+            fillQueryKmerBuffer(
+                seq, 
+                (int) reads[i].length(), 
+                kmerBuffer, 
+                writePos, 
+                (uint32_t) queryIdx + 1);
+        }
+
+        
+    }
+}
+
+
+

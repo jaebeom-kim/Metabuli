@@ -10,6 +10,7 @@
 #include "unordered_map"
 #include "GeneticCode.h"
 #include "DeltaIdxReader.h"
+#include "MetamerPattern.h"
 
 #include <string>
 #include <vector>
@@ -51,11 +52,12 @@ protected:
   const LocalParameters &par;
   TaxonomyWrapper *taxonomy = nullptr;
   GeneticCode *geneticCode  = nullptr;
+  const MetamerPattern *metamerPattern = nullptr;
   int kmerFormat;
+  int kmerLen;
   
   size_t threads;
   std::string dbDir;
-  //   string targetDiffIdxFileName, targetInfoFileName, diffIdxSplitFileName;
   //   MmapedData<DiffIdxSplit> diffIdxSplits;
   uint64_t DNA_MASK; // ignore DNA encoding
   uint64_t AA_MASK;  // ignore AA encoding
@@ -160,9 +162,9 @@ protected:
   unordered_map<TaxID, TaxID> taxId2speciesId;
   unordered_map<TaxID, TaxID> taxId2genusId;
 
-  string targetDiffIdxFileName;
-  string targetInfoFileName;
-  string diffIdxSplitFileName;
+  // string targetDiffIdxFileName;
+  // string targetInfoFileName;
+  // string diffIdxSplitFileName;
     
 
 
@@ -184,9 +186,6 @@ protected:
     }
     return kmer & DNA_MASK;
   }
-  // inline size_t AminoAcidPart(size_t kmer) const { return (kmer) & DNA_MASK; }
-
-  void moveMatches(Match *dest, Match *src, size_t & matchNum);
 
   void compareDna(uint64_t query,
                   std::vector<uint64_t> &targetKmersToCompare,
@@ -209,11 +208,11 @@ protected:
 
   virtual uint16_t getHammings_reverse(uint64_t kmer1, uint64_t kmer2);
 
-  static bool compareMatches(const Match &a, const Match &b);
-
   void loadTaxIdList(const LocalParameters & par);
 
-  std::vector<QueryKmerSplit> makeQueryKmerSplits(const Buffer<Kmer> * queryKmerBuffer);
+  std::vector<QueryKmerSplit> makeQueryKmerSplits(
+    const Buffer<Kmer> * queryKmerBuffer,
+    const string & dbDir);
  
 
 public:
@@ -223,17 +222,13 @@ public:
 
   KmerMatcher(const LocalParameters &par, int kmerFormat);
 
+  KmerMatcher(const LocalParameters &par,
+    TaxonomyWrapper *taxonomy,
+    const MetamerPattern *metamerPattern);
+
   virtual ~KmerMatcher();
   
-  bool matchKmers(Buffer<Kmer> *queryKmerBuffer,
-                  Buffer<Match> *matchBuffer,
-                  const string &db = string());
-
-  bool matchMetamers(Buffer<Kmer> *queryKmerBuffer,
-                     Buffer<Match> *matchBuffer,
-                     const string &db = string());
-
-  bool matchKmers2(const Buffer<Kmer> *queryKmerBuffer,
+  bool matchKmers(const Buffer<Kmer> *queryKmerBuffer,
                   Buffer<Match> *matchBuffer,
                   const string &db);
 
@@ -243,40 +238,22 @@ public:
 
   void sortMatches(Buffer<Match> *matchBuffer);
 
-  unordered_map<TaxID, TaxID> &getTaxId2SpeciesId() {
-    return taxId2speciesId;
-  }
+
 
   static uint64_t getNextTargetKmer(uint64_t lookingTarget,
                                     const uint16_t *diffIdxBuffer,
                                     size_t &diffBufferIdx, size_t &totalPos);
 
-  static uint64_t getNextTargetKmer(uint64_t lookingTarget,
-                                    uint16_t *&diffIdxBuffer,
-                                    size_t &totalPos);
-
   static Metamer getNextTargetKmer(const Metamer & lookingTarget,
                                    const uint16_t *diffIdxBuffer,
                                    size_t &diffBufferIdx, size_t &totalPos);
 
-  static uint64_t getNextTargetKmer(
-          uint64_t lookingTarget,
-          uint16_t *&diffIdxBuffer); 
-
-  template <typename T>
-  static inline T getKmerInfo(size_t bufferSize,
-                       FILE *kmerInfoFp,
-                       T *infoBuffer,
-                       size_t &infoBufferIdx) {
-    if (unlikely(infoBufferIdx >= bufferSize)) {
-      loadBuffer(kmerInfoFp, infoBuffer, infoBufferIdx, bufferSize,
-                 static_cast<int>(infoBufferIdx - bufferSize));
-    }
-    return infoBuffer[infoBufferIdx];
-  }
-
   // Getters
   size_t getTotalMatchCnt() const { return totalMatchCnt; }
+
+  unordered_map<TaxID, TaxID> &getTaxId2SpeciesId() {
+    return taxId2speciesId;
+  }
 };
 
 inline uint64_t KmerMatcher::getNextTargetKmer(uint64_t lookingTarget,
@@ -293,38 +270,6 @@ inline uint64_t KmerMatcher::getNextTargetKmer(uint64_t lookingTarget,
     totalPos++;
   }
   diffIn64bit |= (fragment & 0x7FFF);
-  return diffIn64bit + lookingTarget;
-}
-
-inline uint64_t KmerMatcher::getNextTargetKmer(
-  uint64_t lookingTarget,
-  uint16_t *&diffIdxBuffer,
-  size_t &totalPos) 
-{
-  uint64_t diffIn64bit = 0;
-  while ((*diffIdxBuffer & 0x8000) == 0) { // 27 %
-    diffIn64bit = (diffIn64bit << 15) | *diffIdxBuffer;
-    ++diffIdxBuffer;
-    ++totalPos;
-  }
-  diffIn64bit = (diffIn64bit << 15) | (*diffIdxBuffer & 0x7FFF);
-  ++totalPos;
-  ++diffIdxBuffer;
-  return diffIn64bit + lookingTarget;
-}
-
-
-inline uint64_t KmerMatcher::getNextTargetKmer(
-  uint64_t lookingTarget,
-  uint16_t *&diffIdxBuffer) 
-{
-  uint64_t diffIn64bit = 0;
-  while ((*diffIdxBuffer & 0x8000) == 0) { // 27 %
-    diffIn64bit = (diffIn64bit << 15) | *diffIdxBuffer;
-    ++diffIdxBuffer;
-  }
-  diffIn64bit = (diffIn64bit << 15) | (*diffIdxBuffer & 0x7FFF);
-  ++diffIdxBuffer;
   return diffIn64bit + lookingTarget;
 }
 
@@ -358,7 +303,6 @@ inline uint8_t KmerMatcher::getHammingDistanceSum(uint64_t kmer1,
   hammingSum += hammingLookup[GET_3_BITS(kmer1 >> 21U)][GET_3_BITS(kmer2 >> 21U)];
   return hammingSum;
 }
-
 
 // inline uint16_t KmerMatcher::getHammings(
 //   uint64_t kmer1, 

@@ -5,86 +5,43 @@
 #include <cstdint>
 #include <iostream>
 #include "BitManipulateMacros.h"
-
-struct Match { // 24 byte
+class Match { // 32 byte
+public:
     Match(){}
-    Match(QueryKmerInfo qInfo,
-          int targetId,
-          TaxID speciesId,
-          uint32_t dnaEncoding,
-          uint16_t eachHamming,
-          uint8_t hamming):
-          qInfo(qInfo), targetId(targetId), speciesId(speciesId), dnaEncoding(dnaEncoding),
-          rightEndHamming(eachHamming), hamming(hamming) { }
+    Match(Kmer qKmer, Kmer tKmer): qKmer(qKmer), tKmer(tKmer) { }
 
-    QueryKmerInfo qInfo;      // 8 // Query K-mer information
-    TaxID targetId;           // 4 // axonomy id infact
-    TaxID speciesId;          // 4 // Used to group matches by species
-    uint32_t dnaEncoding;     // 4 // Used to check if two matches are consecutive
-    uint16_t rightEndHamming; // 2 // Used to calculate score
-    uint8_t hamming;          // 1 // Used to filter redundant matches
+    Kmer qKmer;
+    Kmer tKmer;
 
     void printMatch() const {
-        std::cout << qInfo.sequenceID << " " << qInfo.pos << " " << qInfo.frame << " "
-        << targetId << " " << speciesId << " " << rightEndHamming << " " << (int)hamming << " " << getScore() << "\n";
+        std::cout << qKmer.qInfo.sequenceID << " " << qKmer.qInfo.pos << " " << qKmer.qInfo.frame << " "
+        << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << "\n";
     }
 
-    float getScore(float score = 0.0f, int cnt = 0) const { 
-        int currentHamming = GET_2_BITS(rightEndHamming >> (cnt * 2));
-        if (currentHamming == 0) {
-            score += 3.0f;
-        } else {
-            score += 2.0f - 0.5f * currentHamming;
-        }
-        if (cnt == 7) {
-            return score;
-        } else {
-        return getScore(score, cnt + 1);    
-        }
+    static bool compare(const Match &a, const Match &b) {
+        if (a.qKmer.qInfo.sequenceID != b.qKmer.qInfo.sequenceID)
+            return a.qKmer.qInfo.sequenceID < b.qKmer.qInfo.sequenceID;
+        
+        if (a.tKmer.tInfo.speciesId != b.tKmer.tInfo.speciesId)
+            return a.tKmer.tInfo.speciesId < b.tKmer.tInfo.speciesId;
+
+        if (a.qKmer.qInfo.frame != b.qKmer.qInfo.frame)
+            return a.qKmer.qInfo.frame < b.qKmer.qInfo.frame;
+
+        if (a.qKmer.qInfo.pos != b.qKmer.qInfo.pos)
+            return a.qKmer.qInfo.pos < b.qKmer.qInfo.pos;
+
+        if (a.tKmer.tInfo.taxId != b.tKmer.tInfo.taxId)
+            return a.tKmer.tInfo.taxId < b.tKmer.tInfo.taxId;
+
+        if (a.qKmer.value != b.qKmer.value)
+            return a.qKmer.value < b.qKmer.value;
+        
+        return a.tKmer.value < b.tKmer.value;
     }
 
-    virtual float getRightPartScore(const int range, float score = 0.0f, int cnt = 0) const {
-        if (cnt == range) {
-            return score;
-        }
-        int currentHamming = GET_2_BITS(rightEndHamming >> (cnt * 2));
-        if (currentHamming == 0) {
-            score += 3.0f;
-        } else {
-            score += 2.0f - 0.5f * currentHamming;
-        }
-        return getRightPartScore(range, score, cnt + 1);    
-    }
-
-    virtual float getLeftPartScore(const int range, float score = 0.0f, int cnt = 0) const {
-        if (cnt == range) {
-            return score;
-        }
-        int currentHamming = GET_2_BITS(rightEndHamming >> (14 - cnt * 2));
-        if (currentHamming == 0) {
-            score += 3.0f;
-        } else {
-            score += 2.0f - 0.5f * currentHamming;
-        }
-        return getLeftPartScore(range, score, cnt + 1);    
-    }
-
-    virtual int getRightPartHammingDist(const int range) const {
-        int sum = 0;
-        for (int i = 0; i < range; i++) {
-            sum += GET_2_BITS(rightEndHamming >> (i * 2));
-        }
-        return sum;
-    }
-
-    virtual int getLeftPartHammingDist(const int range) const {
-        int sum = 0;
-        for (int i = 0; i < range; i++) {
-            sum += GET_2_BITS(rightEndHamming >> (14 - i * 2));
-        }
-        return sum;
-    }
 };
+
 
 struct Match_AA {
     uint32_t queryId;
@@ -118,5 +75,98 @@ struct MatchBlock {
     uint32_t id;
 };
 
+
+struct MatchScore {
+    float idScore;
+    float subScore;
+    float logE;
+    double logP; // 2 * sigma(logPi)
+
+    MatchScore() : idScore(0.0f), subScore(0.0f), logE(0.0f), logP(0.0) {}
+    MatchScore(float idScore, float subScore) : idScore(idScore), subScore(subScore), logE(0.0f), logP(0.0) {}
+    MatchScore(float idScore, float subScore, double logP) : idScore(idScore), subScore(subScore), logE(0.0f), logP(logP) {}
+
+    void print() const {
+        std::cout << "ID Score: " << idScore << ", Substitution Score: " << subScore << ", logE: " << logE << ", logP: " << logP << std::endl;
+    }
+
+    bool isLargerThan(const MatchScore & other, int mode) const {
+        if (mode == 0) {
+            return idScore > other.idScore;
+        } else if (mode == 1) {
+            return subScore > other.subScore;
+        } else {
+            return (idScore + subScore) > (other.idScore + other.subScore);
+        }
+    }
+
+    MatchScore operator*(float factor) const {
+        return MatchScore(idScore * factor, subScore * factor);
+    }
+
+    MatchScore & operator+=(const MatchScore & other) {
+        idScore += other.idScore;
+        subScore += other.subScore;
+        logP += other.logP;
+        return *this;
+    }
+
+    MatchScore & operator-=(const MatchScore & other) {
+        idScore -= other.idScore;
+        subScore -= other.subScore;
+        logP -= other.logP;
+        return *this;
+    }
+
+};
+
+inline MatchScore operator+(MatchScore lhs, const MatchScore& rhs) {
+    lhs += rhs;
+    return lhs;
+}
+
+struct MatchPath {
+    MatchPath() : start(0), end(0), score(), hammingDist(0), depth(0), startMatch(nullptr), endMatch(nullptr), historyMask(0), firstHistoryMask(0) {}
+
+    MatchPath(int start, int end, MatchScore score, int hammingDist, int depth, const Match * startMatch, const Match * endMatch) :
+         start(start), end(end), score(score), hammingDist(hammingDist), depth(depth), startMatch(startMatch), endMatch(endMatch), historyMask(0), firstHistoryMask(0) {}
+
+    
+    MatchPath(const Match * startMath, int windowSizeNt) 
+        : start(startMath->qKmer.qInfo.pos),
+          end(startMath->qKmer.qInfo.pos + windowSizeNt - 1), // TODO: make it dynamic
+          score(),
+          hammingDist(0),
+          depth(1),
+          startMatch(startMath),
+          endMatch(startMath),
+          historyMask(0),
+          firstHistoryMask(0) {}
+    
+    MatchPath(const Match * startMatch, MatchScore score, int hammingDist, int kmerLenNt) 
+        : start(startMatch->qKmer.qInfo.pos),
+          end(startMatch->qKmer.qInfo.pos + kmerLenNt - 1), // TODO: make it dynamic
+          score(score),
+          hammingDist(hammingDist),
+          depth(1),
+          startMatch(startMatch),
+          endMatch(startMatch),
+          historyMask(0),
+          firstHistoryMask(0) {}
+    
+    int start;                // query coordinate
+    int end;                  // query coordinate
+    MatchScore score;
+    int hammingDist;
+    int depth;
+    const Match * startMatch;
+    const Match * endMatch;
+    uint32_t historyMask;      // For spaced pattern with history
+    uint32_t firstHistoryMask; // For spaced pattern with history
+
+    void printMatchPath() {
+        std::cout << start << " " << end << " " << score.idScore << " " << score.subScore << " " << hammingDist << " " << depth << std::endl;
+    }
+};
 
 #endif //ADCLASSIFIER2_MATCH_H

@@ -1,72 +1,45 @@
 #ifndef METABULI_TAXONOMER_H
 #define METABULI_TAXONOMER_H
-#include "TaxonomyWrapper.h"
-#include "LocalParameters.h"
-#include "Match.h"
-#include "common.h"
-#include "BitManipulateMacros.h"
+
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
 #include <cstdint>
 
+#include "TaxonomyWrapper.h"
+#include "LocalParameters.h"
+#include "Match.h"
+#include "common.h"
+#include "BitManipulateMacros.h"
+#include "MetamerPattern.h"
+#include "EvalueComputation.h"
+
 using namespace std;
 
 struct TaxonScore {
     TaxID taxId;
-    float score;
+    MatchScore score;
     int hammingDist;
     bool LCA;
-    TaxonScore(TaxID taxId, float score, int hammingDist, bool LCA) :
+    TaxonScore(TaxID taxId, MatchScore score, int hammingDist, bool LCA) :
             taxId(taxId), score(score), hammingDist(hammingDist), LCA(LCA) {}
-    TaxonScore() : taxId(0), score(0.0f), hammingDist(0), LCA(false) {}
-};
-
-struct depthScore {
-    depthScore(size_t depth, float score, int hammingDist, const Match * endMatch) : 
-        depth(depth), score(score), hammingDist(hammingDist), endMatch(endMatch) {}
-    depthScore() : depth(0), score(0.f), hammingDist(0), endMatch(nullptr) {}
-    size_t depth;
-    float score;
-    int hammingDist;
-    const Match * endMatch;
-};
-
-struct MatchPath {
-    MatchPath(int start, int end, float score, int hammingDist, int depth, const Match * startMatch, const Match * endMatch) :
-         start(start), end(end), score(score), hammingDist(hammingDist), depth(depth), startMatch(startMatch), endMatch(endMatch) {}
-    MatchPath() : start(0), end(0), score(0.f), hammingDist(0), depth(0), startMatch(nullptr), endMatch(nullptr) {}
-    MatchPath(const Match * startMatch) 
-        : start(startMatch->qInfo.pos),
-          end(startMatch->qInfo.pos + 23),
-          score(startMatch->getScore()),
-          hammingDist(startMatch->hamming),
-          depth(1),
-          startMatch(startMatch),
-          endMatch(startMatch) {}
-    
-    int start;                // query coordinate
-    int end;                  // query coordinate
-    float score;
-    int hammingDist;
-    int depth;
-    const Match * startMatch;
-    const Match * endMatch;
-
-    void printMatchPath() {
-        std::cout << start << " " << end << " " << score << " " << hammingDist << " " << depth << std::endl;
-    }
+    TaxonScore() : taxId(0), score(), hammingDist(0), LCA(false) {}
 };
 
 class Taxonomer {
 private:
     const LocalParameters & par;
     TaxonomyWrapper * taxonomy;
-    int kmerFormat;
+    const MetamerPattern *metamerPattern = nullptr;
+    SubstitutionMatrix * substitutionMatrix = nullptr;
+    EvalueComputation *evaluer = nullptr;
 
     // spaced k-mer
     int unmaskedPos[9];
     int spaceNum;
+    int kmerLen;
+    int windowSize;
+    uint32_t windowMask;
 
     // Parameters from user
     int maxGap;
@@ -84,8 +57,11 @@ private:
     uint32_t lastCodonMask;
     int maxCodonShift;
     int dnaShift;
-    int smerLength;
+    // int smerLength;
     int minSubSpeciesMatch;
+    size_t dbSize;
+    double logMaxEValue;
+    bool useEvalueFilter = false;
 
     // vector<const Match *> speciesMatches;
 
@@ -116,9 +92,6 @@ private:
 
     void ensureArraySize(size_t newSize);
 
-    float calScoreIncrement(uint16_t hammings, int shift);
-    int calHammingDistIncrement(uint16_t hammings, int shift);
-
     void printSpeciesMatches (
        const Match *matchList,
        const std::pair<size_t, size_t> & bestSpeciesRange
@@ -131,49 +104,64 @@ private:
         size_t offset,
         Query & query);
 
-    float combineMatchPaths(
+    void getMatchPaths(
+        const Match * matchList,
+        size_t matchNum,
+        vector<MatchPath> & matchPaths,
+        TaxID speciesId);
+
+    void getMatchPaths2(
+        const Match * matchList,
+        size_t matchNum,
+        vector<MatchPath> & matchPaths,
+        TaxID speciesId); 
+
+    void getMatchPaths3(
+        const Match * matchList,
+        size_t matchNum,
+        vector<MatchPath> & matchPaths,
+        TaxID speciesId); 
+
+    MatchPath makeMatchPath(
+        const Match * match
+    );
+
+    void makeMatchPath(
+        const Match * match,
+        size_t index
+    );
+
+    MatchScore combineMatchPaths(
         vector<MatchPath> & matchPaths,
         size_t matchPathStart,
         vector<MatchPath> & combMatchPaths,
         size_t combMatchPathStart,
-        int readLength);
+        int queryLength);
+        
     bool isMatchPathOverlapped(const MatchPath & matchPath1, const MatchPath & matchPath2);
     void trimMatchPath(MatchPath & path1, const MatchPath & path2, int overlapLength);
+    void trimMatchPath2(MatchPath & path1, const MatchPath & path2, int overlapLength);
+    void sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i);
 
 public:
-    Taxonomer(const LocalParameters & par, TaxonomyWrapper * taxonomy, int kmerFormat);
-    ~Taxonomer();
+    Taxonomer(
+        const LocalParameters & par, 
+        TaxonomyWrapper * taxonomy, 
+        const MetamerPattern *metamerPattern);
 
-    void assignTaxonomy(const Match *matchList,
-                        size_t numOfMatches,
-                        std::vector<Query> & queryList,
-                        const LocalParameters &par);
+    ~Taxonomer();
 
     void chooseBestTaxon(uint32_t currentQuery,
                          size_t offset,
                          size_t end,
                          const Match *matchList,
                          vector<Query> & queryList,
-                         const LocalParameters &par);
-
-    void getMatchPaths(const Match * matchList,
-                       size_t start,
-                       size_t end,
-                       vector<MatchPath> & matchPaths,
-                       TaxID speciesId);                                    
+                         const LocalParameters &par);      
 
     void filterRedundantMatches(const Match *matchList,
                                 const std::pair<size_t, size_t> & bestSpeciesRange,
                                 unordered_map<TaxID, unsigned int> & taxCnt,
                                 int queryLength);
-
-    bool isConsecutive(const Match * match1, const Match * match2);
-
-    bool isConsecutive(const Match * match1, const Match * match2, int shift);
-
-    bool isConsecutive2(const Match * match1, const Match * match2);
-
-    bool isConsecutive2(const Match * match1, const Match * match2, int shift);
 
     TaxID lowerRankClassification(const unordered_map<TaxID, unsigned int> & taxCnt, TaxID speciesID, int queryLength);
 
@@ -186,14 +174,6 @@ public:
     // Getters
     unordered_map<TaxID, unsigned int> & getTaxCounts() { return taxCounts; }
 
-
-    bool compareMatchPaths(const MatchPath& a, const MatchPath& b) const {
-        if (a.score != b.score)
-            return a.score < b.score;
-        if (a.hammingDist != b.hammingDist)
-            return a.hammingDist < b.hammingDist;
-        return a.start < b.start;
-    }
 };
 
 

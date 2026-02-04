@@ -31,7 +31,7 @@ public:
     }
 
     template<typename T>
-    static T getQueryKmerNumber(T queryLength, int spaceNum, int kLength = 8);
+    static T getQueryKmerNumber(T queryLength, int kLength, bool trimming);
 
     template<typename T>
     static T getMaxCoveredLength(T queryLength);
@@ -43,8 +43,20 @@ public:
 
 
 template <typename T>
-T LocalUtil::getQueryKmerNumber(T queryLength, int spaceNum, int kLength) {
-    return (getMaxCoveredLength(queryLength) / 3 - kLength - spaceNum + 1) * 6;
+T LocalUtil::getQueryKmerNumber(T queryLength, int k, bool trimming) {
+    if (trimming) {
+        T coveredAALen = getMaxCoveredLength(queryLength) / 3;
+        if (coveredAALen < k) {
+            return 0;
+        }
+        return (coveredAALen - k + 1) * 6;
+    }
+
+    T dnaWindow = 3 * k;
+    if (queryLength < dnaWindow) {
+        return 0;
+    }
+    return 2 * (queryLength - (3 * k) + 1);
 }
 
 template<typename T>

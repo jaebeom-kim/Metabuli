@@ -97,7 +97,7 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
         if (tokens[0] == "Reduced_alphabet") {
           par.reducedAA = stoi(tokens[1]);
         } else if (tokens[0] == "Spaced_kmer_mask") {
-          // par.spaceMask = tokens[1];
+          par.spaceMask = tokens[1];
         } else if (tokens[0] == "Accession_level") {
           if (tokens[1] == "0" && par.accessionLevel == 1){
             par.accessionLevel = 0;
@@ -119,38 +119,21 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
             cout << "Syncmer is enabled because the DB was created with syncmer." << endl;
             par.syncmer = 1;
           }     
-        } else if (tokens[0] == "S-mer_len") {
+        } else if (tokens[0] == "Syncmer_len") {
           cout << "s-mer length is set to " << tokens[1] << " according to the DB." << endl;
           par.smerLen = stoi(tokens[1]);
         } else if (tokens[0] == "Kmer_format") {
           par.kmerFormat = stoi(tokens[1]);
+        } else if (tokens[0] == "Total_seq_length") {
+          par.dbTotalLength = std::stoul(tokens[1]);
+        } else if (eachLine == "===BEGIN_CUSTOM_METAMER===") {
+          par.customMetamer = dbDir + "/db.parameters";
         }
       }
       return 1;
     }
   }
   return 0;
-}
-
-bool haveRedundancyInfo(const std::string & dbDir) {
-  bool res = true;
-  if (fileExist(dbDir + "/db.parameters")) {
-    // open db.parameters
-    std::ifstream dbParametersFile;
-    dbParametersFile.open(dbDir + "/db.parameters");
-    std::string eachLine;
-    if (dbParametersFile.is_open()) {
-      while (getline(dbParametersFile, eachLine)) {
-        std::vector<std::string> tokens = Util::split(eachLine, "\t");
-        if (tokens[0] == "Skip_redundancy" && tokens[1] == "1") {
-          return false;
-        }
-      }
-    }
-  } else {
-    res = true;
-  }
-  return res;
 }
 
 int searchAccession2TaxID(const std::string &name,
@@ -322,4 +305,54 @@ void fillAcc2TaxIdMap(unordered_map<string, TaxID> & acc2taxid,
       cout << "munmap failed" << endl;
   }                                        
   cout << "Done" << endl;
+}
+
+
+
+int hammingDist(const std::string & codon1, const std::string & codon2) {
+    int res = 0;
+    for (size_t i = 0; i < codon1.size(); i++) {
+        if (codon1[i] != codon2[i]) {
+            res++;
+        }
+    }
+    return res;
+}
+
+size_t readDbSize(const std::string& dbDir) {
+    const std::string path = dbDir + "/db.parameters";
+    if (!fileExist(path)) return 0;
+
+    std::ifstream file(path);
+    std::string line;
+
+    while (std::getline(file, line)) {
+        auto tokens = Util::split(line, "\t");
+        if (tokens.size() > 1 && tokens[0] == "Total_seq_length")
+            return std::stoull(tokens[1]);
+    }
+    return 0;
+}
+
+
+uint32_t parseMask(const char* s) {
+    uint32_t v = 0;
+    while (*s) {
+        v = (v << 1) | (*s++ == '1');
+    }
+    return v;
+}
+
+uint32_t safe_right_shift_32(uint32_t value, unsigned int shift) {
+    if (shift >= 32) {
+        return 0;
+    }
+    return value >> shift;
+}
+
+uint32_t safe_left_shift_32(uint32_t value, unsigned int shift) {
+    if (shift >= 32) {
+        return 0;
+    }
+    return value << shift;
 }

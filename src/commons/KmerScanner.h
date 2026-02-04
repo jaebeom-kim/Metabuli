@@ -7,6 +7,8 @@
 #include "Kmer.h"
 #include "common.h"
 
+class MultiCodePattern;
+class GeneticCode;
 
 class KmerScanner {
 protected:
@@ -46,21 +48,61 @@ public:
     virtual Kmer next() = 0; 
 };
 
+
+class MultiCodeScanner : public KmerScanner {
+protected:
+    const MultiCodePattern * pattern;
+    uint64_t dnaMask;
+    uint64_t aaMask;
+    int aaLen;
+    uint64_t totalDNABits = 0;
+    uint64_t totalAABits = 0;
+
+    // Value per code
+    std::vector<uint64_t> dnaPartList;
+    std::vector<uint64_t> aaPartList;
+    std::vector<int> codonBitList;
+    std::vector<int> aaBitList;
+
+public:
+    MultiCodeScanner(const MultiCodePattern * pattern);
+
+    virtual ~MultiCodeScanner() {
+        // std::cout << "MultiCodeScanner destroyed." << std::endl;
+    }
+
+    void initScanner(const char * seq, size_t seqStart, size_t seqEnd, bool isForward = true) override ;
+    Kmer next() override ;
+};
+
+
 class MetamerScanner : public KmerScanner {
 protected:
     // Internal values
     const GeneticCode &geneticCode;
-    uint64_t dnaMask;
+    uint64_t dnaMask;        // Used to extract DNA part
+    uint64_t aaMask;         // Used to extract AA part
+    uint64_t codonMask;      // Used to extract one codon
+    uint64_t aaMaskPerCodon; // Used to extract one amino acid
 
     int aaLen;
     uint64_t dnaPart;
     uint64_t aaPart;
+    int bitsPerCodon;
+    int bitsPerAA;
+    int dnaBits;
 
 public:
-    MetamerScanner(const GeneticCode &geneticCode) 
-        : KmerScanner(8), geneticCode(geneticCode) {
+    MetamerScanner(const GeneticCode &geneticCode, int k) 
+        : KmerScanner(k), geneticCode(geneticCode) {
         // std::cout << "KmerScanner initialized." << std::endl;
-        this->dnaMask = (1ULL << 24) - 1;    
+        this->dnaMask = (1ULL << (geneticCode.bitPerCodon * k)) - 1;
+        this->aaMask = (1ULL << (geneticCode.bitPerAA * k)) - 1;
+        this->bitsPerCodon = geneticCode.bitPerCodon;
+        this->codonMask = (1ULL << geneticCode.bitPerCodon) - 1;
+        this->bitsPerAA = geneticCode.bitPerAA;
+        this->aaMaskPerCodon = (1ULL << geneticCode.bitPerAA) - 1;
+        this->dnaBits = geneticCode.bitPerCodon * k;    
     }
 
     virtual ~MetamerScanner() {
@@ -79,51 +121,47 @@ public:
     }
 
 
-    Kmer next() override {
-        int aa = 0;
-        int codon = 0;
-        while (posStart <= aaLen - 8) {
-            bool sawN = false;
-            loadedCharCnt -= (loadedCharCnt == 8);
-            while (loadedCharCnt < 8) {
-                int ci;
-                if (isForward) {
-                    ci = seqStart + (posStart + loadedCharCnt) * 3;
-                    aa = geneticCode.getAA(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
-                    codon = geneticCode.getCodon(atcg[seq[ci]], atcg[seq[ci + 1]], atcg[seq[ci + 2]]);
-                } else {
-                    ci = seqEnd - (posStart + loadedCharCnt) * 3;
-                    aa = geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);          
-                    codon = geneticCode.getCodon(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);
-                }
-                if (aa < 0) { sawN = true; break; }
-                dnaPart = (dnaPart << 3) | (uint64_t)codon;
-                aaPart = (aaPart << 5) | (uint64_t)aa;
-                loadedCharCnt++;
-            }
-            if (sawN) {
-                posStart += loadedCharCnt + 1;
-                dnaPart = aaPart = 0;
-                loadedCharCnt = 0;
-                continue;
-            }
-            if (isForward) {
-                return { (aaPart << 24) | (dnaPart & dnaMask), seqStart + (posStart++) * 3 };
-            } else {
-                return { (aaPart << 24) | (dnaPart & dnaMask), seqEnd - ((posStart++) + 8) * 3 + 1 };
-            }
-        }
-        return { UINT64_MAX, 0 }; // No more kmers found
-    }
+    Kmer next() override;
 };
 
+class SpacedMetamerScanner : public MetamerScanner {
+protected:
+    uint32_t spaceMask;
+    int spaceNum;
+    int windowSize;
+
+    std::vector<int8_t> dnaShifts;
+    std::vector<int8_t> aaShifts;
+
+public:
+    SpacedMetamerScanner(const GeneticCode &gc, int k, uint32_t spaceMask) 
+        : MetamerScanner(gc, k), spaceMask(spaceMask) 
+    {
+        int clz = __builtin_clz(spaceMask);
+        windowSize = 32 - clz;
+        spaceNum = windowSize - k;
+
+        aaShifts.assign(windowSize, -1);
+        dnaShifts.assign(windowSize, -1);
+        int packedIdx = 0;
+        for (int i = 0; i < windowSize; ++i) {
+            if (spaceMask & (1U << i)) {
+                aaShifts[i]  = packedIdx * bitsPerAA;
+                dnaShifts[i] = packedIdx * bitsPerCodon;
+                packedIdx++;
+            }
+        }
+    }
+
+    Kmer next() override;
+};
 // OldKmerScanner is made to support searching old-format databases
 // Implementation is very efficient and puzzling, but it works
 class OldMetamerScanner : public MetamerScanner {
     private: 
         std::deque<size_t> dq;
     public:
-        OldMetamerScanner(const GeneticCode &geneticCode) : MetamerScanner(geneticCode) {}
+        OldMetamerScanner(const GeneticCode &geneticCode) : MetamerScanner(geneticCode, 8) {}
 
         ~OldMetamerScanner() {
             // std::cout << "OldKmerScanner destroyed." << std::endl;
@@ -189,12 +227,14 @@ protected:
     
     int aaLen;
     uint64_t aaPart;
+    int bitsPerAA;
 
 public:
     KmerScanner_dna2aa(const GeneticCode &geneticCode, int kmerSize) 
         : KmerScanner(kmerSize), geneticCode(geneticCode) 
     {
-        this->mask = (1ULL << (5 * kmerSize)) - 1;
+        this->bitsPerAA = geneticCode.bitPerAA;
+        this->mask = (1ULL << (bitsPerAA * kmerSize)) - 1;
         if (kmerSize > 12 || kmerSize < 1) {
             std::cerr << "Error: k must be between 1 and 12, inclusive." << std::endl;
             exit(EXIT_FAILURE);
@@ -236,7 +276,7 @@ public:
                     aa = geneticCode.getAA(iRCT[atcg[seq[ci]]], iRCT[atcg[seq[ci - 1]]], iRCT[atcg[seq[ci - 2]]]);          
                 }
                 if (aa < 0) { sawN = true; break; }
-                aaPart = (aaPart << 5) | (uint64_t)aa;
+                aaPart = (aaPart << bitsPerAA) | (uint64_t)aa;
                 loadedCharCnt++;
             }
             if (sawN) {
@@ -328,7 +368,7 @@ public:
 
     virtual Kmer next() {
         int aa = 0;
-        while (posStart <= seqLen - kmerSize) {
+        while ((uint32_t) posStart <= seqLen - kmerSize) {
             bool sawN = false;
             loadedCharCnt -= (loadedCharCnt == kmerSize);
             while (loadedCharCnt < kmerSize) {

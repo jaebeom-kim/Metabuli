@@ -8,22 +8,38 @@
 #include <atomic>
 #include <cstdint>
 #include "GeneticCode.h"
+#include "MetamerPattern.h"
 
 class KmerExtractor {
 private:
     const LocalParameters &par;
-    const GeneticCode &geneticCode;
-    KmerScanner ** kmerScanners;
+    const GeneticCode * geneticCode;
+    const MetamerPattern * metamerPattern;
+    std::vector<std::unique_ptr<KmerScanner>> kmerScanners;
     
     // Parameters
     int spaceNum;
     int maskMode;
     float maskProb;
     int kmerLen;
+    int windowSize;
 
     // For masking reads
     ProbabilityMatrix * probMatrix;
     BaseMatrix * subMat;
+
+    // It converts forward frame to the reverse frame
+    const int frameCoversion[3][3] = { //[seq%3][frame%3]
+        {3, 5, 4},  // n = 0
+        {4, 3, 5},  // n = 1
+        {5, 4, 3}   // n = 2
+    };
+
+    static constexpr int MAX_N = 32;
+    size_t binom[MAX_N + 1][MAX_N + 1];
+    
+
+
 
     // Extract query k-mer
     void fillQueryKmerBufferParallel(KSeqWrapper* kseq1,
@@ -65,17 +81,51 @@ private:
         const char *seq,
         int seqLen, 
         Buffer<Kmer> &kmerBuffer, 
-        size_t &posToWrite, 
+        size_t & posToWrite, 
         uint32_t seqID, 
         uint32_t offset = 0);
-                                      
+
+    void generatePDMNeighborKmers(
+        const char *seq,
+        size_t seqStart, 
+        int seqLen,
+        Buffer<Kmer> &kmerBuffer,
+        int threadID,
+        size_t & posToWrite,
+        int frame,
+        uint32_t seqID, 
+        uint32_t offset);
+
+    int getKmerCount(
+        const char *seq,
+        int seqLen);    
+    
+        int getPDMKmerCount(
+    const char *seq,
+    int seqLen);
+
+    inline size_t countMutationComb(size_t nt, size_t na, int maxDamage) {
+        size_t count = 0;
+        size_t N = nt + na;
+
+        for (int d = 1; d <= maxDamage; ++d) {
+            if (d > N) break;
+            count += binom[N][d];
+        }
+        return count;
+    }
 public:
     explicit KmerExtractor(
         const LocalParameters & par,
-        const GeneticCode &geneticCode,
+        const GeneticCode *geneticCode,
         int kmerFormat);
-    ~KmerExtractor();
 
+    explicit KmerExtractor(
+        const LocalParameters &par,
+        const MetamerPattern * metamerPattern);
+
+    ~KmerExtractor();
+    
     void extractQueryKmers(
         Buffer<Kmer> &kmerBuffer,
         vector<Query> & queryList,
@@ -84,12 +134,32 @@ public:
         KSeqWrapper* kseq1,
         KSeqWrapper* kseq2 = nullptr);
 
+    bool extractQueryKmers(
+        Buffer<Kmer> &kmerBuffer,
+        vector<Query> & queryList,
+        uint64_t & seqCnt,
+        SeqEntry * savedSeq_1,
+        SeqEntry * savedSeq_2,
+        KSeqWrapper* kseq_1,
+        KSeqWrapper* kseq_2 = nullptr);
+
     bool extractQueryKmers_aa2aa(
         Buffer<Kmer> &kmerBuffer,
         std::vector<ProteinQuery> & queryList,
         KSeqWrapper* kseq,
         uint64_t & processedSeqCnt,
         SeqEntry & savedSeq
+    );
+
+    void processSequenceChunk(
+        Buffer<Kmer> &kmerBuffer,
+        size_t & writePos,
+        uint32_t queryOffset,
+        const std::vector<std::string> & reads, 
+        size_t seqNum,
+        char *maskedSeq,
+        size_t & maxReadLength,
+        const std::vector<std::string> * pairedReads = nullptr
     );
 
     void processSequenceChunk_aa2aa(
@@ -130,10 +200,6 @@ public:
         std::unordered_map<std::string, uint32_t> & unirefName2Id,
         uint32_t & seqCnt,
         SeqEntry & savedSeq);
-    
-    size_t countKmers(
-        KSeqWrapper *checker,
-        size_t seqNum);
 };
 
 #endif //METABULI_KMEREXTRACTER_H

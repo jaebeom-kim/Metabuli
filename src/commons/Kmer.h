@@ -1,18 +1,21 @@
 #ifndef ADKMER3_KMER_H
 #define ADKMER3_KMER_H
 #include <iostream>
-#include "NcbiTaxonomy.h"
-#include "GeneticCode.h"
 #include <cstdint>
 #include <bitset>
 
-
+#include "NcbiTaxonomy.h"
+#include "GeneticCode.h"
 
 struct QueryKmerInfo {
-    explicit QueryKmerInfo(uint32_t seqID = 0, uint32_t pos = 0, uint8_t frame = 0 ) : sequenceID(seqID), pos(pos), frame(frame) {}
-    uint64_t pos : 32;
-    uint64_t sequenceID : 29;
-    uint64_t frame : 3; // 0, 1, 2 are forward, and 3, 4, 5 are reverse 1 byte
+    QueryKmerInfo(uint32_t sequenceID, uint32_t pos, uint8_t frame)
+        : pos(pos), sequenceID(sequenceID), frame(frame) {}
+    QueryKmerInfo() = default;
+    struct {
+        uint64_t pos        : 32; // 32 bits
+        uint64_t sequenceID : 29; // 29 bits
+        uint64_t frame      : 3;  // 3 bits
+    };
 }; // 8 byte
 
 struct TargetKmerInfo {
@@ -49,28 +52,59 @@ struct Kmer {
         return value == 0 && id == 0;
     }
 
-    void printAA(const GeneticCode & code) const {
-        uint64_t aaPart = value >> 24;
-        for (int i = 0; i < 8; ++i) {
-            int aa = (aaPart >> (35 - 5 * i)) & 0x1F;
-            std::cout << code.aminoacids[aa];
-        }
-    }
+    // void printAA(const GeneticCode * code) const {
+    //     uint64_t aaPart = value >> 24;
+    //     for (int i = 0; i < 8; ++i) {
+    //         int aa = (aaPart >> (35 - 5 * i)) & 0x1F;
+    //         std::cout << code->aminoacids[aa];
+    //     }
+    // }
 
-    void printAA(const GeneticCode & code, int k) const {
-        for (int i = 0; i < k; ++i) {
-            int aa = (value >> (((k - 1) * 5) - 5 * i)) & 0x1F;
-            std::cout << code.aminoacids[aa];
-        }
-    }
+    // void printAA(const GeneticCode * code, int k) const {
+    //     for (int i = 0; i < k; ++i) {
+    //         int aa = (value >> (((k - 1) * 5) - 5 * i)) & 0x1F;
+    //         std::cout << code->aminoacids[aa];
+    //     }
+    // }
+        
+    // void printAA(const MetamerPattern * pattern) const {
+    //     uint64_t aaPart = value >> (pattern->totalDNABits);
+    //     int k = pattern->kmerLen;
+    //     int aaBitSum = 0;
+    //     for (int i = 0; i < k; ++i) {
+    //         const int * currAABit = &pattern->aaBitList[pattern->codePattern[i]];
+    //         aaBitSum += *currAABit;
+    //         int aa = (aaPart >> (pattern->totalAABits - aaBitSum)) & ((1 << *currAABit) - 1);
+    //         std::cout << pattern->geneticCodes[pattern->codePattern[i]]->aminoacids[aa];
+    //     }
+    // }
 
-    void printDNA(const GeneticCode & code) const {
+    // void printDNA(const MetamerPattern * pattern) const {
+    //     uint64_t dnaPart = value & pattern->dnaMask;
+    //     uint64_t aaPart = value >> (pattern->totalDNABits);
+    //     int k = pattern->codePattern.size();
+    //     int aaBitSum = 0;
+    //     int dnaBitSum = 0;
+    //     for (int i = 0; i < k; ++i) {
+    //         const int * currAABit = &pattern->aaBitList[pattern->codePattern[i]];
+    //         aaBitSum += *currAABit;
+    //         int aa = (aaPart >> (pattern->totalAABits - aaBitSum)) & ((1 << *currAABit) - 1);
+            
+    //         const int * currCodonBit = &pattern->codonBitList[pattern->codePattern[i]];
+    //         dnaBitSum += *currCodonBit;
+    //         int codon = (dnaPart >> (pattern->totalDNABits - dnaBitSum)) & ((1 << *currCodonBit) - 1);
+
+    //         std::cout << pattern->geneticCodes[pattern->codePattern[i]]->aa2codon[aa][codon];
+    //     }
+    // }
+
+    void printDNA(const GeneticCode * code) const {
         uint64_t dnaPart = value & 0xFFFFFF;
         uint64_t aaPart = value >> 24;
         for (int i = 0; i < 8; ++i) {
             int aa = (aaPart >> (35 - 5 * i)) & 0x1F;
             int codon = (dnaPart >> (21 - 3 * i)) & 0x7;
-            std::cout << code.aa2codon[aa][codon];
+            std::cout << code->aa2codon[aa][codon];
         }
     }
 
@@ -90,7 +124,16 @@ struct Kmer {
         if (a.value != b.value) {
             return a.value < b.value;
         }
-        return a.qInfo.sequenceID < b.qInfo.sequenceID;
+
+        if (a.qInfo.sequenceID != b.qInfo.sequenceID) {
+            return a.qInfo.sequenceID < b.qInfo.sequenceID;
+        }
+
+        if (a.qInfo.frame != b.qInfo.frame) {
+            return a.qInfo.frame < b.qInfo.frame;
+        }
+        
+        return a.qInfo.pos < b.qInfo.pos;
     }
 
     static bool compareQKmerByIdAndPos(const Kmer &a, const Kmer &b) {
@@ -107,6 +150,7 @@ struct Kmer {
         return a.id < b.id;
     }
 };
+
 
 struct DiffIdxSplit{
     DiffIdxSplit(uint64_t ADkmer, size_t diffIdxOffset, size_t infoIdxOffset) : ADkmer(ADkmer), diffIdxOffset(diffIdxOffset), infoIdxOffset(infoIdxOffset) { }

@@ -8,11 +8,13 @@
 #include "validateDatabase.h"
 
 void setClassifyDefaults(LocalParameters & par){
+    par.maxEValue = 1000;
+    par.spaceMask = "11111111";
     par.syncmer = 0;
     par.smerLen = 5;
     par.kmerFormat = 1;
     par.em = false;
-    // par.maxShift = 1;
+    par.maxShift = 1;
     par.skipRedundancy = 0;
     par.reducedAA = 0;
     par.validateInput = 0;
@@ -34,6 +36,7 @@ void setClassifyDefaults(LocalParameters & par){
     par.accessionLevel = 0;
     par.tieRatio = 0.95;
     par.printLineage = 0;
+    par.pdmKmer = 0;
 }
 
 int classify(int argc, const char **argv, const Command& command) {
@@ -194,7 +197,8 @@ int classify(int argc, const char **argv, const Command& command) {
 #endif
 
     Classifier * classifier = new Classifier(par);
-    classifier->startClassify(par);
+    // classifier->startClassify(par);
+    classifier->classifyReads();
     delete classifier;
     return 0;
 }

@@ -5,7 +5,6 @@
 extern int build(int argc, const char **argv, const Command& command);
 extern int updateDB(int argc, const char **argv, const Command& command);
 extern int classify(int argc, const char **argv, const Command& command);
-extern int filter(int argc, const char **argv, const Command& command);
 extern int grade(int argc, const char **argv, const Command& command);
 extern int gradeByCladeSize(int argc, const char **argv, const Command& command);
 extern int seqHeader2TaxId(int argc, const char **argv, const Command& command);
@@ -35,5 +34,6 @@ extern int create_unique_kmer_list(int argc, const char **argv, const Command &c
 extern int create_unirefdb(int argc, const char **argv, const Command &command);
 extern int create_uniref_tree(int argc, const char **argv, const Command &command);
 extern int assign_uniref(int argc, const char **argv, const Command &command);
+extern int inspect_db(int argc, const char **argv, const Command &command);
 
 #endif //ADCLASSIFIER2_LOCALCOMMANDDECLARATIONS_H

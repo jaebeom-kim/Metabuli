@@ -2,325 +2,589 @@
 #define METABULI_GENETIC_CODE_H
 
 #include <iostream>
+#include <vector>
+#include <unordered_map>
+#include "common.h"
+
 
 #define nuc2int(x) (x & 14u)>>1u
+
 class GeneticCode {
     public:
         const std::string atcg = "................................................................"
                                  ".AGCG..GT..G.CN...ACTG.A.T.......agcg..gt..g.cn...actg.a.t......"
                                  "................................................................"
                                  "................................................................";
-
         const std::string iRCT = "................................................................"
                                  ".TVGH..CD..M.KN...YSAABW.R.......tvgh..cd..m.kn...ysaabw.r......"
                                  "................................................................"
                                  "................................................................";
-        int nuc2aa[8][8][8];
-        int nuc2num[8][8][8];
+
+        int codon2AA[8][8][8];
+        int codon2codonIdx[8][8][8];
         std::string aminoacids;
         std::vector<std::vector<std::string>> aa2codon;
+        int maxCodonPerAA;
+        int alphabetSize;
+        int bitPerAA;
+        int bitPerCodon;
+        uint8_t * hammingLookup;
+        explicit GeneticCode() {
+
+        }
+        virtual void initialize() {
+
+        }
+        virtual ~GeneticCode() {
+            delete[] hammingLookup;
+        }
 
         int getAA(const char nuc1, const char nuc2, const char nuc3) const {
-            return nuc2aa[nuc2int(nuc1)][nuc2int(nuc2)][nuc2int(nuc3)];
+            return codon2AA[nuc2int(nuc1)][nuc2int(nuc2)][nuc2int(nuc3)];
         }
 
         int getCodon(const char nuc1, const char nuc2, const char nuc3) const {
-            return nuc2num[nuc2int(nuc1)][nuc2int(nuc2)][nuc2int(nuc3)];
+            return codon2codonIdx[nuc2int(nuc1)][nuc2int(nuc2)][nuc2int(nuc3)];
         }
-                
+        // virtual int getAA(const char nuc1, const char nuc2, const char nuc3) {
 
-        explicit GeneticCode(bool reducedAA) {
-            if (!reducedAA) {
-                aminoacids = "ARNDCQEGHILKMFPSTWYVX";
-                // A
-                nuc2aa[3][1][0] = 0;
-                nuc2aa[3][1][1] = 0;
-                nuc2aa[3][1][2] = 0; 
-                nuc2aa[3][1][3] = 0;
-                aa2codon.push_back({"GCA", "GCC", "GCT", "GCG"});
-                
-                // R
-                nuc2aa[1][3][0] = 1;
-                nuc2aa[1][3][1] = 1;
-                nuc2aa[1][3][2] = 1;
-                nuc2aa[1][3][3] = 1; 
-                nuc2aa[0][3][0] = 1; 
-                nuc2aa[0][3][3] = 1;
-                aa2codon.push_back({"CGA", "CGC", "CGT", "CGG", "AGG", "AGA"});
+        // }
+        // virtual int getCodon(const char nuc1, const char nuc2, const char nuc3) const = 0;
+        virtual uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const = 0;
+        // virtual uint8_t getHammingDist(uint8_t codon1, uint8_t codon2) const = 0;
 
-                // N
-                nuc2aa[0][0][2] = 2;
-                nuc2aa[0][0][1] = 2;
-                aa2codon.push_back({"ERR", "AAC", "AAT"});
+};
 
-                // D
-                nuc2aa[3][0][2] = 3;
-                nuc2aa[3][0][1] = 3;
-                aa2codon.push_back({"ERR", "GAC", "GAT"});
-                
-                // C
-                nuc2aa[2][3][2] = 4;
-                nuc2aa[2][3][1] = 4;
-                aa2codon.push_back({"ERR", "TGC", "TGT"});
-
-                // Q
-                nuc2aa[1][0][0] = 5;
-                nuc2aa[1][0][3] = 5;
-                aa2codon.push_back({"CAA", "ERR", "ERR", "CAG"});
-
-                // E
-                nuc2aa[3][0][0] = 6;
-                nuc2aa[3][0][3] = 6;
-                aa2codon.push_back({"GAA", "ERR", "ERR", "GAG"});
-
-                // G
-                nuc2aa[3][3][0] = 7;
-                nuc2aa[3][3][1] = 7;
-                nuc2aa[3][3][2] = 7;
-                nuc2aa[3][3][3] = 7;
-                aa2codon.push_back({"GGA", "GGC", "GGT", "GGG"});
-
-                // H
-                nuc2aa[1][0][2] = 8;
-                nuc2aa[1][0][1] = 8;
-                aa2codon.push_back({"ERR", "CAC", "CAT"});
-
-                // I
-                nuc2aa[0][2][2] = 9;
-                nuc2aa[0][2][1] = 9;
-                nuc2aa[0][2][0] = 9;
-                aa2codon.push_back({"ATA", "ATC", "ATT"});
-                
-                // L
-                nuc2aa[2][2][0] = 10;
-                nuc2aa[2][2][3] = 10;
-                nuc2aa[1][2][0] = 10;
-                nuc2aa[1][2][1] = 10;
-                nuc2aa[1][2][2] = 10;
-                nuc2aa[1][2][3] = 10;
-                aa2codon.push_back({"CTA", "CTC", "CTT", "CTG", "TTG", "TTA"});
-                
-                // K
-                nuc2aa[0][0][0] = 11; 
-                nuc2aa[0][0][3] = 11;
-                aa2codon.push_back({"AAA", "ERR", "ERR", "AAG"});
-
-                // M
-                nuc2aa[0][2][3] = 12;
-                aa2codon.push_back({"ERR", "ERR", "ERR", "ATG"});
-                
-                // F
-                nuc2aa[2][2][2] = 13;
-                nuc2aa[2][2][1] = 13;
-                aa2codon.push_back({"ERR", "TTC", "TTT"});
-
-                // P
-                nuc2aa[1][1][0] = 14; 
-                nuc2aa[1][1][1] = 14;
-                nuc2aa[1][1][2] = 14;
-                nuc2aa[1][1][3] = 14;
-                aa2codon.push_back({"CCA", "CCC", "CCT", "CCG"});
-
-                // S
-                nuc2aa[2][1][0] = 15;
-                nuc2aa[2][1][1] = 15;
-                nuc2aa[2][1][2] = 15;
-                nuc2aa[2][1][3] = 15;
-                nuc2aa[0][3][2] = 15;
-                nuc2aa[0][3][1] = 15;
-                aa2codon.push_back({"TCA", "TCC", "TCT", "TCG", "ERR", "ERR", "AGT", "AGC"});
-                
-                // T
-                nuc2aa[0][1][0] = 16;
-                nuc2aa[0][1][1] = 16;
-                nuc2aa[0][1][2] = 16;
-                nuc2aa[0][1][3] = 16;
-                aa2codon.push_back({"ACA", "ACC", "ACT", "ACG"});
-
-                // W
-                nuc2aa[2][3][3] = 17;
-                aa2codon.push_back({"ERR", "ERR", "ERR", "TGG"});
-                
-                // Y
-                nuc2aa[2][0][2] = 18;
-                nuc2aa[2][0][1] = 18;
-                aa2codon.push_back({"ERR", "TAC", "TAT"});
-
-                // V
-                nuc2aa[3][2][0] = 19;
-                nuc2aa[3][2][1] = 19;
-                nuc2aa[3][2][2] = 19;
-                nuc2aa[3][2][3] = 19;
-                aa2codon.push_back({"GTA", "GTC", "GTT", "GTG"});
-
-                // Stop
-                nuc2aa[2][0][0] = 20; 
-                nuc2aa[2][3][0] = 20;
-                nuc2aa[2][0][3] = 20;
-                aa2codon.push_back({"TAA", "ERR", "ERR", "TAG", "ERR", "TGA"});
-
-                // triplet code with N's
-                for(int i = 0; i < 8; i++){
-                    for(int j = 0; j < 8; j++){
-                        nuc2aa[7][i][j] = -1;
-                        nuc2aa[i][7][j] = -1;
-                        nuc2aa[i][j][7] = -1;
-                        nuc2num[7][i][j] = -1;
-                        nuc2num[i][7][j] = -1;
-                        nuc2num[i][j][7] = -1;
-                    }
+class CustomGeneticCode : public GeneticCode {
+    public:
+        CustomGeneticCode(std::vector<std::pair<std::string, std::vector<std::string>>> customCodes) : GeneticCode() {
+            alphabetSize = customCodes.size();
+            maxCodonPerAA = 0;
+            for (size_t i = 0; i < customCodes.size(); i++) {
+                if ((int) customCodes[i].second.size() > maxCodonPerAA) {
+                    maxCodonPerAA = customCodes[i].second.size();
                 }
-
-                // For encoding DNA information in k-mer
-                for(int i =0; i < 4 ; i++){
-                    for(int i2 = 0; i2 < 4 ; i2++){
-                        nuc2num[i][i2][0] = 0;
-                        nuc2num[i][i2][1] = 1;
-                        nuc2num[i][i2][2] = 2;
-                        nuc2num[i][i2][3] = 3;
-                    }
-                }
-                // for Arg
-                nuc2num[0][3][3] = 4;
-                nuc2num[0][3][0] = 5;
-                // for Leu
-                nuc2num[2][2][3] = 4;
-                nuc2num[2][2][0] = 5;
-                // for Ser
-                nuc2num[0][3][2] = 6;
-                nuc2num[0][3][1] = 7;
-                // for stop codon
-                nuc2num[2][3][0] = 5;
-
-            } else {
-                aminoacids = "ARNDCQGHILKFPSTX";
-                // Codon table
-                // A
-                nuc2aa[3][1][0] = 0;
-                nuc2aa[3][1][1] = 0;
-                nuc2aa[3][1][2] = 0;
-                nuc2aa[3][1][3] = 0;
-                // R
-                nuc2aa[1][3][0] = 1;
-                nuc2aa[1][3][1] = 1;
-                nuc2aa[1][3][2] = 1;
-                nuc2aa[1][3][3] = 1;
-                nuc2aa[0][3][0] = 1;
-                nuc2aa[0][3][3] = 1;
-                // N
-                nuc2aa[0][0][2] = 2;
-                nuc2aa[0][0][1] = 2;
-                // D
-                nuc2aa[3][0][2] = 3;
-                nuc2aa[3][0][1] = 3;
-                // C
-                nuc2aa[2][3][2] = 4;
-                nuc2aa[2][3][1] = 4;
-                // QE
-                nuc2aa[1][0][0] = 5;
-                nuc2aa[1][0][3] = 5;
-                nuc2aa[3][0][0] = 5;
-                nuc2aa[3][0][3] = 5;
-                // G
-                nuc2aa[3][3][0] = 6;
-                nuc2aa[3][3][1] = 6;
-                nuc2aa[3][3][2] = 6;
-                nuc2aa[3][3][3] = 6;
-                // H
-                nuc2aa[1][0][2] = 7;
-                nuc2aa[1][0][1] = 7;
-                // IV
-                nuc2aa[0][2][2] = 8;
-                nuc2aa[0][2][1] = 8;
-                nuc2aa[0][2][0] = 8;
-                nuc2aa[3][2][0] = 8;
-                nuc2aa[3][2][1] = 8;
-                nuc2aa[3][2][2] = 8;
-                nuc2aa[3][2][3] = 8;
-                // ML
-                nuc2aa[2][2][0] = 9;
-                nuc2aa[2][2][3] = 9;
-                nuc2aa[1][2][0] = 9;
-                nuc2aa[1][2][1] = 9;
-                nuc2aa[1][2][2] = 9;
-                nuc2aa[1][2][3] = 9;
-                nuc2aa[0][2][3] = 9;
-                // K
-                nuc2aa[0][0][0] = 10;
-                nuc2aa[0][0][3] = 10;
-                // FYW
-                nuc2aa[2][2][2] = 11;
-                nuc2aa[2][2][1] = 11;
-                nuc2aa[2][0][2] = 11;
-                nuc2aa[2][0][1] = 11;
-                nuc2aa[2][3][3] = 11;
-                // P
-                nuc2aa[1][1][0] = 12;
-                nuc2aa[1][1][1] = 12;
-                nuc2aa[1][1][2] = 12;
-                nuc2aa[1][1][3] = 12;
-                // S
-                nuc2aa[2][1][0] = 13;
-                nuc2aa[2][1][1] = 13;
-                nuc2aa[2][1][2] = 13;
-                nuc2aa[2][1][3] = 13;
-                nuc2aa[0][3][2] = 13;
-                nuc2aa[0][3][1] = 13;
-                // T
-                nuc2aa[0][1][0] = 14;
-                nuc2aa[0][1][1] = 14;
-                nuc2aa[0][1][2] = 14;
-                nuc2aa[0][1][3] = 14;
-                // Stop
-                nuc2aa[2][0][0] = 15;
-                nuc2aa[2][3][0] = 15;
-                nuc2aa[2][0][3] = 15;
-                // Triplet code with N's
-                for (int i = 0; i < 8; i++) {
-                    for (int j = 0; j < 8; j++) {
-                        nuc2aa[7][i][j] = -1;
-                        nuc2aa[i][7][j] = -1;
-                        nuc2aa[i][j][7] = -1;
-                    }
-                }
-
-                // Codon encoding to store which DNA triplet code is used.
-                // This encoding is used for indexing hamming distance look-up table.
-                for (int i = 0; i < 4; i++) {
-                    for (int i2 = 0; i2 < 4; i2++) {
-                        nuc2num[i][i2][0] = 0;
-                        nuc2num[i][i2][1] = 1;
-                        nuc2num[i][i2][2] = 2;
-                        nuc2num[i][i2][3] = 3;
-                    }
-                }
-                // for Arg
-                nuc2num[0][3][3] = 7; //AGG
-                nuc2num[0][3][0] = 4; //AGA
-                // for Leu
-                nuc2num[2][2][3] = 7; //TTG
-                nuc2num[2][2][0] = 4; //TTA
-                nuc2num[0][2][3] = 8; //ATG
-                // for Ser
-                nuc2num[0][3][2] = 10; //AGT
-                nuc2num[0][3][1] = 9; //AGC
-                // for FYW
-                nuc2num[2][0][1] = 5;
-                nuc2num[2][0][2] = 6;
-                nuc2num[2][3][3] = 7;
-                // for IV
-                nuc2num[0][2][0] = 4;
-                nuc2num[0][2][1] = 5;
-                nuc2num[0][2][2] = 6;
-                // for QE
-                nuc2num[3][0][0] = 4; //GAA
-                nuc2num[3][0][3] = 7; //GAG
-                // for stop codon
-                nuc2num[2][3][0] = 4; //TGA
+                aminoacids.append(customCodes[i].first);
             }
-        }  
+            bitPerAA = bitsNeeded(alphabetSize);
+            bitPerCodon = bitsNeeded(maxCodonPerAA);
+            hammingLookup = new uint8_t[alphabetSize * maxCodonPerAA * maxCodonPerAA];
+            size_t codonCount = 0;
+            for (size_t aaIdx = 0; aaIdx < customCodes.size(); aaIdx++) {
+                const std::vector<std::string>& codons = customCodes[aaIdx].second;
+                codonCount += codons.size();
+                aa2codon.push_back({});
+                for (int j = 0; j < maxCodonPerAA; j++) {
+                    if (j < (int) codons.size()) {
+                        codon2AA[nuc2int(atcg[codons[j][0]])][nuc2int(atcg[codons[j][1]])][nuc2int(atcg[codons[j][2]])] = aaIdx;
+                        codon2codonIdx[nuc2int(atcg[codons[j][0]])][nuc2int(atcg[codons[j][1]])][nuc2int(atcg[codons[j][2]])] = j;
+                        aa2codon[aaIdx].push_back(codons[j]);
+                    }
+                    for (int k = 0; k < maxCodonPerAA; k++) {
+                        if (k < (int) codons.size() && j < (int) codons.size()) {
+                            hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + j * maxCodonPerAA + k] = hammingDist(codons[j], codons[k]);
+                        } else {
+                            hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + j * maxCodonPerAA + k] = 4; // or some default value
+                        }
+                    }
+                }
+            }
+
+            if (codonCount < 64) {
+                std::cout << "Warning: Custom genetic code has less than 64 codons." << std::endl;
+                exit(1);
+            }
+
+            if (codonCount > 64) {
+                std::cout << "Error: Custom genetic code has more than 64 codons." << std::endl;
+                exit(1);
+            }
+
+            for (int i = 0; i < 8; i++) {
+                for (int j = 0; j < 8; j++) {
+                    codon2AA[7][i][j] = -1;
+                    codon2AA[i][7][j] = -1;
+                    codon2AA[i][j][7] = -1;
+                    codon2codonIdx[7][i][j] = -1;
+                    codon2codonIdx[i][7][j] = -1;
+                    codon2codonIdx[i][j][7] = -1;
+                }
+            }
+
+            // validate();
+        }
+
+        inline uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const override {
+            return hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + codon1Idx * maxCodonPerAA + codon2Idx];
+        }
+
+        void validate() const {
+            for (size_t aaIdx = 0; aaIdx < aa2codon.size(); aaIdx++) {
+                const std::vector<std::string>& codons = aa2codon[aaIdx];
+                std::cout << "Validating AA index " << aaIdx << "(" << aminoacids[aaIdx] << ") with codons: ";
+                for (size_t i = 0; i < codons.size(); i++) {
+                    for (size_t j = 0; j < codons.size(); j++) {
+                        uint8_t dist = getHammingDist(aaIdx, i, j);
+                        uint8_t expectedDist = hammingDist(codons[i], codons[j]);
+                        if (dist != expectedDist) {
+                            std::cout << "Mismatch in Hamming distance for AA index " << aaIdx 
+                                      << " between codon " << codons[i] << " and " << codons[j] 
+                                      << ": expected " << static_cast<int>(expectedDist) 
+                                      << ", got " << static_cast<int>(dist) << std::endl;
+                        } else {
+                            std::cout << codons[i] << " " << codons[j] << " (Distance: " << static_cast<int>(dist) << ")" << std::endl;
+                        }
+                    }
+                }
+                std::cout << std::endl;
+            }
+        }
+};
+
+class RegularGeneticCode final : public GeneticCode {
+    public:
+        RegularGeneticCode() : GeneticCode() {
+            maxCodonPerAA = 6;
+            alphabetSize = 21;
+            bitPerAA = 5;
+            bitPerCodon = 3;
+            hammingLookup = new uint8_t[8 * 8] {
+                0, 1, 1, 1, 2, 1, 3, 3,
+                1, 0, 1, 1, 2, 2, 3, 2,
+                1, 1, 0, 1, 2, 2, 2, 3,
+                1, 1, 1, 0, 1, 2, 3, 3,
+                2, 2, 2, 1, 0, 1, 4, 4,
+                1, 2, 2, 2, 1, 0, 4, 4,
+                3, 3, 2, 3, 4, 4, 0, 1,
+                3, 2, 3, 3, 4, 4, 1, 0                
+            };
+            
+            aminoacids = "ARNDCQEGHILKMFPSTWYVX";
+
+            // A
+            codon2AA[3][1][0] = 0;
+            codon2AA[3][1][1] = 0;
+            codon2AA[3][1][2] = 0; 
+            codon2AA[3][1][3] = 0;
+            aa2codon.push_back({"GCA", "GCC", "GCT", "GCG"});
+            
+            // R
+            codon2AA[1][3][0] = 1;
+            codon2AA[1][3][1] = 1;
+            codon2AA[1][3][2] = 1;
+            codon2AA[1][3][3] = 1; 
+            codon2AA[0][3][0] = 1; 
+            codon2AA[0][3][3] = 1;
+            aa2codon.push_back({"CGA", "CGC", "CGT", "CGG", "AGG", "AGA"});
+            // N
+            codon2AA[0][0][2] = 2;
+            codon2AA[0][0][1] = 2;
+            aa2codon.push_back({"ERR", "AAC", "AAT"});
+
+            // D
+            codon2AA[3][0][2] = 3;
+            codon2AA[3][0][1] = 3;
+            aa2codon.push_back({"ERR", "GAC", "GAT"});
+                
+            // C
+            codon2AA[2][3][2] = 4;
+            codon2AA[2][3][1] = 4;
+            aa2codon.push_back({"ERR", "TGC", "TGT"});
+
+            // Q
+            codon2AA[1][0][0] = 5;
+            codon2AA[1][0][3] = 5;
+            aa2codon.push_back({"CAA", "ERR", "ERR", "CAG"});
+
+            // E
+            codon2AA[3][0][0] = 6;
+            codon2AA[3][0][3] = 6;
+            aa2codon.push_back({"GAA", "ERR", "ERR", "GAG"});
+
+            // G
+            codon2AA[3][3][0] = 7;
+            codon2AA[3][3][1] = 7;
+            codon2AA[3][3][2] = 7;
+            codon2AA[3][3][3] = 7;
+            aa2codon.push_back({"GGA", "GGC", "GGT", "GGG"});
+
+            // H
+            codon2AA[1][0][2] = 8;
+            codon2AA[1][0][1] = 8;
+            aa2codon.push_back({"ERR", "CAC", "CAT"});
+            
+            // I
+            codon2AA[0][2][2] = 9;
+            codon2AA[0][2][1] = 9;
+            codon2AA[0][2][0] = 9;
+            aa2codon.push_back({"ATA", "ATC", "ATT"});
+            
+            // L
+            codon2AA[2][2][0] = 10;
+            codon2AA[2][2][3] = 10;
+            codon2AA[1][2][0] = 10;
+            codon2AA[1][2][1] = 10;
+            codon2AA[1][2][2] = 10;
+            codon2AA[1][2][3] = 10;
+            aa2codon.push_back({"CTA", "CTC", "CTT", "CTG", "TTG", "TTA"});
+            
+            // K
+            codon2AA[0][0][0] = 11; 
+            codon2AA[0][0][3] = 11;
+            aa2codon.push_back({"AAA", "ERR", "ERR", "AAG"});
+            
+            // M
+            codon2AA[0][2][3] = 12;
+            aa2codon.push_back({"ERR", "ERR", "ERR", "ATG"});
+            
+            // F
+            codon2AA[2][2][2] = 13;
+            codon2AA[2][2][1] = 13;
+            aa2codon.push_back({"ERR", "TTC", "TTT"});
+            
+            // P
+            codon2AA[1][1][0] = 14; 
+            codon2AA[1][1][1] = 14;
+            codon2AA[1][1][2] = 14;
+            codon2AA[1][1][3] = 14;
+            aa2codon.push_back({"CCA", "CCC", "CCT", "CCG"});
+            
+            // S
+            codon2AA[2][1][0] = 15;
+            codon2AA[2][1][1] = 15;
+            codon2AA[2][1][2] = 15;
+            codon2AA[2][1][3] = 15;
+            codon2AA[0][3][2] = 15;
+            codon2AA[0][3][1] = 15;
+            aa2codon.push_back({"TCA", "TCC", "TCT", "TCG", "ERR", "ERR", "AGT", "AGC"});
+            
+            // T
+            codon2AA[0][1][0] = 16;
+            codon2AA[0][1][1] = 16;
+            codon2AA[0][1][2] = 16;
+            codon2AA[0][1][3] = 16;
+            aa2codon.push_back({"ACA", "ACC", "ACT", "ACG"});
+            // W
+            codon2AA[2][3][3] = 17;
+            aa2codon.push_back({"ERR", "ERR", "ERR", "TGG"});
+            
+            // Y
+            codon2AA[2][0][2] = 18;
+            codon2AA[2][0][1] = 18;
+            aa2codon.push_back({"ERR", "TAC", "TAT"});
+            // V
+            codon2AA[3][2][0] = 19;
+            codon2AA[3][2][1] = 19;
+            codon2AA[3][2][2] = 19;
+            codon2AA[3][2][3] = 19;
+            aa2codon.push_back({"GTA", "GTC", "GTT", "GTG"});
+            
+            // Stop
+            codon2AA[2][0][0] = 20; 
+            codon2AA[2][3][0] = 20;
+            codon2AA[2][0][3] = 20;
+            aa2codon.push_back({"TAA", "ERR", "ERR", "TAG", "ERR", "TGA"});
+            
+            // triplet code with N's
+            for(int i = 0; i < 8; i++){
+                for(int j = 0; j < 8; j++){
+                    codon2AA[7][i][j] = -1;
+                    codon2AA[i][7][j] = -1;
+                    codon2AA[i][j][7] = -1;
+                    codon2codonIdx[7][i][j] = -1;
+                    codon2codonIdx[i][7][j] = -1;
+                    codon2codonIdx[i][j][7] = -1;
+                }
+            }
+            
+            // For encoding DNA information in k-mer
+            for(int i =0; i < 4 ; i++){
+                for(int i2 = 0; i2 < 4 ; i2++){
+                    codon2codonIdx[i][i2][0] = 0;
+                    codon2codonIdx[i][i2][1] = 1;
+                    codon2codonIdx[i][i2][2] = 2;
+                    codon2codonIdx[i][i2][3] = 3;
+                }
+            }
+            // for Arg
+            codon2codonIdx[0][3][3] = 4; //AGG
+            codon2codonIdx[0][3][0] = 5;
+
+            // for Leu
+            codon2codonIdx[2][2][3] = 4;
+            codon2codonIdx[2][2][0] = 5;
+
+            // for Ser
+            codon2codonIdx[0][3][2] = 6;
+            codon2codonIdx[0][3][1] = 7;
+
+            // for stop codon
+            codon2codonIdx[2][3][0] = 5;
+
+        }
+
+        inline uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const override {
+            return hammingLookup[codon1Idx * 8 + codon2Idx];
+        }
+
+        // uint8_t getHammingDist(uint8_t codon1, uint8_t codon2) const override {
+        //     return hammingLookup[codon1 * 8 + codon2];
+        // }
+};
 
 
+class ReducedGeneticCode final : public GeneticCode {
+    public:
+        std::vector<std::vector<uint8_t>> hammingMatrix;
+        inline uint8_t getHammingDist(int aaIdx, int codon1Idx, int codon2Idx) const override {
+            return hammingLookup[aaIdx * maxCodonPerAA * maxCodonPerAA + codon1Idx * maxCodonPerAA + codon2Idx];
+        }
+
+        ReducedGeneticCode() : GeneticCode() {
+            bitPerAA = 4;
+            bitPerCodon = 3;
+            maxCodonPerAA = 7;
+            alphabetSize = 16; // 15 A.A. + 1 stop
+            hammingLookup = new uint8_t[alphabetSize * maxCodonPerAA * maxCodonPerAA] {
+                // 4 means not used
+                // A 
+                0, 1, 1, 1, 4, 4, 4,
+                1, 0, 1, 1, 4, 4, 4,
+                1, 1, 0, 1, 4, 4, 4,
+                1, 1, 1, 0, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // R
+                0, 1, 1, 1, 1, 2, 4,
+                1, 0, 1, 1, 2, 2, 4,
+                1, 1, 0, 1, 2, 2, 4,
+                1, 1, 1, 0, 2, 1, 4,
+                1, 2, 2, 2, 0, 1, 4,
+                2, 2, 2, 1, 1, 0, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // N
+                0, 1, 4, 4, 4, 4, 4,
+                1, 0, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // D
+                0, 1, 4, 4, 4, 4, 4,
+                1, 0, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // C
+                0, 1, 4, 4, 4, 4, 4,
+                1, 0, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // QE
+                0, 1, 1, 2, 4, 4, 4,
+                1, 0, 2, 1, 4, 4, 4,
+                1, 2, 0, 1, 4, 4, 4,
+                2, 1, 1, 0, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // G
+                0, 1, 1, 1, 4, 4, 4,
+                1, 0, 1, 1, 4, 4, 4,
+                1, 1, 0, 1, 4, 4, 4,
+                1, 1, 1, 0, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // H
+                0, 1, 4, 4, 4, 4, 4,
+                1, 0, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // IV
+                0, 1, 1, 1, 1, 2, 2,
+                1, 0, 1, 1, 2, 1, 2,
+                1, 1, 0, 1, 2, 2, 1,
+                1, 1, 1, 0, 2, 2, 2,
+                1, 2, 2, 2, 0, 1, 1,
+                2, 1, 2, 2, 1, 0, 1,
+                2, 2, 1, 2, 1, 1, 0,
+                // ML
+                0, 1, 1, 1, 1, 2, 2,
+                1, 0, 1, 1, 2, 2, 2,
+                1, 1, 0, 1, 2, 2, 2,
+                1, 1, 1, 0, 2, 1, 1,
+                1, 2, 2, 2, 0, 1, 2,
+                2, 2, 2, 1, 1, 0, 1,
+                2, 2, 2, 1, 2, 1, 0,
+                // K
+                0, 1, 4, 4, 4, 4, 4,
+                1, 0, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // FYW
+                0, 1, 1, 2, 2, 4, 4,
+                1, 0, 2, 1, 2, 4, 4,
+                1, 2, 0, 1, 2, 4, 4,
+                2, 1, 1, 0, 2, 4, 4,
+                2, 2, 2, 2, 0, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // P
+                0, 1, 1, 1, 4, 4, 4,
+                1, 0, 1, 1, 4, 4, 4,
+                1, 1, 0, 1, 4, 4, 4,
+                1, 1, 1, 0, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // S
+                0, 1, 1, 1, 3, 3, 4,
+                1, 0, 1, 1, 2, 3, 4,
+                1, 1, 0, 1, 3, 2, 4,
+                1, 1, 1, 0, 3, 3, 4,
+                3, 2, 3, 3, 0, 1, 4,
+                3, 3, 2, 3, 1, 0, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // T
+                0, 1, 1, 1, 4, 4, 4,
+                1, 0, 1, 1, 4, 4, 4,
+                1, 1, 0, 1, 4, 4, 4,
+                1, 1, 1, 0, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                // Stop
+                0, 1, 1, 4, 4, 4, 4,
+                1, 0, 2, 4, 4, 4, 4,
+                1, 2, 0, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4,
+                4, 4, 4, 4, 4, 4, 4
+            };
+            aminoacids = "ARNDCQGHILKFPSTX";
+            // A
+            codon2AA[3][1][0] = 0; codon2codonIdx[3][1][0] = 0;
+            codon2AA[3][1][1] = 0; codon2codonIdx[3][1][1] = 1;
+            codon2AA[3][1][2] = 0; codon2codonIdx[3][1][2] = 2;
+            codon2AA[3][1][3] = 0; codon2codonIdx[3][1][3] = 3;
+            aa2codon.push_back({"GCA", "GCC", "GCT", "GCG"});
+            // R
+            codon2AA[1][3][0] = 1; codon2codonIdx[1][3][0] = 0;
+            codon2AA[1][3][1] = 1; codon2codonIdx[1][3][1] = 1;
+            codon2AA[1][3][2] = 1; codon2codonIdx[1][3][2] = 2;
+            codon2AA[1][3][3] = 1; codon2codonIdx[1][3][3] = 3;
+            codon2AA[0][3][0] = 1; codon2codonIdx[0][3][0] = 4;
+            codon2AA[0][3][3] = 1; codon2codonIdx[0][3][3] = 5;
+            aa2codon.push_back({"CGA", "CGC", "CGT", "CGG", "AGA", "AGG"});
+            // N
+            codon2AA[0][0][1] = 2; codon2codonIdx[0][0][1] = 0;
+            codon2AA[0][0][2] = 2; codon2codonIdx[0][0][2] = 1;
+            aa2codon.push_back({"AAC", "AAT"});
+            // D
+            codon2AA[3][0][1] = 3; codon2codonIdx[3][0][1] = 0;
+            codon2AA[3][0][2] = 3; codon2codonIdx[3][0][2] = 1;
+            aa2codon.push_back({"GAC", "GAT"});
+            // C
+            codon2AA[2][3][2] = 4; codon2codonIdx[2][3][2] = 0;
+            codon2AA[2][3][1] = 4; codon2codonIdx[2][3][1] = 1;
+            aa2codon.push_back({"TGC", "TGT"});
+            // QE
+            codon2AA[1][0][0] = 5; codon2codonIdx[1][0][0] = 0;
+            codon2AA[1][0][3] = 5; codon2codonIdx[1][0][3] = 1;
+            codon2AA[3][0][0] = 5; codon2codonIdx[3][0][0] = 2;
+            codon2AA[3][0][3] = 5; codon2codonIdx[3][0][3] = 3;
+            aa2codon.push_back({"CAA", "CAG", "GAA", "GAG"});
+            // G
+            codon2AA[3][3][0] = 6; codon2codonIdx[3][3][0] = 0;
+            codon2AA[3][3][1] = 6; codon2codonIdx[3][3][1] = 1;
+            codon2AA[3][3][2] = 6; codon2codonIdx[3][3][2] = 2;
+            codon2AA[3][3][3] = 6; codon2codonIdx[3][3][3] = 3;
+            aa2codon.push_back({"GGA", "GGC", "GGT", "GGG"});
+            // H
+            codon2AA[1][0][1] = 7; codon2codonIdx[1][0][1] = 0;
+            codon2AA[1][0][2] = 7; codon2codonIdx[1][0][2] = 1;
+            aa2codon.push_back({"CAC", "CAT"});
+            // IV
+            codon2AA[3][2][0] = 8; codon2codonIdx[3][2][0] = 0;
+            codon2AA[3][2][1] = 8; codon2codonIdx[3][2][1] = 1;
+            codon2AA[3][2][2] = 8; codon2codonIdx[3][2][2] = 2;
+            codon2AA[3][2][3] = 8; codon2codonIdx[3][2][3] = 3;
+            codon2AA[0][2][0] = 8; codon2codonIdx[0][2][0] = 4;
+            codon2AA[0][2][1] = 8; codon2codonIdx[0][2][1] = 5;
+            codon2AA[0][2][2] = 8; codon2codonIdx[0][2][2] = 6;
+            aa2codon.push_back({"GTA", "GTC", "GTT", "GTG", "ATA", "ATC", "ATT"});
+            // ML
+            codon2AA[1][2][0] = 9; codon2codonIdx[1][2][0] = 0;
+            codon2AA[1][2][1] = 9; codon2codonIdx[1][2][1] = 1;
+            codon2AA[1][2][2] = 9; codon2codonIdx[1][2][2] = 2;
+            codon2AA[1][2][3] = 9; codon2codonIdx[1][2][3] = 3;
+            codon2AA[2][2][0] = 9; codon2codonIdx[2][2][0] = 4;
+            codon2AA[2][2][3] = 9; codon2codonIdx[2][2][3] = 5;
+            codon2AA[0][2][3] = 9; codon2codonIdx[0][2][3] = 6;
+            aa2codon.push_back({"CTA", "CTC", "CTT", "CTG", "TTA", "TTG", "ATG"});
+            // K
+            codon2AA[0][0][0] = 10; codon2codonIdx[0][0][0] = 0;
+            codon2AA[0][0][3] = 10; codon2codonIdx[0][0][3] = 1;
+            aa2codon.push_back({"AAA", "AAG"});
+            // FYW
+            codon2AA[2][0][1] = 11; codon2codonIdx[2][0][1] = 0;
+            codon2AA[2][0][2] = 11; codon2codonIdx[2][0][2] = 1;
+            codon2AA[2][2][1] = 11; codon2codonIdx[2][2][1] = 2;
+            codon2AA[2][2][2] = 11; codon2codonIdx[2][2][2] = 3;
+            codon2AA[2][3][3] = 11; codon2codonIdx[2][3][3] = 4;
+            aa2codon.push_back({"TAC", "TAT", "TTC", "TTT", "TGG"});
+            // P
+            codon2AA[1][1][0] = 12; codon2codonIdx[1][1][0] = 0;
+            codon2AA[1][1][1] = 12; codon2codonIdx[1][1][1] = 1;
+            codon2AA[1][1][2] = 12; codon2codonIdx[1][1][2] = 2;
+            codon2AA[1][1][3] = 12; codon2codonIdx[1][1][3] = 3;
+            aa2codon.push_back({"CCA", "CCC", "CCT", "CCG"});
+            // S
+            codon2AA[2][1][0] = 13; codon2codonIdx[2][1][0] = 0;
+            codon2AA[2][1][1] = 13; codon2codonIdx[2][1][1] = 1;
+            codon2AA[2][1][2] = 13; codon2codonIdx[2][1][2] = 2;
+            codon2AA[2][1][3] = 13; codon2codonIdx[2][1][3] = 3;
+            codon2AA[0][3][1] = 13; codon2codonIdx[0][3][1] = 4;
+            codon2AA[0][3][2] = 13; codon2codonIdx[0][3][2] = 5;
+            aa2codon.push_back({"TCA", "TCC", "TCT", "TCG", "AGC", "AGT"});
+            // T
+            codon2AA[0][1][0] = 14; codon2codonIdx[0][1][0] = 0;
+            codon2AA[0][1][1] = 14; codon2codonIdx[0][1][1] = 1;
+            codon2AA[0][1][2] = 14; codon2codonIdx[0][1][2] = 2;
+            codon2AA[0][1][3] = 14; codon2codonIdx[0][1][3] = 3;
+            aa2codon.push_back({"ACA", "ACC", "ACT", "ACG"});
+            // Stop
+            codon2AA[2][0][0] = 15; codon2codonIdx[2][0][0] = 0;
+            codon2AA[2][0][3] = 15; codon2codonIdx[2][0][3] = 1;
+            codon2AA[2][3][0] = 15; codon2codonIdx[2][3][0] = 2;
+            aa2codon.push_back({"TAA", "TAG", "TGA"});
+            // Triplet code with N's
+            for (int i = 0; i < 8; i++) {
+                for (int j = 0; j < 8; j++) {
+                    codon2AA[7][i][j] = -1;
+                    codon2AA[i][7][j] = -1;
+                    codon2AA[i][j][7] = -1;
+                    codon2codonIdx[7][i][j] = -1;
+                    codon2codonIdx[i][7][j] = -1;
+                    codon2codonIdx[i][j][7] = -1;
+                }
+            }
+        }
 };
 
 #endif //METABULI_GENETIC_CODE_H
