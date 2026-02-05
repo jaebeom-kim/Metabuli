@@ -24,9 +24,9 @@ ProdigalWrapper::ProdigalWrapper() {
         fprintf(stderr, "\nError: Malloc failed on sequence/orfs\n\n"); exit(1);
     }
 
-    memset(seq, 0, (MAX_SEQ/4 + 1)*sizeof(unsigned char));
-    memset(rseq, 0, (MAX_SEQ/4 + 1)*sizeof(unsigned char));
-    memset(useq, 0, (MAX_SEQ/8 + 1)*sizeof(unsigned char));
+    memset(seq,   0, (MAX_SEQ/4 + 1)*sizeof(unsigned char));
+    memset(rseq,  0, (MAX_SEQ/4 + 1)*sizeof(unsigned char));
+    memset(useq,  0, (MAX_SEQ/8 + 1)*sizeof(unsigned char));
     memset(nodes, 0, STT_NOD*sizeof(struct _node));
     memset(genes, 0, MAX_GENES*sizeof(struct _gene));
     memset(&tinf, 0, sizeof(struct _training));
@@ -50,6 +50,134 @@ ProdigalWrapper::ProdigalWrapper() {
         meta[i].tinf = new _training();
     }
 }
+
+void ProdigalWrapper::trainSingleGenome(std::string & genomeFileName) {
+    fptr input_ptr = INPUT_OPEN(genomeFileName.c_str(), "r");
+    if(input_ptr == NULL) {
+      fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
+      exit(5);
+    }
+
+    slen = read_seq_training(input_ptr, seq, useq, &tinf.gc, do_mask, mlist, &nmask);
+
+    if(slen < MIN_SINGLE_GENOME) {
+      fprintf(stderr, "\n\nError:  Sequence must be %d", MIN_SINGLE_GENOME);
+      fprintf(stderr, " characters (only %d read).\n(Consider", slen);
+      fprintf(stderr, " running with the -p meta option or finding");
+      fprintf(stderr, " more contigs from the same genome.)\n\n");
+      exit(10);
+    }
+    
+    if(slen < IDEAL_SINGLE_GENOME) {
+      fprintf(stderr, "\n\nWarning:  ideally Prodigal should be given at");
+      fprintf(stderr, " least %d bases for ", IDEAL_SINGLE_GENOME);
+      fprintf(stderr, "training.\nYou may get better results with the ");
+      fprintf(stderr, "-p meta option.\n\n");
+    }
+
+    rcom_seq(seq, rseq, useq, slen);
+    if(quiet == 0) {
+      fprintf(stderr, "%d bp seq created, %.2f pct GC\n", slen, tinf.gc*100.0);
+    }
+    
+    /***********************************************************************
+      Find all the potential starts and stops, sort them, and create a 
+      comprehensive list of nodes for dynamic programming.
+    ***********************************************************************/
+    if(quiet == 0) {
+      fprintf(stderr, "Locating all potential starts and stops..."); 
+    }
+    if(slen > max_slen && slen > STT_NOD*8) {
+      nodes = (struct _node *)realloc(nodes, (int)(slen/8)*sizeof(struct _node));
+      if(nodes == NULL) {
+        fprintf(stderr, "Realloc failed on nodes\n\n");
+        exit(11);
+      }
+      max_slen = slen;
+    }
+    nn = add_nodes(seq, rseq, slen, nodes, closed, mlist, nmask, &tinf);
+    qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
+    if(quiet == 0) {
+      fprintf(stderr, "%d nodes\n", nn); 
+    }
+
+    /***********************************************************************
+      Scan all the ORFS looking for a potential GC bias in a particular
+      codon position.  This information will be used to acquire a good
+      initial set of genes.
+    ***********************************************************************/
+    if(quiet == 0) {
+      fprintf(stderr, "Looking for GC bias in different frames...");
+    }
+    gc_frame = calc_most_gc_frame(seq, slen);
+    if(gc_frame == NULL) {
+      fprintf(stderr, "Malloc failed on gc frame plot\n\n");
+      exit(11);
+    }
+    record_gc_bias(gc_frame, nodes, nn, &tinf);
+    if(quiet == 0) {
+      fprintf(stderr, "frame bias scores: %.2f %.2f %.2f\n", tinf.bias[0],
+              tinf.bias[1], tinf.bias[2]); 
+    }
+    free(gc_frame);
+    
+
+    /***********************************************************************
+      Do an initial dynamic programming routine with just the GC frame
+      bias used as a scoring function.  This will get an initial set of 
+      genes to train on. 
+    ***********************************************************************/
+    if(quiet == 0) {
+      fprintf(stderr, "Building initial set of genes to train from...");
+    }
+    record_overlapping_starts(nodes, nn, &tinf, 0);
+    ipath = dprog(nodes, nn, &tinf, 0);
+    if(quiet == 0) {
+      fprintf(stderr, "done!\n"); 
+    }
+
+
+    /***********************************************************************
+      Gather dicodon statistics for the training set.  Score the entire set
+      of nodes.                               
+    ***********************************************************************/
+    if(quiet == 0) {
+      fprintf(stderr, "Creating coding model and scoring nodes...");
+    }
+    calc_dicodon_gene(&tinf, seq, rseq, slen, nodes, ipath);
+    raw_coding_score(seq, rseq, slen, nodes, nn, &tinf);
+    if(quiet == 0) {
+      fprintf(stderr, "done!\n"); 
+    }
+
+    /***********************************************************************
+      Determine if this organism uses Shine-Dalgarno or not and score the 
+      nodes appropriately.
+    ***********************************************************************/
+    if(quiet == 0) {
+      fprintf(stderr, "Examining upstream regions and training starts...");
+    }
+    rbs_score(seq, rseq, slen, nodes, nn, &tinf);
+    train_starts_sd(seq, rseq, slen, nodes, nn, &tinf);
+    determine_sd_usage(&tinf);
+    if(force_nonsd == 1) tinf.uses_sd = 0;
+    if(tinf.uses_sd == 0) train_starts_nonsd(seq, rseq, slen, nodes, nn, &tinf);
+    if(quiet == 0) {
+      fprintf(stderr, "done!\n"); 
+    }
+
+    /* Rewind input file */    
+    if(quiet == 0) fprintf(stderr, "-------------------------------------\n");
+    INPUT_CLOSE(input_ptr);
+
+    /* Reset all the sequence/dynamic programming variables */
+    memset(seq, 0, (slen/4+1)*sizeof(unsigned char));
+    memset(rseq, 0, (slen/4+1)*sizeof(unsigned char));
+    memset(useq, 0, (slen/8+1)*sizeof(unsigned char));
+    memset(nodes, 0, nn*sizeof(struct _node));
+    nn = 0; slen = 0; ipath = 0; nmask = 0;
+}
+
 
 void ProdigalWrapper::trainASpecies(unsigned char * genome, size_t seqLength) {
     // Initialize memories to reuse them
@@ -124,6 +252,59 @@ void ProdigalWrapper::trainASpecies(unsigned char * genome, size_t seqLength) {
     determine_sd_usage(&tinf);
     if(force_nonsd == 1) tinf.uses_sd = 0;
     if(tinf.uses_sd == 0) train_starts_nonsd(seq, rseq, slen, nodes, nn, &tinf); 
+}
+
+void ProdigalWrapper::trainMeta(std::string & genomeFileName) {
+    fptr input_ptr = INPUT_OPEN(genomeFileName.c_str(), "r");
+    if(input_ptr == NULL) {
+      fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
+      exit(5);
+    }
+
+    slen = read_seq_training(input_ptr, seq, useq, &tinf.gc, do_mask, mlist, &nmask);
+
+    rcom_seq(seq, rseq, useq, slen);
+    if(quiet == 0) {
+      fprintf(stderr, "%d bp seq created, %.2f pct GC\n", slen, tinf.gc*100.0);
+    }
+
+    INPUT_CLOSE(input_ptr);
+
+        if(slen > max_slen && slen > STT_NOD*8) {
+        nodes = (struct _node *)realloc(nodes, (int)(slen/8)*sizeof(struct _node));
+        if(nodes == NULL) {
+            fprintf(stderr, "Realloc failed on nodes\n\n");
+            exit(11);
+        }
+        memset(nodes, 0, (int)(slen/8)*sizeof(struct _node));
+        max_slen = slen;
+    }
+
+    low = 0.88495*tinf.gc - 0.0102337;
+    if(low > 0.65) low = 0.65;
+    high = 0.86596*tinf.gc + .1131991;
+    if(high < 0.35) high = 0.35;
+    max_score = -100.0;
+    for(int i = 0; i < NUM_META; i++) {
+        if (i == 0 || meta[i].tinf->trans_table !=
+                      meta[i - 1].tinf->trans_table) {
+            memset(nodes, 0, nn * sizeof(struct _node));
+            nn = add_nodes(seq, rseq, slen, nodes, closed, mlist, nmask,
+                           meta[i].tinf);
+            qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
+        }
+        if (meta[i].tinf->gc < low || meta[i].tinf->gc > high) continue;
+        reset_node_scores(nodes, nn);
+        score_nodes(seq, rseq, slen, nodes, nn, meta[i].tinf, closed, is_meta);
+        record_overlapping_starts(nodes, nn, meta[i].tinf, 1);
+        ipath = dprog(nodes, nn, meta[i].tinf, 1);
+        if(ipath == -1) continue;
+
+        if (nodes[ipath].score > max_score) {
+            max_phase = i;
+            max_score = nodes[ipath].score;
+        }
+    }
 }
 
 void ProdigalWrapper::trainMeta(unsigned char *genome, size_t seqLength) {
@@ -377,7 +558,7 @@ void ProdigalWrapper::getExtendedORFs(struct _gene *genes, struct _node *nodes, 
     /* Main routine */
 
     bool hasBeenExtendedToLeft = false;
-    int k = 23;
+    int k = 12;
     char *newIntergenicKmer = (char *) malloc(sizeof(char) * (k + 1));
     char *leftKmer = (char *) malloc(sizeof(char) * (k + 1));
     char *rightKmer = (char *) malloc(sizeof(char) * (k + 1));

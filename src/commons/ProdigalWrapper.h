@@ -65,7 +65,9 @@ public:
     void setTrainingInfo(_training &tinf);
     void getPredictedGenes(unsigned char * genome, size_t seqLength);
     void removeCompletelyOverlappingGenes();
+    void trainSingleGenome(std::string & genomeFileName);
     void trainASpecies(unsigned char * genome, size_t seqLength);
+    void trainMeta(std::string & genomeFileName);
     void trainMeta(unsigned char * genome, size_t seqLength);
     int getNextSeq(unsigned char * seq, int training, size_t length);
     void printGenes();

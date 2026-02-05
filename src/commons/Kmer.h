@@ -151,6 +151,10 @@ struct Kmer {
     }
 };
 
+struct Kmer_binned: public Kmer {
+    uint16_t binIdx;
+};
+
 
 struct DiffIdxSplit{
     DiffIdxSplit(uint64_t ADkmer, size_t diffIdxOffset, size_t infoIdxOffset) : ADkmer(ADkmer), diffIdxOffset(diffIdxOffset), infoIdxOffset(infoIdxOffset) { }

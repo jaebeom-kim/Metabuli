@@ -101,6 +101,25 @@ struct AccessionBatch {
         : whichFasta(whichFasta), speciesID(speciesID), trainingSeqFasta(trainingSeqFasta), trainingSeqIdx(trainingSeqIdx), totalLength(totalLength) {}
 };
 
+struct FastaBatch {
+    TaxID taxId;
+    uint32_t whichFasta;
+    vector<AccessionBatch> accessionBatches;
+
+    FastaBatch(uint32_t whichFasta) : whichFasta(whichFasta) {}
+};
+
+struct SpeciesBatch {
+    TaxID speciesID;
+    uint64_t spTotalLength;
+    uint64_t expectedKmerNum;
+    uint32_t repGenomeFasta;
+    uint32_t repGenomeSize;
+    vector<FastaBatch> fastaBatches;
+
+    SpeciesBatch(TaxID speciesID) : speciesID(speciesID), expectedKmerNum(0) {}
+};
+
 using namespace std;
 
 class IndexCreator{
@@ -136,6 +155,7 @@ protected:
 
     std::unordered_map<string, vector<CDSinfo>> cdsInfoMap;
     std::vector<AccessionBatch> accessionBatches;
+    std::vector<SpeciesBatch> spBatches;
     std::unordered_set<TaxID> taxIdSet;
     vector<string> fastaPaths;
     size_t numOfFlush=0;
@@ -175,6 +195,12 @@ protected:
         std::vector<std::atomic<bool>> & batchChecker,
         size_t &processedSplitCnt,
         const LocalParameters &par);
+
+    size_t fillTargetKmerBuffer2(
+        Buffer<Kmer_binned> &kmerBuffer,                 
+        std::vector<std::atomic<bool>> & batchChecker,
+        size_t &processedSpCnt,
+        const LocalParameters &par);
     
     bool extractKmerFromSixFrames(
         Buffer<Kmer> & kmerBuffer,
@@ -184,6 +210,10 @@ protected:
     void indexReferenceSequences(size_t bufferSize);
 
     void getAccessionBatches(std::vector<Accession> & observedAccessionsVec, size_t bufferSize);
+
+    void getSpeciesBatches(std::vector<Accession> & observedAccessionsVec, size_t bufferSize);
+
+    void getSpeciesBatches();
 
     void getObservedAccessions(const string & fnaListFileName,
                                vector<Accession> & observedAccessionsVec,
@@ -266,6 +296,26 @@ protected:
                         const std::string & fileList,
                         const std::string & acc2taxIdFileName);
 
+    void generateIntergenicKmerList(
+        struct _gene *genes, 
+        struct _node *nodes, 
+        int numberOfGenes,
+        vector<uint64_t> &intergenicKmerList, 
+        const char *seq);
+
+    void makeIntergenicKmerList(
+        const std::string & fastaFileName,
+        vector<uint64_t> & intergenicKmers);
+
+    bool compareMinHashList(
+        const std::vector<uint64_t>& list1, 
+        const std::vector<uint64_t>& list2, 
+        size_t length1, 
+        size_t length2);
+    
+    std::vector<uint64_t> getMinHashList(const char* seq)
+    
+
 
 
 public:
@@ -274,6 +324,7 @@ public:
     IndexCreator(const LocalParameters & par, int kmerFormat); // Used in create_unique_kmer_list.cpp
     ~IndexCreator();
     void createIndex();
+    void createIndex2();
     void createCommonKmerIndex();
     void createUniqueKmerIndex();
     void createLcaKmerIndex();
