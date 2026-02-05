@@ -6,24 +6,7 @@ SeqIterator::SeqIterator(const LocalParameters &par) {
 
 }
 
-string SeqIterator::reverseComplement(string &read) const {
-    int len = read.length();
-    string out;
-    for (int i = 0; i < len; i++) {
-        out.push_back(iRCT[read[i]]);
-    }
-    reverse(out.begin(), out.end());
-    return out;
-}
 
-char *SeqIterator::reverseComplement(char *read, size_t length) const {
-    char *revCom = (char *) malloc(sizeof(char) * (length + 1));
-    for (size_t i = 0; i < length; i++) {
-        revCom[length - i - 1] = iRCT[read[i]];
-    }
-    revCom[length] = '\0';
-    return revCom;
-}
 
 bool SeqIterator::compareMinHashList(priority_queue <uint64_t> list1, priority_queue <uint64_t> &list2, size_t length1,
                                      size_t length2) {
