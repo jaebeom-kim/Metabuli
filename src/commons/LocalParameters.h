@@ -120,6 +120,7 @@ public:
     PARAMETER(MAKE_LIBRARY)
     PARAMETER(GTDB)
     PARAMETER(VALIDATE_INPUT)
+    PARAMETER(READING_FRAME)
 
     // DB updated parameters
     PARAMETER(NEW_TAXA)
@@ -219,6 +220,7 @@ public:
     std::string assAcc2taxid;
     int gtdb;
     int validateInput;
+    int readingFrame;
 
     // DB updated parameters
     std::string newTaxa;

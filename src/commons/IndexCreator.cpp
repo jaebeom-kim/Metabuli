@@ -31,27 +31,33 @@ IndexCreator::IndexCreator(
     if (kmerFormat == 1) { // Use the legacy metamer pattern
         metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
     } else if (!par.customMetamer.empty()) {
+        // Use custom metamer pattern
         int codeNum = getCodeNum(par.customMetamer);
         if (codeNum == 1) {
-            if (par.spaceMask.empty()) {
+            if (par.spaceMask == "11111111") {
+                // Use unspaced metamer pattern
                 metamerPattern = new SingleCodePattern(par.customMetamer);
             } else {
+                // Use spaced metamer pattern
                 uint32_t mask = parseMask(par.spaceMask.c_str());
                 metamerPattern = new SpacedPattern(par.customMetamer, mask);
             }
         } else if (codeNum > 1) {
+            if (par.spaceMask != "11111111") {
+                cout << "Warning: Space mask is ignored when using multi-code custom metamer pattern." << endl;
+            }
             metamerPattern = new MultiCodePattern(par.customMetamer);
         }
     } else {
         if (par.reducedAA) {
-            if (par.spaceMask.empty()) {
+            if (par.spaceMask != "11111111") {
                 metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
             } else {
                 uint32_t mask = parseMask(par.spaceMask.c_str());
                 metamerPattern = new SpacedPattern(std::make_unique<ReducedGeneticCode>(), __builtin_popcount(mask), mask);
             }
         } else {
-            if (par.spaceMask.empty()) {
+            if (par.spaceMask != "11111111") {
                 metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
             } else {
                 uint32_t mask = parseMask(par.spaceMask.c_str());
@@ -64,27 +70,6 @@ IndexCreator::IndexCreator(
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
 }
-
-// IndexCreator::IndexCreator(
-//     const LocalParameters & par, 
-//     TaxonomyWrapper * taxonomy,
-//     const MetamerPattern * metamerPattern) 
-//     : par(par), taxonomy(taxonomy), metamerPattern(metamerPattern) 
-// {
-//     dbDir = par.filenames[0];
-//     fnaListFileName = par.filenames[1];
-//     if (par.filenames.size() >= 3) {
-//         acc2taxidFileName = par.filenames[2];
-//     }
-//     taxidListFileName = dbDir + "/taxID_list";
-//     taxonomyBinaryFileName = dbDir + "/taxonomyDB";
-//     versionFileName = dbDir + "/db.version";
-//     paramterFileName = dbDir + "/db.parameters";
-//     MARKER = ~metamerPattern->dnaMask;
-//     kmerExtractor = new KmerExtractor(par, metamerPattern);
-//     isUpdating = false;
-//     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
-// }
 
 IndexCreator::IndexCreator(
     const LocalParameters & par, 
@@ -1149,8 +1134,23 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                         orfNum = 0;
                         extendedORFs.clear();
                         int tempCheck = 0;
-                        if (cdsInfoMap.find(string(e.name.s)) != cdsInfoMap.end()) {
-                            // Get CDS and non-CDS
+                        if (par.readingFrame != 0) {
+                            // USE PROVIDED READING FRAME
+                
+                            tempCheck = kmerExtractor->extractTargetKmers(
+                                            maskedSeq,
+                                            kmerBuffer,
+                                            posToWrite,
+                                            accessionBatches[batchIdx].taxIDs[idx],
+                                            accessionBatches[batchIdx].speciesID,
+                                            {par.readingFrame, (int) e.sequence.l - 1, par.readingFrame < 3 ? 1 : -1});
+                            if (tempCheck == -1) {
+                                cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
+                            }   
+                        }
+                        else if (cdsInfoMap.find(string(e.name.s)) != cdsInfoMap.end()) {
+                            // USE PROVIDED CDS ANNOTATION
+
                             cds.clear();
                             nonCds.clear();
                             seqIterator.devideToCdsAndNonCds(maskedSeq,

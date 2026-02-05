@@ -8,7 +8,8 @@
 #include "validateDatabase.h"
 
 void setDefaults_build(LocalParameters & par) {
-    par.spaceMask = "";
+    par.readingFrame = 0;
+    par.spaceMask = "11111111";
     par.syncmer = 0;
     par.smerLen = 5;
     par.gtdb = 0;

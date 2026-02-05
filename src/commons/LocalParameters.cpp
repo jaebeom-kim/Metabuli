@@ -382,6 +382,13 @@ LocalParameters::LocalParameters() :
                       typeid(int),
                       (void *) &validateInput,
                       "[0-1]"),
+        READING_FRAME(READING_FRAME_ID,
+                "--reading-frame",
+                "Use fixed frame (1-6). 0 for Prodigal's frame.",
+                "Use fixed frame (1-6). 0 for Prodigal's frame.",
+                typeid(int),
+                (void *) &readingFrame,
+                "^[0-6]$"),
         NEW_TAXA(NEW_TAXA_ID,
                 "--new-taxa",
                 "TSV file of new taxa to be added",
@@ -634,6 +641,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&REDUCED_AA);
     build.push_back(&PARAM_CUSTOM_METAMER);
     build.push_back(&SPACE_MASK);
+    build.push_back(&READING_FRAME);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
     createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);
