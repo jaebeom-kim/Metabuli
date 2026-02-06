@@ -83,8 +83,8 @@ uint64_t Classifier::calculateBufferSize(
     size_t queryListBytes = queryListSize * (sizeof(Query) + 150); //  104,857,600
     size_t availableBytes = totalBytes - (par.threads * bytesPerThread) - overhead - queryListBytes; 
     size_t bytePerKmer = sizeof(Kmer) + matchPerKmer * sizeof(Match);
-    uint64_t totalSize = availableBytes / bytePerKmer;
-  
+    size_t totalSize = availableBytes / bytePerKmer;
+    
     return totalSize;
 }
 
@@ -169,7 +169,8 @@ void Classifier::classifyReads() {
                 std::cout << difftime(time(nullptr), start) << " s" << std::endl;
                 std::cout << "Processed read count   : " << processedReadCnt << std::endl;
             } else {
-                matchPerKmer += 4;
+                matchPerKmer *= 2;
+                moreReads = true;
                 std::cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << std::endl;
                 break;
             }

@@ -274,19 +274,58 @@ uint8_t SingleCodePattern::hammingDistSum(
     uint64_t kmer2) const 
 {
     uint8_t hammingSum = 0;
-    const uint64_t aaPart = kmer1 >> totalDNABits;  
-    int aaBitSum = 0;
-    int dnaBitSum = 0;
-    for (int i = 0; i < kmerLen; ++i) { // kmerLen is correct. Not windowSize 
-        const int aa = (aaPart >> aaBitSum) & aaMask;
-        const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
-        const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
-        hammingSum += geneticCode->getHammingDist(aa, codon1, codon2);
-        aaBitSum += bitPerAA;
-        dnaBitSum += bitPerCodon;
+    
+    // 1. Prepare Streams
+    // Extract the AA part to a separate variable so we can shift it independently.
+    uint64_t aaStream = kmer1 >> totalDNABits; 
+    
+    // We will shift these destructively. 
+    // It is safe that kmer1/kmer2 have AA bits at the top because the loop 
+    // terminates before those bits are shifted down into the codon position.
+
+    // 2. Cache Constants 
+    // Loading these into local consts helps the compiler keep them in registers.
+    const int bAA = bitPerAA;
+    const int bCodon = bitPerCodon;
+
+    // 3. Loop (LSB to MSB)
+    for (int i = 0; i < kmerLen; ++i) { 
+        // Step A: Extract Bottom Bits (Fast AND)
+        const int aa = aaStream & aaMask;
+        const int c1 = kmer1 & codonMask;
+        const int c2 = kmer2 & codonMask;
+
+        // Step B: Calculate & Sum
+        // Note: Ensure geneticCode->getHammingDist is INLINED for max speed.
+        hammingSum += geneticCode->getHammingDist(aa, c1, c2);
+
+        // Step C: Shift Streams Down (Fast Constant Shift)
+        // This brings the next codon/AA into the LSB position for the next iteration.
+        aaStream >>= bAA;
+        kmer1 >>= bCodon;
+        kmer2 >>= bCodon;
     }  
     return hammingSum;
 }
+
+// uint8_t SingleCodePattern::hammingDistSum(
+//     uint64_t kmer1, 
+//     uint64_t kmer2) const 
+// {
+//     uint8_t hammingSum = 0;
+//     const uint64_t aaPart = kmer1 >> totalDNABits;  
+//     int aaBitSum = 0;
+//     int dnaBitSum = 0;
+//     for (int i = 0; i < kmerLen; ++i) { // kmerLen is correct. Not windowSize 
+//         const int aa = (aaPart >> aaBitSum) & aaMask;
+//         const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
+//         const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
+//         hammingSum += geneticCode->getHammingDist(aa, codon1, codon2);
+//         aaBitSum += bitPerAA;
+//         dnaBitSum += bitPerCodon;
+//     }  
+//     return hammingSum;
+// }
 
 
 

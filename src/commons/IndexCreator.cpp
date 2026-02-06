@@ -1143,7 +1143,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                             posToWrite,
                                             accessionBatches[batchIdx].taxIDs[idx],
                                             accessionBatches[batchIdx].speciesID,
-                                            {par.readingFrame, (int) e.sequence.l - 1, par.readingFrame < 3 ? 1 : -1});
+                                            {par.readingFrame-1, (int) e.sequence.l - 1, par.readingFrame < 3 ? 1 : -1});
                             if (tempCheck == -1) {
                                 cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
                             }   
@@ -1287,11 +1287,11 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                 }
                 delete kseq;
                 __sync_fetch_and_add(&processedBatchCnt, 1);
-                #pragma omp critical
-                {
-                    cout << processedBatchCnt << " batches processed out of " << accessionBatches.size() << endl;
-                        // cout << fastaPaths[accessionBatches[batchIdx].whichFasta] << " processed\n";
-                }
+                // #pragma omp critical
+                // {
+                //     cout << processedBatchCnt << " batches processed out of " << accessionBatches.size() << endl;
+                //         // cout << fastaPaths[accessionBatches[batchIdx].whichFasta] << " processed\n";
+                // }
             } else {
                 batchChecker[batchIdx].store(false, std::memory_order_release);
                 hasOverflow.fetch_add(1, std::memory_order_relaxed);

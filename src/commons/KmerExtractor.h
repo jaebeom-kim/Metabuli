@@ -23,6 +23,7 @@ private:
     float maskProb;
     int kmerLen;
     int windowSize;
+    float syncmerRatio;
 
     // For masking reads
     ProbabilityMatrix * probMatrix;

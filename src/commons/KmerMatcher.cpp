@@ -170,6 +170,7 @@ bool KmerMatcher::matchKmers(
         DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(db + "/diffIdx", db + "/info", 1024 * 1024 * 4, 1024 * 1024 * 4);
         std::vector<Kmer> candidates;
         std::vector<Match> filteredMatches;
+        std::vector<uint8_t> hammings;
         bool localHasOverflow = false;
     #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < querySplits.size(); i++) {
@@ -206,7 +207,7 @@ bool KmerMatcher::matchKmers(
 
                 // Reuse the candidate target k-mers to compare in DNA level if queries are the same at amino acid level but not at DNA level
                 if (qKmerAA == AMINO_ACID_PART(qKmers[j].value)) {
-                    filterCandidates(qKmers[j], candidates, filteredMatches);
+                    filterCandidates(qKmers[j], candidates, filteredMatches, hammings);
                     size_t filteredMatchCnt = filteredMatches.size();
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
                         if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
@@ -246,7 +247,7 @@ bool KmerMatcher::matchKmers(
                     tKmer = deltaIdxReaders->next();   
                 }
 
-                filterCandidates(qKmer, candidates, filteredMatches);
+                filterCandidates(qKmer, candidates, filteredMatches, hammings);
                 if (unlikely(!localMatches.afford(filteredMatches.size()))) {
                     if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
                         hasOverflow.fetch_add(1, std::memory_order_relaxed);
@@ -450,19 +451,49 @@ void KmerMatcher::sortMatches(Buffer<Match> * matchBuffer) {
 void KmerMatcher::filterCandidates(
     Kmer qKmer,
     const std::vector<Kmer> &candidates,
-    std::vector<Match> &filteredMatches
+    std::vector<Match> &filteredMatches,
+    std::vector<uint8_t> & hammings
 ) {
-    std::vector<uint8_t> hammings(candidates.size());
-    uint8_t hDistCutoff = UINT8_MAX;
-    for (size_t i = 0; i < candidates.size(); i++) {
-        hammings[i] = metamerPattern->hammingDistSum(qKmer.value, candidates[i].value);
-        hDistCutoff = min(hDistCutoff, hammings[i]);
+    const size_t numCandidates = candidates.size();
+    if (numCandidates == 0) return;
+
+    hammings.clear();
+    if (hammings.capacity() < numCandidates) {
+        hammings.reserve(numCandidates);
     }
-    hDistCutoff = min(hDistCutoff * 2, kmerLen - 1);
-    for (size_t h = 0; h < candidates.size(); h++) {
-        if (hammings[h] <= hDistCutoff) {
-            filteredMatches.emplace_back(qKmer, candidates[h]);
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId.at(candidates[h].id);
+
+    const uint64_t qVal = qKmer.value;
+    const Kmer* candPtr = candidates.data();
+
+    // Use only exact matches if any
+    bool hasExactMatch = false;
+    for (size_t i = 0; i < numCandidates; i++) {
+        if (qVal == candPtr[i].value) {
+            filteredMatches.emplace_back(qKmer, candPtr[i]);
+            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            hasExactMatch = true;
+        }
+    }
+    if (hasExactMatch) {
+        return;
+    }
+
+    // Calculate hamming distances
+    uint8_t minDist = UINT8_MAX;    
+    for (size_t i = 0; i < numCandidates; i++) {
+        uint8_t dist = metamerPattern->hammingDistSum(qVal, candPtr[i].value);
+        hammings.push_back(dist);
+        if (dist < minDist) {
+            minDist = dist;
+        }
+    }
+
+    uint8_t hDistCutoff = static_cast<uint8_t>(min(minDist * 2, kmerLen - 1));
+    const uint8_t* hamPtr = hammings.data();
+    for (size_t h = 0; h < numCandidates; h++) {
+        if (hamPtr[h] <= hDistCutoff) {
+            filteredMatches.emplace_back(qKmer, candPtr[h]);
+            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[h].id];
         }
     }
 }
