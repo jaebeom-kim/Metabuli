@@ -31,6 +31,35 @@ int getCodeNum(const std::string & customFile) {
     return code_count;
 }
 
+
+int getWeightedPosNum(const std::string & customFile) {
+    std::ifstream file(customFile);
+    if (!file.is_open()) {
+        std::cout << "Error: Could not open custom metamer pattern file: " << customFile << std::endl;
+    }
+
+    std::string line;
+    std::stringstream jsonbuf;
+    bool inJson = false;
+    while (std::getline(file, line)) {
+        if (line == "===BEGIN_CUSTOM_METAMER===") {
+            inJson = true;
+            continue;   
+        }
+        if (line == "===END_CUSTOM_METAMER===") {
+            inJson = false;
+            break;  
+        }
+        if (inJson) {
+            jsonbuf << line << "\n";
+        }
+    }
+    json j = json::parse(jsonbuf.str());
+    int weightedPosNum = j["length"];
+    file.close();
+    return weightedPosNum;
+}
+
 SingleCodePattern::SingleCodePattern(const std::string & customFile) {
     std::cout << "Loading single-code metamer pattern from file: " << customFile << std::endl;
     std::ifstream file(customFile);
@@ -59,6 +88,8 @@ SingleCodePattern::SingleCodePattern(const std::string & customFile) {
 
     std::string name = j["name"];
     kmerLen = j["length"];
+    windowSize = kmerLen;
+    std::cout << "K-mer length: " << kmerLen << std::endl;
 
     for (const auto& codeEntry : j["codes"]) {
 
@@ -93,6 +124,7 @@ SingleCodePattern::SingleCodePattern(const std::string & customFile) {
     bitPerAA = geneticCode->bitPerAA;
     totalDNABits = kmerLen * bitPerCodon;
     totalAABits = kmerLen * bitPerAA;
+    std::cout << "Total DNA bits: " << totalDNABits << ", Total AA bits: " << totalAABits << std::endl;
     dnaMask = (1ULL << totalDNABits) - 1;
     codonMask = (1ULL << bitPerCodon) - 1;
     aaMask = (1ULL << bitPerAA) - 1;
@@ -142,6 +174,9 @@ MatchScore SingleCodePattern::calMatchScore(
     const SubstitutionMatrix& matrix,
     bool fromR) const 
 {
+    // cout << "count: " << count << ", fromR: " << fromR << std::endl;
+    // printDNA(kmer1); cout << "\t"; printAA(kmer1); cout << std::endl;
+    // printDNA(kmer2); cout << "\t"; printAA(kmer2); cout << std::endl;
     float idScore = 0.0f;
     float subScore = 0.0f;
     double prob = 0.0;
@@ -157,6 +192,16 @@ MatchScore SingleCodePattern::calMatchScore(
         const int myAA   = (aaPart >> aaBitSum) & aaMask;
         const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
         const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
+
+        // #pragma omp critical
+        // {
+        //     cout << "Debug: i=" << i << ", fromR=" << fromR 
+        //          << ", aaBitSum=" << aaBitSum << ", dnaBitSum=" << dnaBitSum 
+        //          << ", myAA=" << myAA << ", codon1=" << codon1 << ", codon2=" << codon2 << std::endl;
+        //     cout << "      Kmer1: "; print_binary64(64, kmer1); cout << std::endl;
+        //     cout << "      Kmer2: "; print_binary64(64, kmer2); cout << std::endl;
+        //     cout << geneticCode->aa2codon[myAA][codon1] << " vs " << geneticCode->aa2codon[myAA][codon2] << std::endl;
+        // }
 
         const int idx1 = matrix.aa2num[
             translateNucl->translateSingleCodon(
