@@ -98,6 +98,12 @@ int extract(int argc, const char **argv, const Command& command) {
     reporter.getReadsClassifiedToClade(targetTaxID, classificationFileName, readIdxs);
     cout << "done." << endl;
 
+    for(size_t i = 0; i < 10; i++) {
+        if (i < readIdxs.size()) {
+            cout << "  Read index " << readIdxs[i] << endl;
+        }
+    }
+
     string queryFileName = par.filenames[0];
     string outdirPath, baseName, extension;
 

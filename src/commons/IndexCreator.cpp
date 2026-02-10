@@ -33,36 +33,34 @@ IndexCreator::IndexCreator(
     } else if (!par.customMetamer.empty()) {
         // Use custom metamer pattern
         int codeNum = getCodeNum(par.customMetamer);
+        int weightedPosNum = getWeightedPosNum(par.customMetamer);
         if (codeNum == 1) {
-            if (par.spaceMask == "11111111") {
-                // Use unspaced metamer pattern
+            if (par.spaceMask == "") {
                 metamerPattern = new SingleCodePattern(par.customMetamer);
             } else {
-                // Use spaced metamer pattern
                 uint32_t mask = parseMask(par.spaceMask.c_str());
+                int setBitNum = __builtin_popcount(mask);
+                if (setBitNum != weightedPosNum) {
+                    std::cerr << "Error: The number of set bits in space mask (" << setBitNum 
+                              << ") does not match length (" 
+                              << weightedPosNum << ") in custom metamer pattern." << std::endl;
+                    exit(EXIT_FAILURE);
+                }
                 metamerPattern = new SpacedPattern(par.customMetamer, mask);
             }
         } else if (codeNum > 1) {
-            if (par.spaceMask != "11111111") {
-                cout << "Warning: Space mask is ignored when using multi-code custom metamer pattern." << endl;
+            if (par.spaceMask != "") {
+                cout << "Error: Spaced k-mer isn't supported with a multi-code custom metamer pattern." << endl;
+                exit(EXIT_FAILURE);
             }
             metamerPattern = new MultiCodePattern(par.customMetamer);
         }
     } else {
-        if (par.reducedAA) {
-            if (par.spaceMask != "11111111") {
-                metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
-            } else {
-                uint32_t mask = parseMask(par.spaceMask.c_str());
-                metamerPattern = new SpacedPattern(std::make_unique<ReducedGeneticCode>(), __builtin_popcount(mask), mask);
-            }
+        if (par.spaceMask.empty()) {
+            metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
         } else {
-            if (par.spaceMask != "11111111") {
-                metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
-            } else {
-                uint32_t mask = parseMask(par.spaceMask.c_str());
-                metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
-            }
+            uint32_t mask = parseMask(par.spaceMask.c_str());
+            metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
         }
     }
     kmerExtractor = new KmerExtractor(par, metamerPattern);
@@ -78,11 +76,11 @@ IndexCreator::IndexCreator(
     : par(par), kmerFormat(kmerFormat), unirefTree(unirefTree)
 {
     dbDir = par.filenames[0];
-    if (par.reducedAA) {
-        geneticCode = new ReducedGeneticCode();
-    } else {
+    // if (par.reducedAA) {
+    //     geneticCode = new ReducedGeneticCode();
+    // } else {
         geneticCode = new RegularGeneticCode();
-    }
+    // }
     kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     isUpdating = false;
 }
@@ -92,11 +90,11 @@ IndexCreator::IndexCreator(
     int kmerFormat) : par(par), kmerFormat(kmerFormat) 
 {
     dbDir = par.filenames[0];
-    if (par.reducedAA) {
-        geneticCode = new ReducedGeneticCode();
-    } else {
+    // if (par.reducedAA) {
+    //     geneticCode = new ReducedGeneticCode();
+    // } else {
         geneticCode = new RegularGeneticCode();
-    }
+    // }
     kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
@@ -577,6 +575,7 @@ void IndexCreator::getObservedAccessions(
                     *pos = '\0';
                 }
                 if (duplicateCheck.find(e.name.s) != duplicateCheck.end()) {
+                    order++; 
                     continue;
                 } else {
                     duplicateCheck.insert(e.name.s);
@@ -826,6 +825,11 @@ void IndexCreator::getAccessionBatches(std::vector<Accession> & observedAccessio
             accessionBatches[j].trainingSeqIdx = trainingSeq;
         }
     }
+
+    for (size_t i = 0; i < accessionBatches.size(); ++i) {
+        accessionBatches[i].print();
+    }
+
 }
 
 
@@ -1315,7 +1319,6 @@ void IndexCreator::writeDbParameters() {
     fprintf(handle, "DB_name\t%s\n", par.dbName.c_str());
     fprintf(handle, "Creation_date\t%s\n", par.dbDate.c_str());
     fprintf(handle, "Metabuli commit used to create the DB\t%s\n", version);
-    fprintf(handle, "Reduced_alphabet\t%d\n", par.reducedAA);
     fprintf(handle, "Spaced_kmer_mask\t%s\n", par.spaceMask.c_str());
     fprintf(handle, "Accession_level\t%d\n", par.accessionLevel);
     fprintf(handle, "Mask_mode\t%d\n", par.maskMode);

@@ -18,11 +18,8 @@ GroupGenerator::GroupGenerator(LocalParameters & par) : par(par) {
                     taxDbDir + "/merged.dmp",
                     true);
     
-    if (par.reducedAA) {
-        geneticCode = new ReducedGeneticCode();
-    } else {
-        geneticCode = new RegularGeneticCode();
-    }
+   
+    geneticCode = new RegularGeneticCode();
     queryIndexer = new QueryIndexer(par);
     queryIndexer->setKmerLen(12);
     kmerExtractor = new KmerExtractor(par, geneticCode, kmerFormat);

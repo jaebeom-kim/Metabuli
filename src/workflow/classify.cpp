@@ -8,15 +8,15 @@
 #include "validateDatabase.h"
 
 void setClassifyDefaults(LocalParameters & par){
+    par.useAllMatches = 0;
     par.maxEValue = 1000;
-    par.spaceMask = "11111111";
+    par.spaceMask = "";
     par.syncmer = 0;
     par.smerLen = 5;
     par.kmerFormat = 1;
     par.em = false;
     par.maxShift = 1;
     par.skipRedundancy = 0;
-    par.reducedAA = 0;
     par.validateInput = 0;
     par.validateDb = 0;
     par.seqMode = 2;    

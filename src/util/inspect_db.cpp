@@ -36,24 +36,13 @@ int inspect_db(int argc, const char **argv, const Command &command){
     } else if (kmerFormat == 2) {
         bool multicode = false;
         if (multicode) {
-            if (par.reducedAA) {
-                vector<std::unique_ptr<GeneticCode>> geneticCodes;
-                geneticCodes.push_back(std::make_unique<ReducedGeneticCode>());
-                vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
-                metamerPattern = new MultiCodePattern(std::move(geneticCodes), codePatterns);
-            } else {
-                vector<std::unique_ptr<GeneticCode>> geneticCodes;
-                geneticCodes.push_back(std::make_unique<RegularGeneticCode>());
-                vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
-                metamerPattern = new MultiCodePattern(std::move(geneticCodes), codePatterns);
-            }
+            vector<std::unique_ptr<GeneticCode>> geneticCodes;
+            geneticCodes.push_back(std::make_unique<RegularGeneticCode>());
+            vector<int> codePatterns{0, 0, 0, 0, 0, 0, 0, 0};
+            metamerPattern = new MultiCodePattern(std::move(geneticCodes), codePatterns);
         } else {
-            if (par.reducedAA) {
-                metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
-            } else {
-                std::cout << "Using standard k-mer format." << std::endl;
-                metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
-            }
+            std::cout << "Using standard k-mer format." << std::endl;
+            metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
         }
     }
   
@@ -66,8 +55,8 @@ int inspect_db(int argc, const char **argv, const Command &command){
     size_t idx = 0;
     while (!deltaIdxReader->isCompleted()) {
         Kmer kmer = deltaIdxReader->next();
-        if (taxonomy->getOriginalTaxID(kmer.tInfo.taxId) == 1934568374) {
-            metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\n";
+        if (taxonomy->getOriginalTaxID(kmer.tInfo.taxId) == 2567792) {
+            metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\t";
             cout <<kmer.tInfo.taxId << "\n";
         }
         idx++;        

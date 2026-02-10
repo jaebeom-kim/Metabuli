@@ -32,8 +32,8 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
     tieRatio = par.tieRatio;
 
 
-        maxCodonShift = par.maxShift;
-        dnaShift = maxCodonShift * 3;
+    maxCodonShift = par.maxShift;
+    dnaShift = maxCodonShift * 3;
     // if (par.syncmer) {
     //     dnaShift = (8 - par.smerLen) * 3;
     //     maxCodonShift = 8 - par.smerLen;
@@ -43,16 +43,6 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
         denominator = 100;
     } else {
         denominator = 1000;
-    }
-
-    if (par.reducedAA == 1) {
-        bitsPerCodon = 4;
-        totalDnaBits = 32;
-        lastCodonMask = 0x0FFFFFFF;
-    } else {
-        bitsPerCodon = 3;
-        totalDnaBits = 24;
-        lastCodonMask = 0x1FFFFF;
     }
 
     // chooseBestTaxon

@@ -25,7 +25,7 @@
 #include <unordered_set>
 #include "LocalUtil.h"
 #include "QueryIndexer.h"
-#include "ReducedKmerMatcher.h"
+#include "KmerMatcher.h"
 #include "KmerExtractor.h"
 #include "Taxonomer.h"
 #include "Reporter.h"

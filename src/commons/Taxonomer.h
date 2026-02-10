@@ -52,9 +52,6 @@ private:
 
     // Internal
     int denominator;
-    int bitsPerCodon;
-    int totalDnaBits;
-    uint32_t lastCodonMask;
     int maxCodonShift;
     int dnaShift;
     // int smerLength;
