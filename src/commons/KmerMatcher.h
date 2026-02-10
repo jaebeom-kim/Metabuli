@@ -217,10 +217,6 @@ protected:
  
 
 public:
-  KmerMatcher(const LocalParameters &par,
-    TaxonomyWrapper *taxonomy,
-    int kmerFormat);
-
   KmerMatcher(const LocalParameters &par, int kmerFormat);
 
   KmerMatcher(const LocalParameters &par,

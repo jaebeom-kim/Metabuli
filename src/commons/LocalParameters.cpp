@@ -95,13 +95,6 @@ LocalParameters::LocalParameters() :
                  typeid(int),
                  (void *) &seqMode,
                  "[1-3]"),
-        REDUCED_AA(REDUCED_AA_ID,
-                   "--reduced-aa",
-                   "Using 15 alphabets to encode AAs for sensitivity",
-                   "Set as 0 to use 15 alphabets to encode AAs for sensitivity",
-                   typeid(int),
-                   (void *) &reducedAA,
-                   "[0-1]"),
         MIN_SCORE(MIN_SCORE_ID,
                   "--min-score",
                   "Min. sequence similarity score",
@@ -249,6 +242,13 @@ LocalParameters::LocalParameters() :
                         typeid(double),
                         (void *) &maxEValue,
                         "^([-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?)|[0-9]*(\\.[0-9]+)?$"),
+        USE_ALL_MATCHES(USE_ALL_MATCHES_ID,
+                        "--use-all-matches",
+                        "Use all k-mer matches instead of filtering",
+                        "Use all k-mer matches instead of filtering",
+                        typeid(int),
+                        (void *) &useAllMatches,
+                        "[0-1]"),
         TARGET_TAX_ID(TARGET_TAX_ID_ID,
                "--tax-id",
                "Tax. ID of clade. -1 for unclassified reads",
@@ -560,7 +560,6 @@ LocalParameters::LocalParameters() :
 
     // Classify
     seqMode = 2;
-    reducedAA = 0;
     minScore = 0;
     minConsCnt = 4;
     hammingMargin = 0;
@@ -638,7 +637,6 @@ LocalParameters::LocalParameters() :
     build.push_back(&VALIDATE_DB);
     build.push_back(&SYNCMER);
     build.push_back(&SMER_LEN);
-    build.push_back(&REDUCED_AA);
     build.push_back(&PARAM_CUSTOM_METAMER);
     build.push_back(&SPACE_MASK);
     build.push_back(&READING_FRAME);
@@ -680,7 +678,6 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&VALIDATE_INPUT);
     updateDB.push_back(&VALIDATE_DB);
     updateDB.push_back(&SYNCMER);
-    updateDB.push_back(&REDUCED_AA);
 
     //classify
     classify.push_back(&PARAM_THREADS);
@@ -705,7 +702,6 @@ LocalParameters::LocalParameters() :
     classify.push_back(&PARAM_SUB_MAT);
     // classify.push_back(&KMER_FORMAT);
     classify.push_back(&PRINT_LOG);
-    classify.push_back(&REDUCED_AA);
     classify.push_back(&PDM_KMER);
     classify.push_back(&SCORE_MODE);
     classify.push_back(&MAX_E_VALUE);
@@ -749,7 +745,6 @@ LocalParameters::LocalParameters() :
     filter.push_back(&PARAM_THREADS);
     filter.push_back(&SEQ_MODE);
     filter.push_back(&VIRUS_TAX_ID);
-    filter.push_back(&REDUCED_AA);
     filter.push_back(&MIN_SCORE);
     filter.push_back(&HAMMING_MARGIN);
     filter.push_back(&MIN_SP_SCORE);

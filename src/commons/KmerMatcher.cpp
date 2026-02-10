@@ -19,30 +19,6 @@ constexpr uint16_t KmerMatcher::HAMMING_LUT7[64];
 KmerMatcher::KmerMatcher(
     const LocalParameters & par,
     TaxonomyWrapper * taxonomy,
-    int kmerFormat) 
-    : par(par), 
-      kmerFormat(kmerFormat) 
-{                        
-    // Parameters
-    threads = par.threads;
-    dbDir = par.filenames[1 + (par.seqMode == 2)];
-    hammingMargin = par.hammingMargin;
-    DNA_MASK = 16777215;
-    DNA_MASK = ~ DNA_MASK;
-    AA_MASK = 0xffffffU;     
-    totalMatchCnt = 0;
-    this->taxonomy = taxonomy;
-    if (par.reducedAA) {
-        geneticCode = new ReducedGeneticCode();
-    } else {
-        geneticCode = new RegularGeneticCode();
-    }
-    loadTaxIdList(par);
-}
-
-KmerMatcher::KmerMatcher(
-    const LocalParameters & par,
-    TaxonomyWrapper * taxonomy,
     const MetamerPattern *metamerPattern) 
     : par(par), taxonomy(taxonomy), metamerPattern(metamerPattern)
 {                        
@@ -63,11 +39,11 @@ KmerMatcher::KmerMatcher(
     int kmerFormat) : par(par),
                       kmerFormat(kmerFormat)
 {
-    if (par.reducedAA) {
-        geneticCode = new ReducedGeneticCode();
-    } else {
-        geneticCode = new RegularGeneticCode();
-    }
+    // if (par.reducedAA) {
+    //     geneticCode = new ReducedGeneticCode();
+    // } else {
+    geneticCode = new RegularGeneticCode();
+    // }
     dbDir = par.filenames[1];
     // targetDiffIdxFileName = dbDir + "/diffIdx";
     // targetInfoFileName = dbDir + "/info";
@@ -328,7 +304,7 @@ std::vector<QueryKmerSplit> KmerMatcher::makeQueryKmerSplits(
             }
         }
         if (needLastTargetBlock) {
-            querySplits.emplace_back(startIdx, endIdx, diffIdxSplits.data[numOfDiffIdxSplits_use - 2]);
+            querySplits.emplace_back(startIdx, endIdx, diffIdxSplits.data[numOfDiffIdxSplits_use - 1]);
         }
         startIdx = endIdx + 1;
     }
@@ -465,6 +441,14 @@ void KmerMatcher::filterCandidates(
     const uint64_t qVal = qKmer.value;
     const Kmer* candPtr = candidates.data();
 
+    if (par.useAllMatches) {
+        for (size_t i = 0; i < numCandidates; i++) {
+            filteredMatches.emplace_back(qKmer, candPtr[i]);
+            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+        }
+        return;
+    }
+
     // Use only exact matches if any
     bool hasExactMatch = false;
     for (size_t i = 0; i < numCandidates; i++) {
@@ -472,6 +456,8 @@ void KmerMatcher::filterCandidates(
             filteredMatches.emplace_back(qKmer, candPtr[i]);
             filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
             hasExactMatch = true;
+        } else if (hasExactMatch) {
+            break;
         }
     }
     if (hasExactMatch) {
