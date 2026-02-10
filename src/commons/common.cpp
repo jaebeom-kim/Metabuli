@@ -94,9 +94,10 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
     if (dbParametersFile.is_open()) {
       while (getline(dbParametersFile, eachLine)) {
         std::vector<std::string> tokens = Util::split(eachLine, "\t");
-        if (tokens[0] == "Reduced_alphabet") {
-          par.reducedAA = stoi(tokens[1]);
-        } else if (tokens[0] == "Spaced_kmer_mask") {
+        if (tokens[0] == "Spaced_kmer_mask") {
+          if (tokens.size() < 2) {
+            continue;
+          }
           par.spaceMask = tokens[1];
         } else if (tokens[0] == "Accession_level") {
           if (tokens[1] == "0" && par.accessionLevel == 1){
