@@ -486,7 +486,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
     /* genes are also penalized.                                  */
     /**************************************************************/
     if(is_meta == 1 && slen < 3000 && edge_gene == 0 &&
-       (nod[i].cscore < 5.0 || abs(nod[i].ndx-nod[i].stop_val < 120))) {
+       (nod[i].cscore < 5.0 || abs(nod[i].ndx-nod[i].stop_val) < 120)) {
       nod[i].cscore -= META_PEN*dmax(0, (3000-slen)/2700.0);
     }
 
@@ -514,7 +514,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
       else nod[i].sscore -= 0.5;
     }
     else if(nod[i].cscore < 5.0 && is_meta == 1 && abs(nod[i].ndx-
-            nod[i].stop_val < 120) && nod[i].sscore < 0.0)
+            nod[i].stop_val) < 120 && nod[i].sscore < 0.0)
       nod[i].sscore -= tinf->st_wt;
   }
 }
@@ -551,7 +551,7 @@ void calc_orf_gc(unsigned char *seq, unsigned char *rseq, int slen, struct
                is_gc(seq, nod[i].ndx-2);
     }
     else if(nod[i].strand == -1) {
-      for(j = last[fr]+3; j <= nod[i].ndx; j+=3)
+      for(j = last[fr]+1; j <= nod[i].ndx; j+=3)
         gc[fr] += is_gc(seq, j) + is_gc(seq, j+1) + is_gc(seq, j+2);
       gsize = (float)(abs(nod[i].stop_val-nod[i].ndx)+3.0);
       nod[i].gc_cont = gc[fr]/gsize;

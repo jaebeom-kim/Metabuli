@@ -127,7 +127,9 @@ class DeltaIdxReader {
 private:
     std::string deltaIdxFileName;
     std::string infoFileName;
+    std::string posFileName;
     size_t totalValueNum;
+    bool hasPos = false;
 
     // To manage values
     size_t valueBufferSize;
@@ -140,6 +142,7 @@ private:
     size_t readBufferSize;
     ReadBuffer<uint16_t> deltaIdxBuffer;
     ReadBuffer<TaxID> infoBuffer;
+    ReadBuffer<uint16_t> posBuffer;
     bool fileCompleted = false;
     bool valueBufferCompleted = false;
 
@@ -147,6 +150,9 @@ private:
         for (; valueCnt < valueBufferSize; ++valueCnt) {
             if (unlikely(infoBuffer.p == infoBuffer.end)) {
                 size_t readCnt = infoBuffer.loadBuffer();
+                if (hasPos) {
+                    posBuffer.loadBuffer();
+                }
                 if (readCnt == 0) {
                     fileCompleted = true;
                     break;
@@ -154,6 +160,9 @@ private:
             }
             valueBuffer[valueCnt].tInfo.taxId = *infoBuffer.p++;
             valueBuffer[valueCnt].value = getNextMetamer();
+            if (hasPos) {
+                valueBuffer[valueCnt].tInfo.pos = *posBuffer.p++;
+            }
         }
         if (infoBuffer.p == infoBuffer.end) {
             if (infoBuffer.loadBuffer() == 0) {
@@ -201,10 +210,40 @@ public:
         totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
     }
 
-    ~DeltaIdxReader() {
+    DeltaIdxReader(
+        std::string deltaIdxFileName,
+        std::string infoFileName,
+        std::string posFileName,
+        size_t valueBufferSize = 32768, 
+        size_t readBufferSize = 8192)
+        : deltaIdxFileName(deltaIdxFileName),
+        infoFileName(infoFileName),
+        posFileName(posFileName),
+        valueBufferSize(valueBufferSize), 
+        readBufferSize(readBufferSize),
+        deltaIdxBuffer(deltaIdxFileName, readBufferSize),
+        infoBuffer(infoFileName, readBufferSize),
+        posBuffer(posFileName, readBufferSize)
+    {
+        lastValue = 0;
+        valueCnt = 0;
+        valueBuffer = new Kmer[valueBufferSize];
+        fillValueBuffer();
+        hasPos = true;
+        // Get the size of infoFile
+        totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
+    }
 
+    ~DeltaIdxReader() {
         delete[] valueBuffer;
     }
+
+    // void setPosBuffer(const std::string & posFileName) {
+    //     this->posFileName = posFileName;
+    //     posBuffer = ReadBuffer<uint16_t>(posFileName, readBufferSize);
+    //     hasPos = true;
+    // }
+
 
     uint64_t getLastValue() const {
         return lastValue;
@@ -265,6 +304,9 @@ public:
     void setReadPosition(DiffIdxSplit offset) {
         deltaIdxBuffer.loadBufferAt(offset.diffIdxOffset);
         infoBuffer.loadBufferAt(offset.infoIdxOffset - (offset.ADkmer != 0));
+        if (hasPos) {
+            posBuffer.loadBufferAt(offset.infoIdxOffset - (offset.ADkmer != 0));
+        }
         if (offset.ADkmer == 0 && offset.diffIdxOffset == 0 && offset.infoIdxOffset == 0) {
             valueCnt = 0;
             lastValue = 0;
@@ -272,6 +314,9 @@ public:
             lastValue = offset.ADkmer;
             valueBuffer[0].value = lastValue;
             valueBuffer[0].tInfo.taxId = *infoBuffer.p++;
+            if (hasPos) {
+                valueBuffer[0].tInfo.pos = *posBuffer.p++;
+            }
             valueCnt = 1;
         }
         valueBufferIdx = 0;

@@ -69,11 +69,11 @@ public:
                 smer = 0;
                 continue;
             }
-            if (!dq.empty() && dq.front().pos < posStart) dq.pop_front();
+            if (!dq.empty() && dq.front().pos < static_cast<uint32_t>(posStart)) dq.pop_front();
             uint32_t anchor1 = static_cast<uint32_t>(posStart);
             uint32_t anchor2 = static_cast<uint32_t>(posStart + (kmerSize - smerLen));
             if (!dq.empty() && (dq.front().pos == anchor1 || dq.front().pos == anchor2)) {
-                int shifts = posStart - prevPos;
+                int shifts = static_cast<int>(posStart - prevPos);
                 if (isForward) {
                     for (int i = 0; i < shifts; ++i) {
                         int ci = seqStart + (prevPos + kmerSize + i) * 3;

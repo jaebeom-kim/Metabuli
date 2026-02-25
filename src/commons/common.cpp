@@ -357,10 +357,10 @@ uint32_t safe_left_shift_32(uint32_t value, unsigned int shift) {
     return value << shift;
 }
 
-
-string reverseComplement(string &read) {
+  
+std::string reverseComplement(std::string &read) {
     int len = read.length();
-    string out;
+    std::string out;
     for (int i = 0; i < len; i++) {
         out.push_back(iRCT[read[i]]);
     }

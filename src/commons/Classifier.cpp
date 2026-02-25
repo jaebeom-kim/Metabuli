@@ -22,7 +22,7 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
     } else if (!par.customMetamer.empty()) {
         int codeNum = getCodeNum(par.customMetamer);
         if (codeNum == 1) {
-            if (par.spaceMask.empty()) {
+            if (par.spaceMask == "11111111") {
                 metamerPattern = new SingleCodePattern(par.customMetamer);
             } else {
                 uint32_t mask = parseMask(par.spaceMask.c_str());

@@ -63,6 +63,13 @@ KmerExtractor::KmerExtractor(
             }
         }
     }
+
+    // Syncmer ratio
+    syncmerRatio = 1;
+    if (par.syncmer && par.smerLen > 0) {
+        float c = (kmerLen - par.smerLen + 1) / 2.0f;
+        syncmerRatio = 1 / c + 0.1f;
+    }
 }
 
 KmerExtractor::~KmerExtractor() {
@@ -75,9 +82,9 @@ int KmerExtractor::getKmerCount(
     int seqLen) 
 {
     if (!par.pdmKmer) {
-        return LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, true);
+        return LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, true) * syncmerRatio;
     } else {
-        return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, false);
+        return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, false) * syncmerRatio;
     }
 }
 
@@ -689,10 +696,7 @@ void KmerExtractor::fillQueryKmerBuffer(
             Kmer kmer;
             while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
                 kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
-                // if (seqID == 1003) {
-                //     cout << (int) frame << "\t" << kmer.pos << "\t";
-                //     metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
-                // } 
+                // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\n";
             }
         } else {
             int begin, end;
@@ -707,15 +711,10 @@ void KmerExtractor::fillQueryKmerBuffer(
             Kmer kmer;
             while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
                 kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
-                // if (seqID == 1003) {
-                //     cout << (int) frame << "\t" << kmer.pos << "\t";
-                //     metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
-                // }
             }
 
             // Extract neighbor k-mers considering post-mortem DNA damage 
             if (frame < 3) {
-                // cout << "PDM" << endl;
                 generatePDMNeighborKmers(
                     seq,
                     begin,
@@ -726,9 +725,7 @@ void KmerExtractor::fillQueryKmerBuffer(
                     frame,
                     seqID,
                     offset);
-                // cout << "___" << endl;
             }
-
         }
     }
 }
@@ -835,18 +832,36 @@ void KmerExtractor::extractKmer_dna2aa(
 #else
     size_t threadID = 0; // Single-threaded mode
 #endif
+    // for (int frame = 0; frame < 6; frame++) {
+    //     bool isForward = frame < 3;
+    //     int begin = 0;
+    //     if (isForward) {
+    //         begin = frame;
+    //     } else {
+    //         begin = (seqLen % 3) - (frame % 3);
+    //         if (begin < 0) {
+    //             begin += 3;
+    //         }
+    //     }
+    //     kmerScanners[threadID]->initScanner(seq, begin, begin + seqLen - 1, isForward);
+    //     Kmer kmer;
+    //     while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
+    //         kmerBuffer.buffer[posToWrite++] = {kmer.value, static_cast<TaxID>(seqId1), static_cast<TaxID>(seqId2)};
+    //     }
+    // }
+
     for (int frame = 0; frame < 6; frame++) {
         bool isForward = frame < 3;
         int begin = 0;
+        int end = 0;
         if (isForward) {
             begin = frame;
+            end = seqLen - 1;
         } else {
-            begin = (seqLen % 3) - (frame % 3);
-            if (begin < 0) {
-                begin += 3;
-            }
+            begin = 0;
+            end = seqLen - 1 - (frame % 3);
         }
-        kmerScanners[threadID]->initScanner(seq, begin, begin + seqLen - 1, isForward);
+        kmerScanners[threadID]->initScanner(seq, begin, end, isForward);
         Kmer kmer;
         while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
             kmerBuffer.buffer[posToWrite++] = {kmer.value, static_cast<TaxID>(seqId1), static_cast<TaxID>(seqId2)};
@@ -871,6 +886,36 @@ int KmerExtractor::extractTargetKmers(
     Kmer kmer;
     while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
         kmerBuffer.buffer[posToWrite++] = { kmer.value, taxId, spTaxId };
+    }
+    return 0;
+}
+
+int KmerExtractor::extractTargetKmers(
+    const char *seq,
+    Buffer<Kmer> &kmerBuffer,
+    size_t &posToWrite,
+    uint64_t posOffset,
+    int taxId,
+    SequenceBlock block,
+    uint64_t scaleFactor) 
+{
+#ifdef OPENMP
+    size_t threadID = omp_get_thread_num();
+#else
+    size_t threadID = 0; // Single-threaded mode
+#endif
+    kmerScanners[threadID]->initScanner(seq, block.start, block.end, (block.strand > -1));
+    Kmer kmer;
+    while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
+        if (scaleFactor == 0) {
+            kmerBuffer.buffer[posToWrite++] = { kmer.value, taxId, 0 };
+            // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\t" << 0 << endl;
+        } else {
+            uint32_t binID = ((static_cast<uint64_t>(kmer.pos) + posOffset) * scaleFactor) >> 32;
+            kmerBuffer.buffer[posToWrite++] = { kmer.value, taxId, binID + 1 };
+            // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\t" << binID + 1 << endl;
+        }
+        
     }
     return 0;
 }

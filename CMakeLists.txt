@@ -3,8 +3,16 @@ cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 # zlib causes issues in static builds otherwise
 # cmake_policy(SET CMP0060 OLD)
 project(metabuli CXX C)
+
+if(MSVC)
+    add_compile_options(/std:c++17)
+else()
+    add_compile_options(-std=c++17)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/lib/mmseqs/cmake")
 

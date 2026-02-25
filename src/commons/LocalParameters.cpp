@@ -389,6 +389,20 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &readingFrame,
                 "^[0-6]$"),
+        STORE_KMER_POS(STORE_KMER_POS_ID,
+                "--kmer-pos",
+                "Store k-mer positions in the index",
+                "Store k-mer positions in the index",
+                typeid(int),
+                (void *) &storeKmerPos,
+                "[0-1]"),
+        REP_GENOME_LIST(REP_GENOME_LIST_ID,
+                "--rep-genomes",
+                "Species representative genomes.",
+                "Species representative genomes.",
+                typeid(std::string),
+                (void *) &repGenomeList,
+                "^.*$"),
         NEW_TAXA(NEW_TAXA_ID,
                 "--new-taxa",
                 "TSV file of new taxa to be added",
@@ -642,6 +656,8 @@ LocalParameters::LocalParameters() :
     build.push_back(&PARAM_CUSTOM_METAMER);
     build.push_back(&SPACE_MASK);
     build.push_back(&READING_FRAME);
+    build.push_back(&STORE_KMER_POS);
+    build.push_back(&REP_GENOME_LIST);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
     createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);

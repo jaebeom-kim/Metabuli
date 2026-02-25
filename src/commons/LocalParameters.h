@@ -121,6 +121,8 @@ public:
     PARAMETER(GTDB)
     PARAMETER(VALIDATE_INPUT)
     PARAMETER(READING_FRAME)
+    PARAMETER(STORE_KMER_POS)
+    PARAMETER(REP_GENOME_LIST)
 
     // DB updated parameters
     PARAMETER(NEW_TAXA)
@@ -221,6 +223,8 @@ public:
     int gtdb;
     int validateInput;
     int readingFrame;
+    int storeKmerPos;
+    std::string repGenomeList;
 
     // DB updated parameters
     std::string newTaxa;

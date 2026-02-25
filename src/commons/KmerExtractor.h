@@ -23,6 +23,7 @@ private:
     float maskProb;
     int kmerLen;
     int windowSize;
+    float syncmerRatio;
 
     // For masking reads
     ProbabilityMatrix * probMatrix;
@@ -104,11 +105,11 @@ private:
     const char *seq,
     int seqLen);
 
-    inline size_t countMutationComb(size_t nt, size_t na, int maxDamage) {
+    inline size_t countMutationComb(size_t nt, size_t na, size_t maxDamage) {
         size_t count = 0;
         size_t N = nt + na;
 
-        for (int d = 1; d <= maxDamage; ++d) {
+        for (size_t d = 1; d <= maxDamage; ++d) {
             if (d > N) break;
             count += binom[N][d];
         }
@@ -178,6 +179,15 @@ public:
         int seqID,
         int taxIdAtRank,
         SequenceBlock block);
+    
+    int extractTargetKmers(
+        const char *seq,
+        Buffer<Kmer> &kmerBuffer,
+        size_t &posToWrite,
+        uint64_t posOffset,
+        int seqID,
+        SequenceBlock block,
+        uint64_t scaleFactor);
 
     bool extractKmers(
         KSeqWrapper *kseq,

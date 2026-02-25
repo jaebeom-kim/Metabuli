@@ -59,6 +59,7 @@ SingleCodePattern::SingleCodePattern(const std::string & customFile) {
 
     std::string name = j["name"];
     kmerLen = j["length"];
+    windowSize = kmerLen;
 
     for (const auto& codeEntry : j["codes"]) {
 

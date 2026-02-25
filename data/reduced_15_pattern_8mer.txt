@@ -1,10 +1,10 @@
 ## From "Reduction of protein sequence complexity by residue grouping"
 ===BEGIN_CUSTOM_METAMER===
 {
-  "name": "Reduced Alphabet (15+stop)",
-  "length": 9,
+  "name": "Reduced Alphabet (15+stop) 8-mer",
+  "length": 8,
   "code_count": 1,
-  "position_codes": [0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "position_codes": [0, 0, 0, 0, 0, 0, 0, 0],
   "codes": [
     {
       "id": "Reduced Alphabet (15+stop)",

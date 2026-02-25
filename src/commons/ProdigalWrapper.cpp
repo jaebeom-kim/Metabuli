@@ -178,6 +178,15 @@ void ProdigalWrapper::trainSingleGenome(std::string & genomeFileName) {
     nn = 0; slen = 0; ipath = 0; nmask = 0;
 }
 
+void ProdigalWrapper::trainASpecies(std::string & genomeFileName) {
+    KSeqWrapper* kseq = KSeqFactory(genomeFileName.c_str());
+    std::string concatSeq;
+    while (kseq->ReadEntry()) {
+        concatSeq += std::string(kseq->entry.sequence.s, kseq->entry.sequence.l);
+    }
+    trainASpecies((unsigned char *)concatSeq.c_str(), concatSeq.length());
+    delete kseq;
+}
 
 void ProdigalWrapper::trainASpecies(unsigned char * genome, size_t seqLength) {
     // Initialize memories to reuse them
@@ -255,56 +264,63 @@ void ProdigalWrapper::trainASpecies(unsigned char * genome, size_t seqLength) {
 }
 
 void ProdigalWrapper::trainMeta(std::string & genomeFileName) {
-    fptr input_ptr = INPUT_OPEN(genomeFileName.c_str(), "r");
-    if(input_ptr == NULL) {
-      fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
-      exit(5);
+    KSeqWrapper* kseq = KSeqFactory(genomeFileName.c_str());
+    std::string concatSeq;
+    while (kseq->ReadEntry()) {
+        concatSeq += std::string(kseq->entry.sequence.s, kseq->entry.sequence.l);
     }
+    trainMeta((unsigned char *)concatSeq.c_str(), concatSeq.length());
+    delete kseq;
+    // fptr input_ptr = INPUT_OPEN(genomeFileName.c_str(), "r");
+    // if(input_ptr == NULL) {
+    //   fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
+    //   exit(5);
+    // }
 
-    slen = read_seq_training(input_ptr, seq, useq, &tinf.gc, do_mask, mlist, &nmask);
+    // slen = read_seq_training(input_ptr, seq, useq, &tinf.gc, do_mask, mlist, &nmask);
 
-    rcom_seq(seq, rseq, useq, slen);
-    if(quiet == 0) {
-      fprintf(stderr, "%d bp seq created, %.2f pct GC\n", slen, tinf.gc*100.0);
-    }
+    // rcom_seq(seq, rseq, useq, slen);
+    // if(quiet == 0) {
+    //   fprintf(stderr, "%d bp seq created, %.2f pct GC\n", slen, tinf.gc*100.0);
+    // }
 
-    INPUT_CLOSE(input_ptr);
+    // INPUT_CLOSE(input_ptr);
 
-        if(slen > max_slen && slen > STT_NOD*8) {
-        nodes = (struct _node *)realloc(nodes, (int)(slen/8)*sizeof(struct _node));
-        if(nodes == NULL) {
-            fprintf(stderr, "Realloc failed on nodes\n\n");
-            exit(11);
-        }
-        memset(nodes, 0, (int)(slen/8)*sizeof(struct _node));
-        max_slen = slen;
-    }
+    //     if(slen > max_slen && slen > STT_NOD*8) {
+    //     nodes = (struct _node *)realloc(nodes, (int)(slen/8)*sizeof(struct _node));
+    //     if(nodes == NULL) {
+    //         fprintf(stderr, "Realloc failed on nodes\n\n");
+    //         exit(11);
+    //     }
+    //     memset(nodes, 0, (int)(slen/8)*sizeof(struct _node));
+    //     max_slen = slen;
+    // }
 
-    low = 0.88495*tinf.gc - 0.0102337;
-    if(low > 0.65) low = 0.65;
-    high = 0.86596*tinf.gc + .1131991;
-    if(high < 0.35) high = 0.35;
-    max_score = -100.0;
-    for(int i = 0; i < NUM_META; i++) {
-        if (i == 0 || meta[i].tinf->trans_table !=
-                      meta[i - 1].tinf->trans_table) {
-            memset(nodes, 0, nn * sizeof(struct _node));
-            nn = add_nodes(seq, rseq, slen, nodes, closed, mlist, nmask,
-                           meta[i].tinf);
-            qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
-        }
-        if (meta[i].tinf->gc < low || meta[i].tinf->gc > high) continue;
-        reset_node_scores(nodes, nn);
-        score_nodes(seq, rseq, slen, nodes, nn, meta[i].tinf, closed, is_meta);
-        record_overlapping_starts(nodes, nn, meta[i].tinf, 1);
-        ipath = dprog(nodes, nn, meta[i].tinf, 1);
-        if(ipath == -1) continue;
+    // low = 0.88495*tinf.gc - 0.0102337;
+    // if(low > 0.65) low = 0.65;
+    // high = 0.86596*tinf.gc + .1131991;
+    // if(high < 0.35) high = 0.35;
+    // max_score = -100.0;
+    // for(int i = 0; i < NUM_META; i++) {
+    //     if (i == 0 || meta[i].tinf->trans_table !=
+    //                   meta[i - 1].tinf->trans_table) {
+    //         memset(nodes, 0, nn * sizeof(struct _node));
+    //         nn = add_nodes(seq, rseq, slen, nodes, closed, mlist, nmask,
+    //                        meta[i].tinf);
+    //         qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
+    //     }
+    //     if (meta[i].tinf->gc < low || meta[i].tinf->gc > high) continue;
+    //     reset_node_scores(nodes, nn);
+    //     score_nodes(seq, rseq, slen, nodes, nn, meta[i].tinf, closed, is_meta);
+    //     record_overlapping_starts(nodes, nn, meta[i].tinf, 1);
+    //     ipath = dprog(nodes, nn, meta[i].tinf, 1);
+    //     if(ipath == -1) continue;
 
-        if (nodes[ipath].score > max_score) {
-            max_phase = i;
-            max_score = nodes[ipath].score;
-        }
-    }
+    //     if (nodes[ipath].score > max_score) {
+    //         max_phase = i;
+    //         max_score = nodes[ipath].score;
+    //     }
+    // }
 }
 
 void ProdigalWrapper::trainMeta(unsigned char *genome, size_t seqLength) {
