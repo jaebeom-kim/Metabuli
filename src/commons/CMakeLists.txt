@@ -23,7 +23,6 @@ set(commons_source_files
 		commons/QueryIndexer.cpp
 		commons/KmerMatcher.h
 		commons/KmerMatcher.cpp
-		commons/ReducedKmerMatcher.h
 		commons/KmerExtractor.h
 		commons/KmerExtractor.cpp
 		commons/Taxonomer.h

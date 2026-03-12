@@ -70,6 +70,13 @@ KmerExtractor::KmerExtractor(
         float c = (kmerLen - par.smerLen + 1) / 2.0f;
         syncmerRatio = 1 / c + 0.1f;
     }
+
+    // Syncmer ratio
+    syncmerRatio = 1;
+    if (par.syncmer && par.smerLen > 0) {
+        float c = (kmerLen - par.smerLen + 1) / 2.0f;
+        syncmerRatio = 1 / c + 0.1f;
+    }
 }
 
 KmerExtractor::~KmerExtractor() {
@@ -83,7 +90,9 @@ int KmerExtractor::getKmerCount(
 {
     if (!par.pdmKmer) {
         return LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, true) * syncmerRatio;
+        return LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, true) * syncmerRatio;
     } else {
+        return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, false) * syncmerRatio;
         return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, false) * syncmerRatio;
     }
 }

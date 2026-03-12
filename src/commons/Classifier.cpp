@@ -22,7 +22,8 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
     } else if (!par.customMetamer.empty()) {
         int codeNum = getCodeNum(par.customMetamer);
         if (codeNum == 1) {
-            if (par.spaceMask == "11111111") {
+            if (par.spaceMask.empty()) {
+                cout << "Using SingleCodePattern with custom metamer." << endl;
                 metamerPattern = new SingleCodePattern(par.customMetamer);
             } else {
                 uint32_t mask = parseMask(par.spaceMask.c_str());
@@ -32,22 +33,13 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
             metamerPattern = new MultiCodePattern(par.customMetamer);
         }
     } else if (kmerFormat == 2) {
-        if (par.reducedAA) {
-            if (par.spaceMask == "11111111") {
-                metamerPattern = new SingleCodePattern(std::make_unique<ReducedGeneticCode>(), 8);
-            } else {
-                uint32_t mask = parseMask(par.spaceMask.c_str());
-                metamerPattern = new SpacedPattern(std::make_unique<ReducedGeneticCode>(), __builtin_popcount(mask), mask);
-            } 
+        if (par.spaceMask.empty()) {
+            cout << "Using SingleCodePattern with RegularGeneticCode" << endl;
+            metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
         } else {
-            if (par.spaceMask == "11111111") {
-                cout << "Using SingleCodePattern with RegularGeneticCode" << endl;
-                metamerPattern = new SingleCodePattern(std::make_unique<RegularGeneticCode>(), 8);
-            } else {
-                cout << "Using SpacedPattern with RegularGeneticCode" << endl;
-                uint32_t mask = parseMask(par.spaceMask.c_str());
-                metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
-            }
+            cout << "Using SpacedPattern with RegularGeneticCode" << endl;
+            uint32_t mask = parseMask(par.spaceMask.c_str());
+            metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
         }
     }
     kmerExtractor = new KmerExtractor(par, metamerPattern);
@@ -83,8 +75,8 @@ uint64_t Classifier::calculateBufferSize(
     size_t queryListBytes = queryListSize * (sizeof(Query) + 150); //  104,857,600
     size_t availableBytes = totalBytes - (par.threads * bytesPerThread) - overhead - queryListBytes; 
     size_t bytePerKmer = sizeof(Kmer) + matchPerKmer * sizeof(Match);
-    uint64_t totalSize = availableBytes / bytePerKmer;
-  
+    size_t totalSize = availableBytes / bytePerKmer;
+
     return totalSize;
 }
 
@@ -169,7 +161,8 @@ void Classifier::classifyReads() {
                 std::cout << difftime(time(nullptr), start) << " s" << std::endl;
                 std::cout << "Processed read count   : " << processedReadCnt << std::endl;
             } else {
-                matchPerKmer += 4;
+                matchPerKmer *= 2;
+                moreReads = true;
                 std::cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << std::endl;
                 break;
             }

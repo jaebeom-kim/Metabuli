@@ -8,7 +8,6 @@
 void setDefaults_uniqKmers(LocalParameters & par){
     par.syncmer = 0;
     par.smerLen = 5;
-    par.reducedAA = 0;
     par.ramUsage = 128;
     par.validateInput = 0;
     par.taxonomyPath = "" ;

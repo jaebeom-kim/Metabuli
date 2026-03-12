@@ -199,7 +199,8 @@ protected:
   void filterCandidates(
     Kmer qKmer,
     const std::vector<Kmer> &candidates,
-    std::vector<Match> &filteredMatches
+    std::vector<Match> &filteredMatches,
+    std::vector<uint8_t> & hammings
   );
 
   virtual uint8_t getHammingDistanceSum(uint64_t kmer1, uint64_t kmer2);
@@ -216,10 +217,6 @@ protected:
  
 
 public:
-  KmerMatcher(const LocalParameters &par,
-    TaxonomyWrapper *taxonomy,
-    int kmerFormat);
-
   KmerMatcher(const LocalParameters &par, int kmerFormat);
 
   KmerMatcher(const LocalParameters &par,

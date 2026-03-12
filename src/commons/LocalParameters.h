@@ -50,6 +50,7 @@ public:
     std::vector<MMseqsParameter*> buildUnirefTree;
     std::vector<MMseqsParameter*> assignUniref;
     std::vector<MMseqsParameter*> createCommonKmerList;
+    std::vector<MMseqsParameter*> mergeAssemblyFiles;
 
     // UniRef
     PARAMETER(UNIREF_NUMBERS)
@@ -72,7 +73,6 @@ public:
 
     // Classify
     PARAMETER(SEQ_MODE)
-    PARAMETER(REDUCED_AA)
     PARAMETER(MIN_SCORE)
     PARAMETER(HAMMING_MARGIN)
     PARAMETER(MIN_SP_SCORE)
@@ -93,6 +93,7 @@ public:
     PARAMETER(SCORE_MODE)
     PARAMETER(DB_TOTAL_LENGTH)
     PARAMETER(MAX_E_VALUE)
+    PARAMETER(USE_ALL_MATCHES)
 
     // extract
     PARAMETER(TARGET_TAX_ID)
@@ -178,7 +179,6 @@ public:
 
     // Classify
     int seqMode;
-    int reducedAA;
     float minScore;
     std::string spaceMask;
     int minConsCnt;
@@ -202,6 +202,7 @@ public:
     int scoreMode;
     size_t dbTotalLength;
     double maxEValue;
+    int useAllMatches;
     
     // Extract
     int targetTaxId;
