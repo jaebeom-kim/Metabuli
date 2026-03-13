@@ -919,9 +919,9 @@ void IndexCreator::getAccessionBatches(std::vector<Accession> & observedAccessio
         }
     }
 
-    for (size_t i = 0; i < accessionBatches.size(); ++i) {
-        accessionBatches[i].print();
-    }
+    // for (size_t i = 0; i < accessionBatches.size(); ++i) {
+    //     accessionBatches[i].print();
+    // }
 
 }
 

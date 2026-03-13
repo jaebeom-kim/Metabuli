@@ -39,7 +39,17 @@ public:
         
         return a.tKmer.value < b.tKmer.value;
     }
+};
 
+class MatchWithPos : public Match {
+    public:
+    uint16_t posId;
+    MatchWithPos(Kmer qKmer, Kmer tKmer, uint16_t posId) : Match(qKmer, tKmer), posId(posId) {}
+
+    void print() const {
+        std::cout << qKmer.qInfo.sequenceID << " " << qKmer.qInfo.pos << " " << qKmer.qInfo.frame << " "
+        << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << " " << posId << "\n";
+    }  
 };
 
 

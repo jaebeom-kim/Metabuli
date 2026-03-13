@@ -203,6 +203,13 @@ protected:
     std::vector<uint8_t> & hammings
   );
 
+  void filterCandidates(
+    Kmer qKmer,
+    const std::vector<Kmer> &candidates,
+    std::vector<MatchWithPos> &filteredMatches,
+    std::vector<uint8_t> & hammings
+  );
+
   virtual uint8_t getHammingDistanceSum(uint64_t kmer1, uint64_t kmer2);
 
   virtual uint16_t getHammings(uint64_t kmer1, uint64_t kmer2);
@@ -227,6 +234,10 @@ public:
   
   bool matchKmers(const Buffer<Kmer> *queryKmerBuffer,
                   Buffer<Match> *matchBuffer,
+                  const string &db);
+
+  bool matchKmersWithPos(const Buffer<Kmer> *queryKmerBuffer,
+                  Buffer<MatchWithPos> *matchBuffer,
                   const string &db);
 
   bool matchKmers_AA(const Buffer<Kmer> *queryKmerBuffer,

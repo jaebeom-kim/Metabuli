@@ -78,9 +78,12 @@ public:
 
     void classifyReads();
 
+    void classifyReadsWithPos();
+
     uint64_t calculateBufferSize(
         uint64_t queryListSize,
-        uint64_t matchPerKmer);
+        uint64_t matchPerKmer,
+        int mode);
 
 
     void assignTaxonomy(const Match *matchList,
