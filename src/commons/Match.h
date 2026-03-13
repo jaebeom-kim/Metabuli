@@ -10,10 +10,12 @@ public:
     Match(){}
     Match(Kmer qKmer, Kmer tKmer): qKmer(qKmer), tKmer(tKmer) { }
 
+    virtual ~Match() {}
+
     Kmer qKmer;
     Kmer tKmer;
 
-    void printMatch() const {
+    virtual void printMatch() const {
         std::cout << qKmer.qInfo.sequenceID << " " << qKmer.qInfo.pos << " " << qKmer.qInfo.frame << " "
         << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << "\n";
     }
@@ -46,7 +48,7 @@ class MatchWithPos : public Match {
     uint16_t posId;
     MatchWithPos(Kmer qKmer, Kmer tKmer, uint16_t posId) : Match(qKmer, tKmer), posId(posId) {}
 
-    void printMatch() const  {
+    void printMatch() const override {
         std::cout << qKmer.qInfo.sequenceID << " " << qKmer.qInfo.pos << " " << qKmer.qInfo.frame << " "
         << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << " " << posId << "\n";
     }  

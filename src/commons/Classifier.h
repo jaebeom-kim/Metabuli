@@ -85,8 +85,8 @@ public:
         uint64_t matchPerKmer,
         int mode);
 
-
-    void assignTaxonomy(const Match *matchList,
+    template <typename MatchType>
+    void assignTaxonomy(const MatchType *matchList,
                         size_t numOfMatches,
                         std::vector<Query> & queryList,
                         const LocalParameters &par);

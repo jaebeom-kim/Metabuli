@@ -127,6 +127,8 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
           par.kmerFormat = stoi(tokens[1]);
         } else if (tokens[0] == "Total_seq_length") {
           par.dbTotalLength = std::stoul(tokens[1]);
+        } else if (tokens[0] == "Kmer_position") {
+          par.storeKmerPos = stoi(tokens[1]);
         } else if (eachLine == "===BEGIN_CUSTOM_METAMER===") {
           par.customMetamer = dbDir + "/db.parameters";
         }

@@ -308,8 +308,8 @@ void Classifier::classifyReadsWithPos() {
 
 }
 
-
-void Classifier::assignTaxonomy(const Match *matchList, 
+template <typename MatchType>
+void Classifier::assignTaxonomy(const MatchType *matchList, 
                                size_t numOfMatches,
                                std::vector<Query> &queryList,
                                const LocalParameters &par) {
@@ -337,15 +337,14 @@ void Classifier::assignTaxonomy(const Match *matchList,
     // Process each block
 #pragma omp parallel default(none), shared(cout, matchBlocks, matchList, seqNum, queryList, blockIdx, par)
     {
-        Taxonomer taxonomer(par, taxonomy, metamerPattern);
+        Taxonomer<MatchType> taxonomer(par, taxonomy, metamerPattern);
         #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < blockIdx; ++i) {
             taxonomer.chooseBestTaxon(matchBlocks[i].id - 1,
                             matchBlocks[i].start,
                             matchBlocks[i].end,
                             matchList,
-                            queryList,
-                            par);
+                            queryList);
         }
     }
 

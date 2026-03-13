@@ -8,8 +8,8 @@
 #include <sys/types.h>
 #include <unordered_map>
 
-
-Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, const MetamerPattern *metamerPattern) :  
+template <typename MatchType>
+Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, const MetamerPattern *metamerPattern) :  
     par(par), 
     taxonomy(taxonomy), 
     metamerPattern(metamerPattern), 
@@ -61,7 +61,7 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
 
     // filterRedundantMatches
     arraySize_filterRedundantMatches = 4096;
-    bestMatchForQuotient = new const Match*[arraySize_filterRedundantMatches]();
+    // bestMatchForQuotient = new const Match*[arraySize_filterRedundantMatches]();
     bestMatchTaxIdForQuotient = new TaxID[arraySize_filterRedundantMatches];
     minHammingForQuotient = new uint8_t[arraySize_filterRedundantMatches];
 
@@ -78,24 +78,27 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
     // size_t tempSize = 562762599 * 2; // for nr database
 }
 
-Taxonomer::~Taxonomer() {
+template <typename MatchType>
+Taxonomer<MatchType>::~Taxonomer() {
     delete substitutionMatrix;
-    delete[] bestMatchForQuotient;
+    // delete[] bestMatchForQuotient;
     delete[] bestMatchTaxIdForQuotient;
     delete[] minHammingForQuotient;
     delete evaluer;
 }
 
-void Taxonomer::chooseBestTaxon(uint32_t currentQuery,
-                                size_t offset,
-                                size_t end,
-                                const Match *matchList,
-                                vector<Query> & queryList,
-                                const LocalParameters &par) {
-    // cout << "Current query: " << currentQuery << endl;
-    // for (size_t i = offset; i < end+1; i ++) {
-    //     matchList[i].printMatch();
-    // }
+template <typename MatchType>
+void Taxonomer<MatchType>::chooseBestTaxon(
+    uint32_t currentQuery,
+    size_t offset,
+    size_t end,
+    const MatchType *matchList,
+    vector<Query> & queryList) 
+{
+    cout << "Current query: " << currentQuery << endl;
+    for (size_t i = offset; i < end+1; i ++) {
+        matchList[i].printMatch();
+    }
     TaxonScore speciesScore;
     std::pair<size_t, size_t> bestSpeciesRange;
     speciesScore = getBestSpeciesMatches(bestSpeciesRange,
@@ -162,8 +165,8 @@ void Taxonomer::chooseBestTaxon(uint32_t currentQuery,
     }
 }
 
-
-void Taxonomer::filterRedundantMatches(const Match *matchList,
+template <typename MatchType>
+void Taxonomer<MatchType>::filterRedundantMatches(const MatchType *matchList,
                                        const std::pair<size_t, size_t> & bestSpeciesRange,
                                        unordered_map<TaxID, unsigned int> & taxCnt,
                                        int queryLength) {    
@@ -178,13 +181,13 @@ void Taxonomer::filterRedundantMatches(const Match *matchList,
         size_t currQuotient = matchList[i].qKmer.qInfo.pos / dnaShift;
         uint8_t hamming = metamerPattern->hammingDistSum(matchList[i].qKmer.value, matchList[i].tKmer.value, kmerLen, true);
 
-        if (bestMatchForQuotient[currQuotient] == nullptr) {
-            bestMatchForQuotient[currQuotient] = matchList + i;
+        if (bestMatchTaxIdForQuotient[currQuotient] == 0) {
+            // bestMatchForQuotient[currQuotient] = matchList + i;
             bestMatchTaxIdForQuotient[currQuotient] = matchList[i].tKmer.tInfo.taxId;
             minHammingForQuotient[currQuotient] = hamming;
         } else {
             if (hamming < minHammingForQuotient[currQuotient]) {
-                bestMatchForQuotient[currQuotient] = matchList + i;
+                // bestMatchForQuotient[currQuotient] = matchList + i;
                 bestMatchTaxIdForQuotient[currQuotient] = matchList[i].tKmer.tInfo.taxId;
                 minHammingForQuotient[currQuotient] = hamming;
             } else if (hamming == minHammingForQuotient[currQuotient]) {
@@ -195,14 +198,15 @@ void Taxonomer::filterRedundantMatches(const Match *matchList,
     }
 
     for (size_t i = 0; i <= maxQuotient; ++i) {
-        if (bestMatchForQuotient[i] != nullptr) {
+        if (bestMatchTaxIdForQuotient[i] != 0) {
             taxCnt[bestMatchTaxIdForQuotient[i]]++;
         }
     }
 }
 
-void Taxonomer::printSpeciesMatches(
-    const Match *matchList,
+template <typename MatchType>
+void Taxonomer<MatchType>::printSpeciesMatches(
+    const MatchType *matchList,
     const std::pair<size_t, size_t> & bestSpeciesRange) 
 {
     for (size_t i = bestSpeciesRange.first; i < bestSpeciesRange.second; i ++) {
@@ -210,7 +214,8 @@ void Taxonomer::printSpeciesMatches(
     }
 }
 
-TaxID Taxonomer::lowerRankClassification(const unordered_map<TaxID, unsigned int> & taxCnt, TaxID spTaxId, int queryLength) {
+template <typename MatchType>
+TaxID Taxonomer<MatchType>::lowerRankClassification(const unordered_map<TaxID, unsigned int> & taxCnt, TaxID spTaxId, int queryLength) {
     unsigned int minSubSpeciesMatch = ((queryLength - 1)/denominator);
     cladeCnt.clear();
     getSpeciesCladeCounts(taxCnt, cladeCnt, spTaxId);
@@ -231,9 +236,10 @@ TaxID Taxonomer::lowerRankClassification(const unordered_map<TaxID, unsigned int
     }
 }
 
-void Taxonomer::getSpeciesCladeCounts(const unordered_map<TaxID, unsigned int> &taxCnt,
-                                      unordered_map<TaxID, TaxonCounts> & cladeCount,
-                                      TaxID speciesTaxID) {
+template <typename MatchType>
+void Taxonomer<MatchType>::getSpeciesCladeCounts(const unordered_map<TaxID, unsigned int> &taxCnt,
+                                                 unordered_map<TaxID, TaxonCounts> & cladeCount,
+                                                 TaxID speciesTaxID) {
     for (auto it = taxCnt.begin(); it != taxCnt.end(); ++it) {
         TaxonNode const * taxon = taxonomy->taxonNode(it->first);
         cladeCount[taxon->taxId].taxCount = it->second;
@@ -250,7 +256,8 @@ void Taxonomer::getSpeciesCladeCounts(const unordered_map<TaxID, unsigned int> &
     }
 }
 
-TaxID Taxonomer::BFS(const unordered_map<TaxID, TaxonCounts> & cladeCnt, TaxID root, unsigned int maxCnt) {
+template <typename MatchType>
+TaxID Taxonomer<MatchType>::BFS(const unordered_map<TaxID, TaxonCounts> & cladeCnt, TaxID root, unsigned int maxCnt) {
     unsigned int maxCnt2 = maxCnt;
     if (cladeCnt.at(root).children.empty()) { // root is a leaf
         return root;
@@ -274,11 +281,12 @@ TaxID Taxonomer::BFS(const unordered_map<TaxID, TaxonCounts> & cladeCnt, TaxID r
     }
 }
 
-TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpeciesRange,
-                                            const Match *matchList,
-                                            size_t end,
-                                            size_t offset,
-                                            Query & query) {
+template <typename MatchType>
+TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpeciesRange,
+                                                       const MatchType *matchList,
+                                                       size_t end,
+                                                       size_t offset,
+                                                       Query & query) {
     matchPaths.clear();
     combinedMatchPaths.clear();
     vector<pair<TaxID, MatchScore>> sp2score;
@@ -398,7 +406,8 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
     return bestScore;                                  
 }
 
-void Taxonomer::sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i) {
+template <typename MatchType>
+void Taxonomer<MatchType>::sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i) {
     if (par.scoreMode == 0) {
         sort(matchPaths.begin() + i, matchPaths.end(),
          [](const MatchPath &a, const MatchPath &b) {
@@ -437,7 +446,8 @@ void Taxonomer::sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i) {
     }
 }
 
-MatchScore Taxonomer::combineMatchPaths(
+template <typename MatchType>
+MatchScore Taxonomer<MatchType>::combineMatchPaths(
     vector<MatchPath> & matchPaths,
     size_t matchPathStart,
     vector<MatchPath> & combinedMatchPaths,
@@ -503,12 +513,14 @@ MatchScore Taxonomer::combineMatchPaths(
     return score;
 }
 
-bool Taxonomer::isMatchPathOverlapped(const MatchPath & matchPath1,
-                                      const MatchPath & matchPath2) {
+template <typename MatchType>
+bool Taxonomer<MatchType>::isMatchPathOverlapped(const MatchPath & matchPath1,
+                                                 const MatchPath & matchPath2) {
     return !((matchPath1.end < matchPath2.start) || (matchPath2.end < matchPath1.start));                                       
 }
 
-void Taxonomer::trimMatchPath(
+template <typename MatchType>
+void Taxonomer<MatchType>::trimMatchPath(
     MatchPath & newPath, 
     const MatchPath & path2, 
     int overlapLength) 
@@ -649,9 +661,9 @@ void Taxonomer::trimMatchPath(
 //     }
 // }
 
-
-MatchPath Taxonomer::makeMatchPath(
-    const Match * match) 
+template <typename MatchType>
+MatchPath Taxonomer<MatchType>::makeMatchPath(
+    const MatchType * match) 
 {
     return MatchPath(
         match, 
@@ -667,8 +679,9 @@ MatchPath Taxonomer::makeMatchPath(
         metamerPattern->windowSize * 3);
 }
 
-void Taxonomer::getMatchPaths(
-    const Match * matchList,
+template <typename MatchType>
+void Taxonomer<MatchType>::getMatchPaths(
+    const MatchType * matchList,
     size_t matchNum,
     vector<MatchPath> & filteredMatchPaths,
     TaxID speciesId) 
@@ -828,8 +841,9 @@ void Taxonomer::getMatchPaths(
     }
 }
 
-void Taxonomer::makeMatchPath(
-    const Match * match,
+template <typename MatchType>
+void Taxonomer<MatchType>::makeMatchPath(
+    const MatchType * match,
     size_t index)
 {
     localMatchPaths[index] = MatchPath(match, metamerPattern->windowSize * 3);
@@ -845,8 +859,9 @@ void Taxonomer::makeMatchPath(
     localMatchPaths[index].firstHistoryMask = localMatchPaths[index].historyMask;
 }
 
-void Taxonomer::getMatchPaths2(
-    const Match * matchList,
+template <typename MatchType>
+void Taxonomer<MatchType>::getMatchPaths2(
+    const MatchType * matchList,
     size_t matchNum,
     vector<MatchPath> & filteredMatchPaths,
     TaxID speciesId) 
@@ -1018,23 +1033,21 @@ void Taxonomer::getMatchPaths2(
     }
 }
 
-void Taxonomer::ensureArraySize(size_t newSize) {
+template <typename MatchType>
+void Taxonomer<MatchType>::ensureArraySize(size_t newSize) {
     if (newSize > arraySize_filterRedundantMatches) {
-        delete[] bestMatchForQuotient;
         delete[] bestMatchTaxIdForQuotient;
         delete[] minHammingForQuotient;
-        bestMatchForQuotient = new const Match*[newSize]();
         bestMatchTaxIdForQuotient = new TaxID[newSize]();
         minHammingForQuotient = new uint8_t[newSize];
         arraySize_filterRedundantMatches = newSize;
     }
-    std::memset(bestMatchForQuotient, 0, newSize * sizeof(const Match*));
     std::memset(minHammingForQuotient, std::numeric_limits<uint8_t>::max(), newSize * sizeof(uint8_t));
 }
 
-
-void Taxonomer::getMatchPaths3(
-    const Match * matchList,
+template <typename MatchType>
+void Taxonomer<MatchType>::getMatchPaths3(
+    const MatchType * matchList,
     size_t matchNum,
     vector<MatchPath> & filteredMatchPaths,
     TaxID speciesId) 
@@ -1259,3 +1272,6 @@ void Taxonomer::getMatchPaths3(
 
     }
 }
+
+template class Taxonomer<Match>;
+template class Taxonomer<MatchWithPos>;

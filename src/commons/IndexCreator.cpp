@@ -1473,7 +1473,9 @@ size_t IndexCreator::fillTargetKmerBuffer2(
         vector<uint64_t> intergenicKmers;
         size_t maxSeqLen = 1000;
         char *maskedSeq = nullptr;
-        maskedSeq = new char[maxSeqLen + 1];
+        if (par.maskMode) {
+            maskedSeq = new char[maxSeqLen + 1];
+        }
         int tempCheck = 1;
 
 #pragma omp for schedule(dynamic, 1)
@@ -1689,7 +1691,9 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                 __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
             }
         }
-        delete[] maskedSeq;
+        if (par.maskMode) {
+            delete[] maskedSeq;
+        }
     } // End of parallel region
 
     return 0;
@@ -2037,6 +2041,7 @@ void IndexCreator::writeDbParameters() {
     }
     fprintf(handle, "Kmer_format\t%d\n", kmerFormat);
     fprintf(handle, "Total_seq_length\t%lu\n", totalLength);
+    fprintf(handle, "Kmer_position\t%d\n", par.storeKmerPos);
 
     if (!par.customMetamer.empty()) {
         // Read the custom metamer file and write to parameter file

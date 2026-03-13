@@ -198,7 +198,11 @@ int classify(int argc, const char **argv, const Command& command) {
 
     Classifier * classifier = new Classifier(par);
     // classifier->startClassify(par);
-    classifier->classifyReads();
+    if (par.storeKmerPos) {
+        classifier->classifyReadsWithPos();
+    } else {
+        classifier->classifyReads();
+    }
     delete classifier;
     return 0;
 }

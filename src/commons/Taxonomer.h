@@ -26,6 +26,7 @@ struct TaxonScore {
     TaxonScore() : taxId(0), score(), hammingDist(0), LCA(false) {}
 };
 
+template <typename MatchType>
 class Taxonomer {
 private:
     const LocalParameters & par;
@@ -78,7 +79,7 @@ private:
     unordered_map<TaxID, TaxonCounts> cladeCnt;
 
     // filterRedundantMatches
-    const Match **bestMatchForQuotient;
+    // const Match **bestMatchForQuotient;
     TaxID *bestMatchTaxIdForQuotient;
     uint8_t *minHammingForQuotient;
     size_t arraySize_filterRedundantMatches;
@@ -89,42 +90,44 @@ private:
 
     void ensureArraySize(size_t newSize);
 
+
     void printSpeciesMatches (
-       const Match *matchList,
+       const MatchType *matchList,
        const std::pair<size_t, size_t> & bestSpeciesRange
     );
 
+    
     TaxonScore getBestSpeciesMatches(
         std::pair<size_t, size_t> & bestSpeciesRange,
-        const Match *matchList,
+        const MatchType *matchList,
         size_t end,
         size_t offset,
         Query & query);
 
     void getMatchPaths(
-        const Match * matchList,
+        const MatchType * matchList,
         size_t matchNum,
         vector<MatchPath> & matchPaths,
         TaxID speciesId);
 
     void getMatchPaths2(
-        const Match * matchList,
+        const MatchType * matchList,
         size_t matchNum,
         vector<MatchPath> & matchPaths,
         TaxID speciesId); 
 
     void getMatchPaths3(
-        const Match * matchList,
+        const MatchType * matchList,
         size_t matchNum,
         vector<MatchPath> & matchPaths,
         TaxID speciesId); 
 
     MatchPath makeMatchPath(
-        const Match * match
+        const MatchType * match
     );
 
     void makeMatchPath(
-        const Match * match,
+        const MatchType * match,
         size_t index
     );
 
@@ -151,11 +154,10 @@ public:
     void chooseBestTaxon(uint32_t currentQuery,
                          size_t offset,
                          size_t end,
-                         const Match *matchList,
-                         vector<Query> & queryList,
-                         const LocalParameters &par);      
+                         const MatchType *matchList,
+                         vector<Query> & queryList);      
 
-    void filterRedundantMatches(const Match *matchList,
+    void filterRedundantMatches(const MatchType *matchList,
                                 const std::pair<size_t, size_t> & bestSpeciesRange,
                                 unordered_map<TaxID, unsigned int> & taxCnt,
                                 int queryLength);
