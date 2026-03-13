@@ -46,7 +46,7 @@ class MatchWithPos : public Match {
     uint16_t posId;
     MatchWithPos(Kmer qKmer, Kmer tKmer, uint16_t posId) : Match(qKmer, tKmer), posId(posId) {}
 
-    void print() const {
+    void printMatch() const  {
         std::cout << qKmer.qInfo.sequenceID << " " << qKmer.qInfo.pos << " " << qKmer.qInfo.frame << " "
         << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << " " << posId << "\n";
     }  
