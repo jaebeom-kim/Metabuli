@@ -137,44 +137,46 @@ inline MatchScore operator+(MatchScore lhs, const MatchScore& rhs) {
     return lhs;
 }
 
-struct MatchPath {
-    MatchPath() : start(0), end(0), score(), hammingDist(0), depth(0), startMatch(nullptr), endMatch(nullptr), historyMask(0), firstHistoryMask(0) {}
 
-    MatchPath(int start, int end, MatchScore score, int hammingDist, int depth, const Match * startMatch, const Match * endMatch) :
-         start(start), end(end), score(score), hammingDist(hammingDist), depth(depth), startMatch(startMatch), endMatch(endMatch), historyMask(0), firstHistoryMask(0) {}
+template <typename MatchType>
+struct MatchPath {
+    MatchPath() : start(0), end(0), score(), hammingDist(0), depth(0), startMatch(nullptr), prevMatch(nullptr), endMatch(nullptr), historyMask(0) {}
+
+    MatchPath(int start, int end, MatchScore score, int hammingDist, int depth, const MatchType * startMatch, const MatchType * endMatch) :
+         start(start), end(end), score(score), hammingDist(hammingDist), depth(depth), startMatch(startMatch), prevMatch(nullptr), endMatch(endMatch), historyMask(0) {}
 
     
-    MatchPath(const Match * startMath, int windowSizeNt) 
+    MatchPath(const MatchType * startMath, int windowSizeNt) 
         : start(startMath->qKmer.qInfo.pos),
           end(startMath->qKmer.qInfo.pos + windowSizeNt - 1), 
           score(),
           hammingDist(0),
           depth(1),
           startMatch(startMath),
+          prevMatch(nullptr),
           endMatch(startMath),
-          historyMask(0),
-          firstHistoryMask(0) {}
+          historyMask(0) {}
     
-    MatchPath(const Match * startMatch, MatchScore score, int hammingDist, int kmerLenNt) 
+    MatchPath(const MatchType * startMatch, MatchScore score, int hammingDist, int kmerLenNt) 
         : start(startMatch->qKmer.qInfo.pos),
           end(startMatch->qKmer.qInfo.pos + kmerLenNt - 1),
           score(score),
           hammingDist(hammingDist),
           depth(1),
           startMatch(startMatch),
+          prevMatch(nullptr),
           endMatch(startMatch),
-          historyMask(0),
-          firstHistoryMask(0) {}
+          historyMask(0) {}
     
     int start;                // query coordinate
     int end;                  // query coordinate
     MatchScore score;
     int hammingDist;
     int depth;
-    const Match * startMatch;
-    const Match * endMatch;
-    uint32_t historyMask;      // For spaced pattern with history
-    uint32_t firstHistoryMask; // For spaced pattern with history
+    const MatchType * startMatch; // Start match of the path
+    const MatchType * prevMatch;  // Previous match of the path, used for traceback
+    const MatchType * endMatch;   // It is always the current match
+    uint32_t historyMask;         // For spaced pattern with history
 
     void printMatchPath() {
         std::cout << start << " " << end << " " << score.idScore << " " << score.subScore << " " << hammingDist << " " << depth << std::endl;

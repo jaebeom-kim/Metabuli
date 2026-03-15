@@ -340,7 +340,8 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
         Taxonomer<MatchType> taxonomer(par, taxonomy, metamerPattern);
         #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < blockIdx; ++i) {
-            taxonomer.chooseBestTaxon(matchBlocks[i].id - 1,
+            taxonomer.chooseBestTaxon(
+                            matchBlocks[i].id - 1,
                             matchBlocks[i].start,
                             matchBlocks[i].end,
                             matchList,
