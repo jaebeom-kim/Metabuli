@@ -201,6 +201,7 @@ int classify(int argc, const char **argv, const Command& command) {
     if (par.storeKmerPos) {
         classifier->classifyReadsWithPos();
     } else {
+        cout << "Classifying reads ..." << endl;
         classifier->classifyReads();
     }
     delete classifier;

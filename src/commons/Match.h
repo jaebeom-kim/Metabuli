@@ -10,12 +10,12 @@ public:
     Match(){}
     Match(Kmer qKmer, Kmer tKmer): qKmer(qKmer), tKmer(tKmer) { }
 
-    virtual ~Match() {}
+    ~Match() {}
 
     Kmer qKmer;
     Kmer tKmer;
 
-    virtual void printMatch() const {
+    void printMatch() const {
         std::cout << qKmer.qInfo.sequenceID << " " << qKmer.qInfo.pos << " " << qKmer.qInfo.frame << " "
         << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << "\n";
     }
@@ -43,15 +43,39 @@ public:
     }
 };
 
-class MatchWithPos : public Match {
+class MatchWithPos {
     public:
+    Kmer qKmer;
+    Kmer tKmer;
     uint16_t posId;
-    MatchWithPos(Kmer qKmer, Kmer tKmer, uint16_t posId) : Match(qKmer, tKmer), posId(posId) {}
+    MatchWithPos(Kmer qKmer, Kmer tKmer, uint16_t posId) : qKmer(qKmer), tKmer(tKmer), posId(posId) {}
 
-    void printMatch() const override {
+    void printMatch() const {
         std::cout << qKmer.qInfo.sequenceID << " " << qKmer.qInfo.pos << " " << qKmer.qInfo.frame << " "
         << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << " " << posId << "\n";
     }  
+
+    static bool compare(const MatchWithPos &a, const MatchWithPos &b) {
+        if (a.qKmer.qInfo.sequenceID != b.qKmer.qInfo.sequenceID)
+            return a.qKmer.qInfo.sequenceID < b.qKmer.qInfo.sequenceID;
+        
+        if (a.tKmer.tInfo.speciesId != b.tKmer.tInfo.speciesId)
+            return a.tKmer.tInfo.speciesId < b.tKmer.tInfo.speciesId;
+
+        if (a.qKmer.qInfo.frame != b.qKmer.qInfo.frame)
+            return a.qKmer.qInfo.frame < b.qKmer.qInfo.frame;
+
+        if (a.qKmer.qInfo.pos != b.qKmer.qInfo.pos)
+            return a.qKmer.qInfo.pos < b.qKmer.qInfo.pos;
+
+        if (a.tKmer.tInfo.taxId != b.tKmer.tInfo.taxId)
+            return a.tKmer.tInfo.taxId < b.tKmer.tInfo.taxId;
+
+        if (a.qKmer.value != b.qKmer.value)
+            return a.qKmer.value < b.qKmer.value;
+        
+        return a.tKmer.value < b.tKmer.value;
+    }
 };
 
 

@@ -105,12 +105,6 @@ private:
         vector<MatchPath<MatchType>> & matchPaths,
         TaxID speciesId);
 
-    void getMatchPaths2(
-        const MatchType * matchList,
-        size_t matchNum,
-        vector<MatchPath<MatchType>> & matchPaths,
-        TaxID speciesId);
-
     void getMatchPaths_lookbackDP(
         const MatchType * matchList,
         size_t matchNum,
@@ -123,11 +117,12 @@ private:
         vector<MatchPath<MatchType>> & matchPaths,
         TaxID speciesId); 
 
-    void getMatchPaths3(
+    void getSapcedMatchPaths_lookbackDP(
         const MatchType * matchList,
         size_t matchNum,
         vector<MatchPath<MatchType>> & matchPaths,
-        TaxID speciesId); 
+        TaxID speciesId);
+
 
     MatchPath<MatchType> makeMatchPath(
         const MatchType * match
