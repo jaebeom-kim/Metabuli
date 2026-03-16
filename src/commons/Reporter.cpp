@@ -414,3 +414,197 @@ void Reporter::writeReclassifyResults(const std::vector<Classification> & result
     emResultFile.close();
     cout << "EM results written to " << reclassifyFileName << endl;
 }
+
+void Reporter::writeReportFile(
+    int numOfQuery, 
+    unordered_map<TaxID, unsigned int> &taxCnt, 
+    const unordered_map<TaxID, double> &species2adjustedEvenness, // NEW PARAMETER
+    ReportType reportType,
+    string kronaFileName) 
+{
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCnt, parentToChildren);
+    FILE *fp = nullptr;
+    
+    if (reportType == ReportType::Default) {
+        fp = fopen(reportFileName.c_str(), "w");
+    } else if (reportType == ReportType::EM) {
+        fp = fopen(reportFileName_em.c_str(), "w");
+    } else if (reportType == ReportType::EM_RECLASSIFY) {
+        fp = fopen(reportFileName_em_reclassify.c_str(), "w");
+    }
+    
+    // UPDATED HEADER: Added 'evenness' column before 'name'
+    fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\trank\ttaxID\tevenness\tname\n");
+    writeReport(fp, cladeCounts, species2adjustedEvenness, numOfQuery); // PASS MAP
+    fclose(fp);
+
+    // Write Krona chart (Krona HTML structure left unmodified to prevent rendering breaks)
+    if (jobId.empty()) { return; }
+    
+    FILE *kronaFile = nullptr;
+
+    if (reportType == ReportType::Default) {
+        if (!kronaFileName.empty()) {
+            kronaFile = fopen(kronaFileName.c_str(), "w");
+        } else {
+            kronaFile = fopen((outDir + "/" + jobId + "_krona.html").c_str(), "w");
+        }
+    } else if (reportType == ReportType::EM) {
+        kronaFile = fopen((outDir + "/" + jobId + "_EM_krona.html").c_str(), "w");
+    } else if (reportType == ReportType::EM_RECLASSIFY) {
+        kronaFile = fopen((outDir + "/" + jobId + "_EM+reclassify_krona.html").c_str(), "w");
+    }
+    if (kronaFile == nullptr) {
+        Debug(Debug::ERROR) << "Could not open Krona file for writing: " << kronaFileName << "\n";
+        EXIT(EXIT_FAILURE);
+    }
+    fwrite(krona_prelude_html, krona_prelude_html_len, sizeof(char), kronaFile);
+    fprintf(kronaFile, "<node name=\"all\"><magnitude><val>%zu</val></magnitude>", (size_t) numOfQuery);
+    kronaReport(kronaFile, *taxonomy, cladeCounts, numOfQuery);
+    fprintf(kronaFile, "</node></krona></div></body></html>");
+    fclose(kronaFile);
+}
+
+
+void Reporter::writeReport(
+    FILE *FP, 
+    const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+    const std::unordered_map<TaxID, double> &species2adjustedEvenness, 
+    unsigned long totalReads, 
+    TaxID taxID, 
+    int depth) 
+{
+    std::unordered_map<TaxID, TaxonCounts>::const_iterator it = cladeCounts.find(taxID);
+    unsigned int cladeCount = it == cladeCounts.end() ? 0 : it->second.cladeCount;
+    unsigned int taxCount = it == cladeCounts.end() ? 0 : it->second.taxCount;
+    
+    if (taxID == 0) {
+        if (cladeCount > 0) {
+            // Unclassified naturally gets a '-' for evenness
+            fprintf(FP, "%.4f\t%i\t%i\tno rank\t0\t-\tunclassified\n",
+                    100 * cladeCount / double(totalReads),
+                    cladeCount, taxCount);
+        }
+        writeReport(FP, cladeCounts, species2adjustedEvenness, totalReads, 1);
+    } else {
+        if (cladeCount == 0) {
+            return;
+        }
+        const TaxonNode *taxon = taxonomy->taxonNode(taxID);
+        
+        // NEW: Check if this specific taxID has a calculated evenness score
+        auto evIt = species2adjustedEvenness.find(taxID);
+        if (evIt != species2adjustedEvenness.end()) {
+            // Found: Print the score formatted to 4 decimal places
+            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t%.4f\t%s%s\n",
+                    100 * cladeCount / double(totalReads), cladeCount, taxCount,
+                    taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID),
+                    evIt->second, // Evenness score
+                    std::string(2 * depth, ' ').c_str(), taxonomy->getString(taxon->nameIdx));
+        } else {
+            // Not Found (Higher rank/not a species): Print '-' placeholder
+            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t-\t%s%s\n",
+                    100 * cladeCount / double(totalReads), cladeCount, taxCount,
+                    taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID), 
+                    std::string(2 * depth, ' ').c_str(), taxonomy->getString(taxon->nameIdx));
+        }
+
+        std::vector<TaxID> children = it->second.children;
+        SORT_SERIAL(children.begin(), children.end(), [&](int a, int b) { 
+            return cladeCountVal(cladeCounts, a) > cladeCountVal(cladeCounts, b); 
+        });
+        
+        for (size_t i = 0; i < children.size(); ++i) {
+            TaxID childTaxId = children[i];
+            if (cladeCounts.count(childTaxId)) {
+                // Pass the map down the recursive tree
+                writeReport(FP, cladeCounts, species2adjustedEvenness, totalReads, childTaxId, depth + 1);
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+
+void Reporter::filterClassificationFile(
+    const std::string& inputFilePath, 
+    const std::string& outputFilePath, 
+    const std::unordered_map<TaxID, double>& species2adjustedEvenness, 
+    double cutoff) 
+{
+    std::ifstream inFile(inputFilePath);
+    if (!inFile.is_open()) {
+        std::cerr << "Error: Could not open input file " << inputFilePath << "\n";
+        return;
+    }
+
+    std::ofstream outFile(outputFilePath);
+    if (!outFile.is_open()) {
+        std::cerr << "Error: Could not open output file " << outputFilePath << "\n";
+        return;
+    }
+
+    std::unordered_map<TaxID, TaxID> ex2inTaxId;
+    taxonomy->getExternal2internalTaxID(ex2inTaxId);
+    std::string line;
+    while (std::getline(inFile, line)) {
+        // 1. Pass the header or empty lines directly to the new file
+        if (line.empty() || line[0] == '#') {
+            outFile << line << "\n";
+            continue;
+        }
+
+        // 2. Split the line by tabs to parse the columns
+        std::vector<std::string> columns;
+        size_t start = 0, end = 0;
+        while ((end = line.find('\t', start)) != std::string::npos) {
+            columns.push_back(line.substr(start, end - start));
+            start = end + 1;
+        }
+        columns.push_back(line.substr(start)); // Grab the final column
+
+        // Safety check to ensure the line has at least the basic columns
+        if (columns.size() < 5) {
+            outFile << line << "\n";
+            continue;
+        }
+
+        // 3. Check if the read is currently classified
+        if (columns[0] == "1") {
+            TaxID taxID = ex2inTaxId[std::stoull(columns[2])]; // Convert the string taxID to your integer type
+
+            TaxID speciesTaxID = taxonomy->getTaxIdAtRank(taxID, "species");
+
+            auto evIt = species2adjustedEvenness.find(speciesTaxID);
+            
+            // 4. If the species is in the map AND its score is below the cutoff, rewrite it
+            if (evIt != species2adjustedEvenness.end() && evIt->second < cutoff) {
+                // Reconstruct the line exactly as your original "unclassified" else-block did
+                outFile << "0\t"          // is_classified
+                        << columns[1] << "\t" // name
+                        << "0\t"          // taxID (forced to 0)
+                        << columns[3] << "\t" // query_length
+                        << columns[4] << "\t" // idScore
+                        << "-\t"          // subScore
+                        << "-\t"          // eValue
+                        << "-\t";         // rank
+
+                // Check if lineage was printed (original format has > 9 columns if lineage exists)
+                if (columns.size() > 9) {
+                    outFile << "-\t";     // empty lineage
+                }
+                
+                outFile << "-\n";         // empty taxID:match_count
+                continue;                 // Skip writing the original line
+            }
+        }
+
+        // 5. If it wasn't filtered, write the original line exactly as it was
+        outFile << line << "\n";
+    }
+
+    inFile.close();
+    outFile.close();
+}

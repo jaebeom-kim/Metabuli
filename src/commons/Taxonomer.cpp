@@ -137,20 +137,25 @@ void Taxonomer<MatchType>::chooseBestTaxon(
 
 
     if constexpr (std::is_same_v<MatchType, MatchWithPos>) {
-
         auto & speciesBins = sp2coverage[speciesScore.taxId];
         if (speciesBins.empty()) { speciesBins.resize(65536, 0); }
         uint8_t * bins = speciesBins.data();
-
+        uint16_t minPos = 65535;
         for (size_t i = speciesScore.matchPathRange.first; i < speciesScore.matchPathRange.second; i ++) {
-            const vector<const MatchType*> & currentChain = combinedMatchPaths[i].chain;
-            for (size_t j = 0; j < currentChain.size(); j ++) {
-                const uint16_t binId = currentChain[j]->posId; 
-                if (bins[binId] < 255) {
-                    bins[binId]++;
-                }
+            // const vector<const MatchType*> & currentChain = combinedMatchPaths[i].chain;
+            uint16_t currStartPos = combinedMatchPaths[i].startMatch->posId;
+            if (currStartPos < minPos) {
+                minPos = currStartPos;
             }
+            // for (size_t j = 0; j < currentChain.size(); j ++) {
+            //     const uint16_t binId = currentChain[j]->posId; 
+            //     if (bins[binId] < 255) {
+            //         bins[binId]++;
+            //     }
+            // }
         }
+        bins[minPos]++;
+
     }
 
     // If score is not enough, classify to the parent of the selected species

@@ -42,6 +42,13 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
             metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
         }
     }
+
+    if (par.storeKmerPos) {
+        C_LOG2_C.resize(256);
+        for (int i = 1; i < 256; ++i) {
+            C_LOG2_C[i] = i * std::log2(static_cast<double>(i));
+        }
+    }
     kmerExtractor = new KmerExtractor(par, metamerPattern);
     queryIndexer = new QueryIndexer(par);
     kmerMatcher = new KmerMatcher(par, taxonomy, metamerPattern);
@@ -299,11 +306,15 @@ void Classifier::classifyReadsWithPos() {
     }
     delete savedSeq_1;
     delete savedSeq_2;
-    
-    // Finalize original classification results
     std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
     reporter->closeReadClassificationFile();
-    reporter->writeReportFile(processedReadCnt, taxCounts, ReportType::Default);
+
+    for (const auto& [spId, bins] : sp2coverage_global) {
+        sp2adjustedEveness[spId] = calculateAdjustedEvenness(bins);
+    }
+    
+    reporter->filterClassificationFile(reporter->getClassificationFileName(), reporter->getClassificationFileName() + ".filtered", sp2adjustedEveness, 0.4);
+    reporter->writeReportFile(processedReadCnt, taxCounts, sp2adjustedEveness, ReportType::Default);
     std::cout << "Taxonomic classification completed." << std::endl;
 
 }
@@ -347,6 +358,28 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
                             matchList,
                             queryList);
         }
+
+        if (par.storeKmerPos) {
+            #pragma omp critical
+            {
+                for (auto& [spId, localArray] : taxonomer.sp2coverage) {
+                    // Ensure the global map has this species
+                    if (sp2coverage_global.find(spId) == sp2coverage_global.end()) {
+                        sp2coverage_global[spId].resize(65536, 0);
+                    }
+
+                    uint8_t* globalBins = sp2coverage_global[spId].data();
+                    uint8_t* threadBins = localArray.data();
+
+                    // Fast vectorized addition to merge the 64KB arrays
+                    for (int j = 0; j < 65536; ++j) {
+                        int sum = globalBins[j] + threadBins[j];
+                        globalBins[j] = (sum > 255) ? 255 : static_cast<uint8_t>(sum);
+                    }
+                }
+            }
+        }
+
     }
 
     if (par.printLog) {
@@ -764,3 +797,55 @@ void Classifier::startClassify(const LocalParameters &par) {
     
     return;
 }
+
+double Classifier::calculateAdjustedEvenness(
+    const std::vector<uint8_t>& bins, 
+    uint64_t genomeSize) 
+{
+    uint64_t totalCount = 0;
+    double sum_c_log_c = 0.0;
+    int occupiedBins = 0;
+
+    // 1. Single fast pass over the 65,536 bins
+    for (uint8_t count : bins) {
+        totalCount += count;
+        if (count > 0) occupiedBins++;
+        sum_c_log_c += C_LOG2_C[count]; // O(1) table lookup
+    }
+
+    if (totalCount < 10 || occupiedBins < 5) {
+        return 0.0; 
+    }
+
+    // Edge case: 0 or 1 read mathematically has 0 entropy.
+    if (totalCount <= 1) {
+        return 0.0; 
+    }
+
+    // 2. Calculate Observed Shannon Entropy (H_obs)
+    double H_obs = std::log2(static_cast<double>(totalCount)) - (sum_c_log_c / totalCount);
+
+    // 3. Determine Maximum Effective Bins
+    // If the genome is smaller than 65,536 bp, it cannot fill all bins.
+    double effective_bins = std::min(65536.0, static_cast<double>(genomeSize));
+
+    // 4. Calculate Expected Occupied Bins under random uniform distribution
+    // E_bins = N * (1 - e^(-C/N))
+    double expected_occupied = effective_bins * (1.0 - std::exp(-static_cast<double>(totalCount) / effective_bins));
+
+    // 5. Calculate Expected Maximum Entropy
+    double expected_max_H = std::log2(expected_occupied);
+
+    // Protect against floating-point edge cases where expected_max_H is effectively 0
+    if (expected_max_H < 0.0001) {
+        return 0.0;
+    }
+
+    // 6. Return the Adjusted Ratio (clamped to 1.0 just in case of floating point quirks)
+    double evenness = H_obs / expected_max_H;
+
+    return std::min(1.0, evenness); 
+    // return 1;
+}
+
+

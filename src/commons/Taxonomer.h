@@ -58,8 +58,6 @@ private:
     double logMaxEValue;
     bool useEvalueFilter = false;
 
-    unordered_map<TaxID, vector<uint8_t>> sp2coverage;
-
     // chooseBestTaxon
     unordered_map<TaxID, unsigned int> taxCnt;
 
@@ -142,6 +140,9 @@ private:
     void sortMatchPath(std::vector<MatchPath<MatchType>> & matchPaths, size_t i);
 
 public:
+
+    unordered_map<TaxID, vector<uint8_t>> sp2coverage;
+
     Taxonomer(
         const LocalParameters & par, 
         TaxonomyWrapper * taxonomy, 

@@ -59,9 +59,24 @@ public:
     // );
 
     void writeReportFile(int numOfQuery, unordered_map<TaxID, unsigned int> &taxCnt, ReportType reportType, string kronaFileName = "");
+
+    void writeReportFile(int numOfQuery, 
+        unordered_map<TaxID, unsigned int> &taxCnt, 
+        const unordered_map<TaxID, double> &species2adjustedEvenness,
+        ReportType reportType,
+        string kronaFileName = "");
     
     void writeReport(FILE *FP, const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
                      unsigned long totalReads, TaxID taxID = 0, int depth = 0);
+
+    void writeReport(
+        FILE *FP, 
+        const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+        const std::unordered_map<TaxID, double> &species2adjustedEvenness,
+        unsigned long totalReads, 
+        TaxID taxID = 0, 
+        int depth = 0);
+
     void kronaReport(FILE *FP, const TaxonomyWrapper &taxDB, const std::unordered_map<TaxID, TaxonCounts> &cladeCounts, unsigned long totalReads, TaxID taxID = 0, int depth = 0);
 
     // Read by read classification results
@@ -93,6 +108,12 @@ public:
     }
 
     void writeReclassifyResults(const std::vector<Classification> & results);
+
+    void filterClassificationFile(
+        const std::string& inputFilePath, 
+        const std::string& outputFilePath, 
+        const std::unordered_map<TaxID, double>& species2adjustedEvenness, 
+        double cutoff);
 
     unsigned int cladeCountVal(const std::unordered_map<TaxID, TaxonCounts> &map, TaxID key);
 

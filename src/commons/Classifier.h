@@ -67,6 +67,13 @@ protected:
     std::vector<Classification> emResults;
     std::unordered_set<TaxID> topSpeciesSet;
 
+    // Coverage
+    unordered_map<TaxID, vector<uint8_t>> sp2coverage_global;
+    unordered_map<TaxID, double> sp2adjustedEveness;
+    std::vector<double> C_LOG2_C;
+
+    double calculateAdjustedEvenness(const std::vector<uint8_t>& bins, uint64_t genomeSize = 65536);
+
     void countUniqueKmerPerSpecies(vector<uint32_t> & sp2uniqKmerCnt);
 
     void loadMappings(const string & mappingResFileName);

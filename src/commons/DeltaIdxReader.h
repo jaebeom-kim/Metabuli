@@ -148,8 +148,6 @@ private:
 
     void fillValueBuffer() {
         for (; valueCnt < valueBufferSize; ++valueCnt) {
-            
-            // 1. Check and load infoBuffer
             if (unlikely(infoBuffer.p == infoBuffer.end)) {
                 if (infoBuffer.loadBuffer() == 0) {
                     fileCompleted = true;
@@ -157,12 +155,10 @@ private:
                 }
             }
             
-            // 2. Check and load posBuffer independently
             if (hasPos && unlikely(posBuffer.p == posBuffer.end)) {
                 posBuffer.loadBuffer();
             }
 
-            // 3. Assign values safely
             valueBuffer[valueCnt].tInfo.taxId = *infoBuffer.p++;
             valueBuffer[valueCnt].value = getNextMetamer();
             
@@ -173,21 +169,25 @@ private:
     }
 
     uint64_t getNextMetamer() {
-        if (deltaIdxBuffer.end < deltaIdxBuffer.p + 7) {
+        if (unlikely(deltaIdxBuffer.end - deltaIdxBuffer.p < 5)) {
             size_t readCnt = deltaIdxBuffer.loadBuffer(deltaIdxBuffer.end - deltaIdxBuffer.p);
             if (readCnt == 0) {
                 return UINT64_MAX; // No more values
             }
         }
+
+        uint16_t* p = deltaIdxBuffer.p;
         uint64_t diffIn64bit = 0;
-        while ((*deltaIdxBuffer.p & 0x8000) == 0) {
-            diffIn64bit = (diffIn64bit << 15) | *deltaIdxBuffer.p;
-            ++deltaIdxBuffer.p;
-        }
-        diffIn64bit = (diffIn64bit << 15) | (*deltaIdxBuffer.p & 0x7FFF);
-        ++deltaIdxBuffer.p;
-        this->lastValue = diffIn64bit + this->lastValue;
-        return this->lastValue;
+        uint16_t word;
+
+        do {
+            word = *p++;
+            diffIn64bit = (diffIn64bit << 15) | (word & 0x7FFF);
+        } while ((word & 0x8000) == 0);
+
+        deltaIdxBuffer.p = p;
+        lastValue += diffIn64bit;
+        return lastValue;
     }
 
 public:
