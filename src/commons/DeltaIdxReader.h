@@ -148,25 +148,26 @@ private:
 
     void fillValueBuffer() {
         for (; valueCnt < valueBufferSize; ++valueCnt) {
+            
+            // 1. Check and load infoBuffer
             if (unlikely(infoBuffer.p == infoBuffer.end)) {
-                size_t readCnt = infoBuffer.loadBuffer();
-                if (hasPos) {
-                    posBuffer.loadBuffer();
-                }
-                if (readCnt == 0) {
+                if (infoBuffer.loadBuffer() == 0) {
                     fileCompleted = true;
                     break;
                 }
             }
+            
+            // 2. Check and load posBuffer independently
+            if (hasPos && unlikely(posBuffer.p == posBuffer.end)) {
+                posBuffer.loadBuffer();
+            }
+
+            // 3. Assign values safely
             valueBuffer[valueCnt].tInfo.taxId = *infoBuffer.p++;
             valueBuffer[valueCnt].value = getNextMetamer();
+            
             if (hasPos) {
                 valueBuffer[valueCnt].tInfo.pos = *posBuffer.p++;
-            }
-        }
-        if (infoBuffer.p == infoBuffer.end) {
-            if (infoBuffer.loadBuffer() == 0) {
-                fileCompleted = true;
             }
         }
     }
@@ -228,8 +229,8 @@ public:
         lastValue = 0;
         valueCnt = 0;
         valueBuffer = new Kmer[valueBufferSize];
-        fillValueBuffer();
         hasPos = true;
+        fillValueBuffer();
         // Get the size of infoFile
         totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
     }

@@ -134,8 +134,24 @@ void Taxonomer<MatchType>::chooseBestTaxon(
     for (auto & tax : taxCnt) {
       queryList[currentQuery].taxCnt[tax.first] = tax.second;    
     }    
-    // Record species genome coverage
-    // auto & speciesBins = sp2coverage[speciesScore.taxId];
+
+
+    if constexpr (std::is_same_v<MatchType, MatchWithPos>) {
+
+        auto & speciesBins = sp2coverage[speciesScore.taxId];
+        if (speciesBins.empty()) { speciesBins.resize(65536, 0); }
+        uint8_t * bins = speciesBins.data();
+
+        for (size_t i = speciesScore.matchPathRange.first; i < speciesScore.matchPathRange.second; i ++) {
+            const vector<const MatchType*> & currentChain = combinedMatchPaths[i].chain;
+            for (size_t j = 0; j < currentChain.size(); j ++) {
+                const uint16_t binId = currentChain[j]->posId; 
+                if (bins[binId] < 255) {
+                    bins[binId]++;
+                }
+            }
+        }
+    }
 
     // If score is not enough, classify to the parent of the selected species
     if (speciesScore.score.idScore < par.minSpScore) {
@@ -407,6 +423,7 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
     // One species
     bestScore.taxId = maxSpecies[0];
     bestScore.score.logE = bestSpScore.logE;
+    bestScore.matchPathRange = bestMatchPathRange;
     
     return bestScore;                                  
 }

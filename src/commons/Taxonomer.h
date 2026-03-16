@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <cstdint>
+#include <type_traits>
 
 #include "TaxonomyWrapper.h"
 #include "LocalParameters.h"
@@ -21,6 +22,7 @@ struct TaxonScore {
     MatchScore score;
     int hammingDist;
     bool LCA;
+    std::pair<size_t, size_t> matchPathRange;
     TaxonScore(TaxID taxId, MatchScore score, int hammingDist, bool LCA) :
             taxId(taxId), score(score), hammingDist(hammingDist), LCA(LCA) {}
     TaxonScore() : taxId(0), score(), hammingDist(0), LCA(false) {}

@@ -157,7 +157,7 @@ void Classifier::classifyReads() {
                 kmerMatcher->sortMatches(&matchBuffer);
 
                 // 5) Assign taxonomy
-                assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                assignTaxonomy<Match>(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
 
                 // 6) Write classification results
                 start = time(nullptr);
@@ -270,7 +270,7 @@ void Classifier::classifyReadsWithPos() {
                 std::cout << double(time(nullptr) - beforeSortMatches) << " s" << std::endl;
 
                 // 5) Assign taxonomy
-                assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                assignTaxonomy<MatchWithPos>(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
 
                 // 6) Write classification results
                 start = time(nullptr);
