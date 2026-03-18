@@ -60,12 +60,17 @@ int inspect_db(int argc, const char **argv, const Command &command){
     deltaIdxReader->setReadPosition(DiffIdxSplit{0, 0, 0});
 
     size_t idx = 0;
+    cout << "Inspecting the database..." << endl;
+    TaxID internalTaxId = taxonomy->getInternalTaxID(1847562405);
     while (!deltaIdxReader->isCompleted()) {
         Kmer kmer = deltaIdxReader->next();
-        if (taxonomy->getOriginalTaxID(kmer.tInfo.taxId) == 2567792) {
-            metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\t";
-            cout <<kmer.tInfo.taxId << "\n";
+        if (taxonomy->IsAncestor(internalTaxId, kmer.tInfo.taxId)) {
+            cout << kmer.tInfo.pos << "\n";
         }
+        // if (taxonomy->getOriginalTaxID(kmer.tInfo.taxId) == 2567792) {
+        //     metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\t";
+        //     cout <<kmer.tInfo.taxId << "\n";
+        // }
         idx++;        
     }
                    

@@ -1675,8 +1675,8 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                 // }
 
                 // cout << "totalPanGenomeSize: " << totalPanGenomeSize << endl;
-                cout << "distinctAAgroupCnt: " << distinctAAgroupCnt << endl;
-                cout << "distinctDNAgroupCnt: " << distinctDNAgroupCnt << endl;
+                // cout << "distinctAAgroupCnt: " << distinctAAgroupCnt << endl;
+                // cout << "distinctDNAgroupCnt: " << distinctDNAgroupCnt << endl;
 
                 __sync_fetch_and_add(&processedSpCnt, 1);
                 #pragma omp critical

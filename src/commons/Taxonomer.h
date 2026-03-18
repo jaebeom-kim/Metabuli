@@ -142,6 +142,8 @@ private:
 public:
 
     unordered_map<TaxID, vector<uint8_t>> sp2coverage;
+    unordered_map<TaxID, std::bitset<65536>> sp2coveredBins;
+    unordered_map<TaxID, double> sp2scoreSum;
 
     Taxonomer(
         const LocalParameters & par, 

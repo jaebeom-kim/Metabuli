@@ -23,6 +23,15 @@
 
 extern const std::string atcg;
 extern const std::string iRCT;
+
+struct CovMetric {
+    double evenness;
+    double coverage;
+    double adjustedEvenness;
+    double unifiedScore;
+};
+
+
 struct MappingRes {
     MappingRes(uint32_t queryId, TaxID speicesId, float score) 
         : queryId(queryId), speciesId(speicesId), score(score) {}

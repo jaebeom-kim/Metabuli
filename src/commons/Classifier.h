@@ -69,10 +69,11 @@ protected:
 
     // Coverage
     unordered_map<TaxID, vector<uint8_t>> sp2coverage_global;
-    unordered_map<TaxID, double> sp2adjustedEveness;
+    unordered_map<TaxID, double> sp2scoreSum_global;
+    unordered_map<TaxID, CovMetric> sp2covMetric;
     std::vector<double> C_LOG2_C;
 
-    double calculateAdjustedEvenness(const std::vector<uint8_t>& bins, uint64_t genomeSize = 65536);
+    CovMetric calculateAdjustedEvenness(const std::vector<uint8_t>& bins, double k_mers_per_read, uint64_t genomeSize = 65536);
 
     void countUniqueKmerPerSpecies(vector<uint32_t> & sp2uniqKmerCnt);
 

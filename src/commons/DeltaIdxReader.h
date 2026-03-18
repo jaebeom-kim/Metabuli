@@ -149,6 +149,10 @@ private:
     void fillValueBuffer() {
         for (; valueCnt < valueBufferSize; ++valueCnt) {
             if (unlikely(infoBuffer.p == infoBuffer.end)) {
+                if (posBuffer.p != posBuffer.end) {
+                    std::cerr << "Error: Info buffer is exhausted but position buffer is not. This should not happen." << std::endl;
+                    exit(EXIT_FAILURE);
+                }
                 if (infoBuffer.loadBuffer() == 0) {
                     fileCompleted = true;
                     break;
@@ -331,7 +335,5 @@ public:
     size_t getValueCnt() const {
         return valueCnt;
     }
-
-
 };
 #endif // METABULI_DELTAIDXREADER_H

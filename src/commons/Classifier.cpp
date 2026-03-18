@@ -310,11 +310,11 @@ void Classifier::classifyReadsWithPos() {
     reporter->closeReadClassificationFile();
 
     for (const auto& [spId, bins] : sp2coverage_global) {
-        sp2adjustedEveness[spId] = calculateAdjustedEvenness(bins);
+        sp2covMetric[spId] = calculateAdjustedEvenness(bins, 84);
     }
     
-    reporter->filterClassificationFile(reporter->getClassificationFileName(), reporter->getClassificationFileName() + ".filtered", sp2adjustedEveness, 0.4);
-    reporter->writeReportFile(processedReadCnt, taxCounts, sp2adjustedEveness, ReportType::Default);
+    reporter->filterClassificationFile(reporter->getClassificationFileName(), reporter->getClassificationFileName() + ".filtered", sp2covMetric, 0.4);
+    reporter->writeReportFile(processedReadCnt, taxCounts, sp2covMetric, ReportType::Default);
     std::cout << "Taxonomic classification completed." << std::endl;
 
 }
@@ -363,6 +363,8 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
             #pragma omp critical
             {
                 for (auto& [spId, localArray] : taxonomer.sp2coverage) {
+                    sp2scoreSum_global[spId] += taxonomer.sp2scoreSum[spId];
+
                     // Ensure the global map has this species
                     if (sp2coverage_global.find(spId) == sp2coverage_global.end()) {
                         sp2coverage_global[spId].resize(65536, 0);
@@ -798,54 +800,63 @@ void Classifier::startClassify(const LocalParameters &par) {
     return;
 }
 
-double Classifier::calculateAdjustedEvenness(
+CovMetric Classifier::calculateAdjustedEvenness(
     const std::vector<uint8_t>& bins, 
+    double k_mers_per_read,
     uint64_t genomeSize) 
 {
     uint64_t totalCount = 0;
     double sum_c_log_c = 0.0;
     int occupiedBins = 0;
 
-    // 1. Single fast pass over the 65,536 bins
     for (uint8_t count : bins) {
         totalCount += count;
         if (count > 0) occupiedBins++;
         sum_c_log_c += C_LOG2_C[count]; // O(1) table lookup
     }
 
-    if (totalCount < 10 || occupiedBins < 5) {
-        return 0.0; 
+    if (totalCount == 0) {
+        return {0.0, 0.0, 0.0, 0.0}; 
     }
 
-    // Edge case: 0 or 1 read mathematically has 0 entropy.
-    if (totalCount <= 1) {
-        return 0.0; 
-    }
-
-    // 2. Calculate Observed Shannon Entropy (H_obs)
-    double H_obs = std::log2(static_cast<double>(totalCount)) - (sum_c_log_c / totalCount);
-
-    // 3. Determine Maximum Effective Bins
-    // If the genome is smaller than 65,536 bp, it cannot fill all bins.
     double effective_bins = std::min(65536.0, static_cast<double>(genomeSize));
-
-    // 4. Calculate Expected Occupied Bins under random uniform distribution
-    // E_bins = N * (1 - e^(-C/N))
-    double expected_occupied = effective_bins * (1.0 - std::exp(-static_cast<double>(totalCount) / effective_bins));
-
-    // 5. Calculate Expected Maximum Entropy
-    double expected_max_H = std::log2(expected_occupied);
-
-    // Protect against floating-point edge cases where expected_max_H is effectively 0
-    if (expected_max_H < 0.0001) {
-        return 0.0;
+    if (effective_bins <= 1.0) {
+        return {0.0, 0.0, 0.0, 0.0};
     }
 
-    // 6. Return the Adjusted Ratio (clamped to 1.0 just in case of floating point quirks)
-    double evenness = H_obs / expected_max_H;
+    // 3. Calculate Coverage (Breadth)
+    double coverage = static_cast<double>(occupiedBins) / effective_bins;
+    coverage = std::min(1.0, coverage); // Clamped just in case
 
-    return std::min(1.0, evenness); 
-    // return 1;
+    // 4. Calculate Observed Shannon Entropy (H_obs)
+    double H_obs = std::log2(static_cast<double>(totalCount)) - (sum_c_log_c / totalCount);
+    H_obs = std::max(0.0, H_obs);
+    
+    // 5. Calculate Standard Evenness
+    // Normalized strictly against the maximum capacity of the genome
+    double max_H_standard = std::log2(effective_bins);
+    double evenness = (max_H_standard > 0.0001) ? std::min(1.0, H_obs / max_H_standard) : 0.0;
+
+    // 6. Calculate Expected Occupied Bins under random uniform distribution
+    k_mers_per_read = std::max(1.0, k_mers_per_read);
+    double independent_events = static_cast<double>(totalCount) / k_mers_per_read;
+    independent_events = std::max(1.0, independent_events);
+    double expected_occupied = effective_bins * (1.0 - std::exp(-independent_events / effective_bins));
+
+    // 7. Calculate Expected Maximum Entropy (Poisson adjusted)
+    double expected_max_H = std::log2(std::max(1.0, expected_occupied));
+
+    // 8. Calculate Adjusted Evenness
+    double adjustedEvenness = 0.0;
+    if (expected_max_H >= 0.0001) {
+        adjustedEvenness = std::min(1.0, H_obs / expected_max_H);
+    }
+
+    // double effective_bins = ;
+    double unified_score = std::pow(2.0, H_obs) / effective_bins;
+
+    // 9. Return the populated struct
+    return {evenness, coverage, adjustedEvenness, unified_score};
 }
 
 

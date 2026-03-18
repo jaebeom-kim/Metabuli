@@ -62,7 +62,7 @@ public:
 
     void writeReportFile(int numOfQuery, 
         unordered_map<TaxID, unsigned int> &taxCnt, 
-        const unordered_map<TaxID, double> &species2adjustedEvenness,
+        unordered_map<TaxID, CovMetric> &sp2covMetric,
         ReportType reportType,
         string kronaFileName = "");
     
@@ -72,7 +72,7 @@ public:
     void writeReport(
         FILE *FP, 
         const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
-        const std::unordered_map<TaxID, double> &species2adjustedEvenness,
+        const unordered_map<TaxID, CovMetric> &sp2covMetric,
         unsigned long totalReads, 
         TaxID taxID = 0, 
         int depth = 0);
@@ -112,8 +112,15 @@ public:
     void filterClassificationFile(
         const std::string& inputFilePath, 
         const std::string& outputFilePath, 
-        const std::unordered_map<TaxID, double>& species2adjustedEvenness, 
+        const std::unordered_map<TaxID, CovMetric> &sp2covMetric, 
         double cutoff);
+
+    
+    void rollUpCoverageMetrics(
+        const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
+        const std::unordered_map<TaxID, TaxonCounts>& cladeCounts,
+        std::unordered_map<TaxID, CovMetric>& allMetrics, // Starts with species, gets filled with all ranks
+        TaxID currentTaxID);
 
     unsigned int cladeCountVal(const std::unordered_map<TaxID, TaxonCounts> &map, TaxID key);
 
@@ -143,6 +150,7 @@ public:
         return mappingResFileName;
     }
 };
+
 
 
 #endif //METABULI_REPORTER_H

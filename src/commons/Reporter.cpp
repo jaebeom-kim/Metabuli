@@ -418,12 +418,13 @@ void Reporter::writeReclassifyResults(const std::vector<Classification> & result
 void Reporter::writeReportFile(
     int numOfQuery, 
     unordered_map<TaxID, unsigned int> &taxCnt, 
-    const unordered_map<TaxID, double> &species2adjustedEvenness, // NEW PARAMETER
+    unordered_map<TaxID, CovMetric> &species2covMetrics, // UPDATED PARAMETER
     ReportType reportType,
     string kronaFileName) 
 {
     std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
     unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCnt, parentToChildren);
+    rollUpCoverageMetrics(parentToChildren, cladeCounts, species2covMetrics, 1);
     FILE *fp = nullptr;
     
     if (reportType == ReportType::Default) {
@@ -434,9 +435,9 @@ void Reporter::writeReportFile(
         fp = fopen(reportFileName_em_reclassify.c_str(), "w");
     }
     
-    // UPDATED HEADER: Added 'evenness' column before 'name'
-    fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\trank\ttaxID\tevenness\tname\n");
-    writeReport(fp, cladeCounts, species2adjustedEvenness, numOfQuery); // PASS MAP
+    // UPDATED HEADER: Added coverage and adjusted_evenness columns
+    fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\trank\ttaxID\tevenness\tcoverage\tadjusted_evenness\tunified_score\tname\n");
+    writeReport(fp, cladeCounts, species2covMetrics, numOfQuery); // PASS MAP
     fclose(fp);
 
     // Write Krona chart (Krona HTML structure left unmodified to prevent rendering breaks)
@@ -470,7 +471,7 @@ void Reporter::writeReportFile(
 void Reporter::writeReport(
     FILE *FP, 
     const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
-    const std::unordered_map<TaxID, double> &species2adjustedEvenness, 
+    const std::unordered_map<TaxID, CovMetric> &species2covMetrics, // UPDATED PARAMETER
     unsigned long totalReads, 
     TaxID taxID, 
     int depth) 
@@ -481,30 +482,30 @@ void Reporter::writeReport(
     
     if (taxID == 0) {
         if (cladeCount > 0) {
-            // Unclassified naturally gets a '-' for evenness
-            fprintf(FP, "%.4f\t%i\t%i\tno rank\t0\t-\tunclassified\n",
+            // Unclassified naturally gets '-' for all three metric columns
+            fprintf(FP, "%.4f\t%i\t%i\tno rank\t0\t-\t-\t-\t-\tunclassified\n",
                     100 * cladeCount / double(totalReads),
                     cladeCount, taxCount);
         }
-        writeReport(FP, cladeCounts, species2adjustedEvenness, totalReads, 1);
+        writeReport(FP, cladeCounts, species2covMetrics, totalReads, 1);
     } else {
         if (cladeCount == 0) {
             return;
         }
         const TaxonNode *taxon = taxonomy->taxonNode(taxID);
         
-        // NEW: Check if this specific taxID has a calculated evenness score
-        auto evIt = species2adjustedEvenness.find(taxID);
-        if (evIt != species2adjustedEvenness.end()) {
-            // Found: Print the score formatted to 4 decimal places
-            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t%.4f\t%s%s\n",
+        // NEW: Check if this specific taxID has calculated metric scores
+        auto evIt = species2covMetrics.find(taxID);
+        if (evIt != species2covMetrics.end()) {
+            // Found: Print the three scores formatted to 4 decimal places
+            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t%.4f\t%.4f\t%.4f\t%.4f\t%s%s\n",
                     100 * cladeCount / double(totalReads), cladeCount, taxCount,
                     taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID),
-                    evIt->second, // Evenness score
+                    evIt->second.evenness, evIt->second.coverage, evIt->second.adjustedEvenness, evIt->second.unifiedScore,
                     std::string(2 * depth, ' ').c_str(), taxonomy->getString(taxon->nameIdx));
         } else {
-            // Not Found (Higher rank/not a species): Print '-' placeholder
-            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t-\t%s%s\n",
+            // Not Found (Higher rank/not a species): Print '-' placeholders for the three columns
+            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t-\t-\t-\t-\t%s%s\n",
                     100 * cladeCount / double(totalReads), cladeCount, taxCount,
                     taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID), 
                     std::string(2 * depth, ' ').c_str(), taxonomy->getString(taxon->nameIdx));
@@ -519,7 +520,7 @@ void Reporter::writeReport(
             TaxID childTaxId = children[i];
             if (cladeCounts.count(childTaxId)) {
                 // Pass the map down the recursive tree
-                writeReport(FP, cladeCounts, species2adjustedEvenness, totalReads, childTaxId, depth + 1);
+                writeReport(FP, cladeCounts, species2covMetrics, totalReads, childTaxId, depth + 1);
             } else {
                 break;
             }
@@ -531,7 +532,7 @@ void Reporter::writeReport(
 void Reporter::filterClassificationFile(
     const std::string& inputFilePath, 
     const std::string& outputFilePath, 
-    const std::unordered_map<TaxID, double>& species2adjustedEvenness, 
+    const std::unordered_map<TaxID, CovMetric> &sp2covMetric, 
     double cutoff) 
 {
     std::ifstream inFile(inputFilePath);
@@ -577,10 +578,10 @@ void Reporter::filterClassificationFile(
 
             TaxID speciesTaxID = taxonomy->getTaxIdAtRank(taxID, "species");
 
-            auto evIt = species2adjustedEvenness.find(speciesTaxID);
+            auto evIt = sp2covMetric.find(speciesTaxID);
             
             // 4. If the species is in the map AND its score is below the cutoff, rewrite it
-            if (evIt != species2adjustedEvenness.end() && evIt->second < cutoff) {
+            if (evIt != sp2covMetric.end() && evIt->second.adjustedEvenness < cutoff) {
                 // Reconstruct the line exactly as your original "unclassified" else-block did
                 outFile << "0\t"          // is_classified
                         << columns[1] << "\t" // name
@@ -607,4 +608,63 @@ void Reporter::filterClassificationFile(
 
     inFile.close();
     outFile.close();
+}
+
+void Reporter::rollUpCoverageMetrics(
+    const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
+    const std::unordered_map<TaxID, TaxonCounts>& cladeCounts,
+    std::unordered_map<TaxID, CovMetric>& allMetrics, // Starts with species, gets filled with all ranks
+    TaxID currentTaxID) 
+{
+// NEW BASE CASE: If this node already has a metric calculated (i.e., it's a Species),
+    // it is the base of our roll-up. Stop recursing down to subspecies and return immediately.
+    if (allMetrics.find(currentTaxID) != allMetrics.end()) {
+        return;
+    }
+
+    // Secondary Base Case: True leaf node (no children at all) but no pre-calculated metric
+    auto childrenIt = parentToChildren.find(currentTaxID);
+    if (childrenIt == parentToChildren.end() || childrenIt->second.empty()) {
+        return; 
+    }
+
+    double weightedEvenness = 0.0;
+    double weightedCoverage = 0.0;
+    double weightedAdjEvenness = 0.0;
+    double weightedUnifiedScore = 0.0;
+    uint64_t totalChildReads = 0;
+
+    // 1. Recursively process all children FIRST (Post-order traversal)
+    for (TaxID childID : childrenIt->second) {
+        rollUpCoverageMetrics(parentToChildren, cladeCounts, allMetrics, childID);
+        
+        // 2. Gather data for the weighted average
+        auto countIt = cladeCounts.find(childID);
+        auto metricIt = allMetrics.find(childID);
+
+        if (countIt != cladeCounts.end() && metricIt != allMetrics.end()) {
+            uint64_t reads = countIt->second.cladeCount;
+            
+            // Only include children that actually have metrics and reads
+            if (reads > 0) {
+                weightedEvenness += metricIt->second.evenness * reads;
+                weightedCoverage += metricIt->second.coverage * reads;
+                weightedAdjEvenness += metricIt->second.adjustedEvenness * reads;
+                weightedUnifiedScore += metricIt->second.unifiedScore * reads;
+                totalChildReads += reads;
+            }
+        }
+    }
+
+    // 3. Calculate the final weighted metrics for THIS parent node
+    if (totalChildReads > 0) {
+        CovMetric parentMetric;
+        parentMetric.evenness = weightedEvenness / static_cast<double>(totalChildReads);
+        parentMetric.coverage = weightedCoverage / static_cast<double>(totalChildReads);
+        parentMetric.adjustedEvenness = weightedAdjEvenness / static_cast<double>(totalChildReads);
+        parentMetric.unifiedScore = weightedUnifiedScore / static_cast<double>(totalChildReads);
+        
+        // Save it to the map
+        allMetrics[currentTaxID] = parentMetric;
+    } 
 }
