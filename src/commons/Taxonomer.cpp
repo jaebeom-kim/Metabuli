@@ -36,6 +36,9 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
     dnaShift = 3;
     if (par.syncmer) {
         dnaShift = (kmerLen - par.smerLen) * 3;
+        if (maxCodonShift == 1) {
+            maxCodonShift = (kmerLen - par.smerLen);
+        }
     }
     // if (par.syncmer) {
     //     dnaShift = (8 - par.smerLen) * 3;
