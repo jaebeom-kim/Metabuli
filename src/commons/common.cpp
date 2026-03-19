@@ -321,18 +321,22 @@ int hammingDist(const std::string & codon1, const std::string & codon2) {
 }
 
 size_t readDbSize(const std::string& dbDir) {
-    const std::string path = dbDir + "/db.parameters";
-    if (!fileExist(path)) return 0;
+  std::cerr << "Warning: Estimated database size is used for e-value calculation." << std::endl;
+  std::cerr << "   E-value calculation may be inaccurate." << std::endl;
+  std::cerr << "   New DBs have the correct size information, offering accurate e-value calculation." << std::endl;
+  
+  const std::string path = dbDir + "/info";
+  // Get file size
+  struct stat sb;
+  if (stat(path.c_str(), &sb) == -1) {
+    std::cerr << "Cannot get the size of the info file" << std::endl;
+    exit(1);
+  }
+  size_t fileSize = sb.st_size;
+  size_t kmerCnt = fileSize / sizeof(TaxID);
+  size_t dnaLength = kmerCnt * 3;
 
-    std::ifstream file(path);
-    std::string line;
-
-    while (std::getline(file, line)) {
-        auto tokens = Util::split(line, "\t");
-        if (tokens.size() > 1 && tokens[0] == "Total_seq_length")
-            return std::stoull(tokens[1]);
-    }
-    return 0;
+  return dnaLength * 3;  // Multiply by 3 for more conservative estimation.
 }
 
 
