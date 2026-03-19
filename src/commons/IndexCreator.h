@@ -34,6 +34,7 @@
 #include "KmerExtractor.h"
 #include "DeltaIdxReader.h"
 #include "UnirefTree.h"
+#include "MetamerPattern.h"
 
 
 enum class FilterMode { DB_CREATION, COMMON_KMER, UNIQ_KMER, UNIREF_LCA};
@@ -118,7 +119,8 @@ protected:
     // Inputs
     TaxonomyWrapper * taxonomy = nullptr;
     UnirefTree * unirefTree = nullptr;
-    GeneticCode * geneticCode;
+    MetamerPattern * metamerPattern = nullptr;
+    GeneticCode * geneticCode = nullptr;
     KmerExtractor * kmerExtractor;
 
     bool externTaxonomy;
@@ -137,6 +139,7 @@ protected:
     std::unordered_set<TaxID> taxIdSet;
     vector<string> fastaPaths;
     size_t numOfFlush=0;
+    size_t totalLength=0;
 
     // Database splits
     std::vector<std::string> deltaIdxFileNames;
@@ -268,7 +271,7 @@ protected:
 public:
     IndexCreator(const LocalParameters & par, TaxonomyWrapper * taxonomy, int kmerFormat);
     IndexCreator(const LocalParameters & par, UnirefTree * unirefTree, int kmerFormat);
-    IndexCreator(const LocalParameters & par, int kmerFormat);
+    IndexCreator(const LocalParameters & par, int kmerFormat); // Used in create_unique_kmer_list.cpp
     ~IndexCreator();
     void createIndex();
     void createCommonKmerIndex();

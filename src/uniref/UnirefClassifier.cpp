@@ -6,8 +6,8 @@ UnirefClassifier::UnirefClassifier(const LocalParameters &par, UnirefTree * unir
     inputFileName = par.filenames[0];
     dbDir = par.filenames[1];
     outDir = par.filenames[3];    
-    geneticCode = new GeneticCode(false);
-    kmerExtractor = new KmerExtractor(par, *geneticCode, 4);
+    geneticCode = new RegularGeneticCode();
+    kmerExtractor = new KmerExtractor(par, geneticCode, 4);
     kmerMatcher = new KmerMatcher(par, 4);
     outFile = ofstream(outDir + "/uniref_classifications.tsv");
 

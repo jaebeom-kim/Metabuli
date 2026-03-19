@@ -201,6 +201,11 @@ int ictvFormat(int argc, const char **argv, const Command &command) {
     }
     string line;
     while (getline(in, line)) {
+
+        // Skip header line
+        if (line[0] == '#') {
+            continue;
+        }
         // split line by tab
         vector<string> fields = Util::split(line, "\t");
         string sequenceId = fields[1];

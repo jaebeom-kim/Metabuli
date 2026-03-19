@@ -26,7 +26,7 @@ int printDeltaIdx(int argc, const char **argv, const Command &command){
 
     bool complete = false;
     Metamer curMetamer;
-    GeneticCode geneticCode(par.reducedAA == 1);
+    RegularGeneticCode geneticCode();
 
 
     SeqIterator * seqIterator = new SeqIterator(par);

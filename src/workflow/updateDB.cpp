@@ -15,7 +15,6 @@ void setDefaults_updateDB(LocalParameters & par){
     par.validateDb = 0;
     par.kmerFormat = 1;
     par.skipRedundancy = 0;
-    par.reducedAA = 0;
     par.ramUsage = 128;
     par.taxonomyPath = "" ;
     par.splitNum = 4096;

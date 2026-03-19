@@ -43,9 +43,9 @@ int count_common_kmers(int argc, const char **argv, const Command &command) {
     std::unordered_map<TaxID, size_t> taxon2Count;
     std::unordered_map<TaxID, size_t> taxon2UniqKmerCount;
     size_t distinctKmerCount = 0;
-    GeneticCode geneticCode(false);
+    RegularGeneticCode geneticCode();
     // geneticCode = new GeneticCode(false);
-#pragma omp parallel default(none), shared(std::cout, geneticCode, diffIdxFileName, infoFileName, diffIdxSplits, taxonomy, numOfDiffIdxSplits_use, taxon2Count, taxon2UniqKmerCount, distinctKmerCount)
+#pragma omp parallel default(none), shared(std::cout, diffIdxFileName, infoFileName, diffIdxSplits, taxonomy, numOfDiffIdxSplits_use, taxon2Count, taxon2UniqKmerCount, distinctKmerCount)
     {
         DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(diffIdxFileName, infoFileName, 1024 * 1024 * 32, 1024 * 1024);
         std::vector<TaxID> taxIds; taxIds.reserve(4096);

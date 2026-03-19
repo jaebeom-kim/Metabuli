@@ -12,7 +12,6 @@ void setDefaults(LocalParameters & par){
     par.smerLen = 5;
     par.gtdb = 0;
     par.makeLibrary = 0;
-    par.reducedAA = 0;
     par.ramUsage = 128;
     par.validateInput = 0;
     par.validateDb = 0;

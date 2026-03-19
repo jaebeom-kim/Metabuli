@@ -42,16 +42,21 @@ void Reporter::writeReadClassification(const vector<Query> & queryList, bool cla
         isFirstTime = false;
     }
     for (size_t i = 0; i < queryList.size(); i++) {
-        if (classifiedOnly && !queryList[i].isClassified) {
+        if (classifiedOnly && !(queryList[i].classification == 0)) {
             continue;
         }
-        if (queryList[i].isClassified != 0) {
+        if (queryList[i].name.empty()) {
+            break;
+        }
+        if (queryList[i].classification != 0) {
             readClassificationFile 
-                << queryList[i].isClassified << "\t" 
+                << "1\t" 
                 << queryList[i].name << "\t"
                 << taxonomy->getOriginalTaxID(queryList[i].classification) << "\t"
                 << queryList[i].queryLength + queryList[i].queryLength2 << "\t"
-                << queryList[i].score << "\t"
+                << queryList[i].idScore << "\t"
+                << queryList[i].subScore << "\t"
+                << queryList[i].eValue << "\t"
                 << taxonomy->getString(taxonomy->taxonNode(queryList[i].classification)->rankIdx) << "\t";
             
             if (par.printLineage) {
@@ -64,11 +69,13 @@ void Reporter::writeReadClassification(const vector<Query> & queryList, bool cla
             readClassificationFile << "\n";
         } else {
             readClassificationFile 
-                << queryList[i].isClassified << "\t" 
+                << "0\t" 
                 << queryList[i].name << "\t"
                 << taxonomy->getOriginalTaxID(queryList[i].classification) << "\t"
                 << queryList[i].queryLength + queryList[i].queryLength2 << "\t"
-                << queryList[i].score << "\t"
+                << queryList[i].idScore << "\t"
+                << "-" << "\t" // subScore
+                << "-" << "\t" // eValue
                 << "-" << "\t";
             
             if (par.printLineage) {

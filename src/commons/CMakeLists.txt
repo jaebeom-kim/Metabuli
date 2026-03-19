@@ -17,15 +17,12 @@ set(commons_source_files
 		commons/ProdigalWrapper.cpp
 		commons/Match.h
 		commons/common.cpp
-		commons/QueryFilter.h
-		commons/QueryFilter.cpp
 		commons/LocalUtil.h
 		commons/LocalUtil.cpp
 		commons/QueryIndexer.h
 		commons/QueryIndexer.cpp
 		commons/KmerMatcher.h
 		commons/KmerMatcher.cpp
-		commons/ReducedKmerMatcher.h
 		commons/KmerExtractor.h
 		commons/KmerExtractor.cpp
 		commons/Taxonomer.h
@@ -37,5 +34,8 @@ set(commons_source_files
 		commons/SyncmerScanner.h
 		commons/GeneticCode.h
 		commons/KmerScanner.h
+		commons/KmerScanner.cpp
 		commons/DeltaIdxReader.h
+		commons/MetamerPattern.h
+		commons/MetamerPattern.cpp
         PARENT_SCOPE)

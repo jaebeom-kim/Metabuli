@@ -50,6 +50,7 @@ public:
     std::vector<MMseqsParameter*> buildUnirefTree;
     std::vector<MMseqsParameter*> assignUniref;
     std::vector<MMseqsParameter*> createCommonKmerList;
+    std::vector<MMseqsParameter*> mergeAssemblyFiles;
 
     // UniRef
     PARAMETER(UNIREF_NUMBERS)
@@ -67,10 +68,11 @@ public:
     PARAMETER(SMER_LEN)
     PARAMETER(KMER_FORMAT)
     PARAMETER(UNIREF_XML)
+    PARAMETER(PARAM_CUSTOM_METAMER)
+    PARAMETER(SPACE_MASK)
 
     // Classify
     PARAMETER(SEQ_MODE)
-    PARAMETER(REDUCED_AA)
     PARAMETER(MIN_SCORE)
     PARAMETER(HAMMING_MARGIN)
     PARAMETER(MIN_SP_SCORE)
@@ -87,6 +89,11 @@ public:
     PARAMETER(MAX_SHIFT)
     PARAMETER(EM)
     PARAMETER(NEIGHBOR_KMERS)
+    PARAMETER(PDM_KMER)
+    PARAMETER(SCORE_MODE)
+    PARAMETER(DB_TOTAL_LENGTH)
+    PARAMETER(MAX_E_VALUE)
+    PARAMETER(USE_ALL_MATCHES)
 
     // extract
     PARAMETER(TARGET_TAX_ID)
@@ -114,6 +121,7 @@ public:
     PARAMETER(MAKE_LIBRARY)
     PARAMETER(GTDB)
     PARAMETER(VALIDATE_INPUT)
+    PARAMETER(READING_FRAME)
 
     // DB updated parameters
     PARAMETER(NEW_TAXA)
@@ -165,12 +173,12 @@ public:
     int smerLen;
     int kmerFormat;
     std::string unirefXml;
+    std::string customMetamer;
 
     // Classify
     int seqMode;
-    int reducedAA;
     float minScore;
-    // std::string spaceMask;
+    std::string spaceMask;
     int minConsCnt;
     uint8_t hammingMargin;
     float minSpScore;
@@ -188,7 +196,12 @@ public:
     int printLineage;
     int maxShift;
     bool em;
-
+    int pdmKmer;
+    int scoreMode;
+    size_t dbTotalLength;
+    double maxEValue;
+    int useAllMatches;
+    
     // Extract
     int targetTaxId;
     int extractMode;
@@ -208,6 +221,7 @@ public:
     std::string assAcc2taxid;
     int gtdb;
     int validateInput;
+    int readingFrame;
 
     // DB updated parameters
     std::string newTaxa;

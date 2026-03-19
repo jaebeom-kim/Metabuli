@@ -81,6 +81,13 @@ LocalParameters::LocalParameters() :
                     typeid(std::string),
                     (void *) &unirefXml,
                     "^.*$"),
+        PARAM_CUSTOM_METAMER(PARAM_CUSTOM_METAMER_ID,
+                    "--custom-metamer",
+                    "Path to custom metamer pattern JSON file",
+                    "Path to custom metamer pattern JSON file",
+                    typeid(std::string),
+                    (void *) &customMetamer,
+                    "^.*$"),
         SEQ_MODE(SEQ_MODE_ID,
                  "--seq-mode",
                  "Sequencing type",
@@ -88,13 +95,6 @@ LocalParameters::LocalParameters() :
                  typeid(int),
                  (void *) &seqMode,
                  "[1-3]"),
-        REDUCED_AA(REDUCED_AA_ID,
-                   "--reduced-aa",
-                   "Using 15 alphabets to encode AAs for sensitivity",
-                   "Set as 0 to use 15 alphabets to encode AAs for sensitivity",
-                   typeid(int),
-                   (void *) &reducedAA,
-                   "[0-1]"),
         MIN_SCORE(MIN_SCORE_ID,
                   "--min-score",
                   "Min. sequence similarity score",
@@ -102,14 +102,13 @@ LocalParameters::LocalParameters() :
                   typeid(float),
                   (void *) &minScore,
                   "^0(\\.[0-9]+)?|1(\\.0+)?$"),
-        // SPACED(SPACED_ID,
-        //        "--spacing-mask",
-        //        "Binary patterned mask for spaced k-mer.\nThe same mask must be used for DB creation and classification",
-        //        "Binary patterned mask for spaced k-mer. The same mask must be used for DB creation and classification.\n"
-        //        "A mask should contain at least eight '1's, and '0' means skip.",
-        //        typeid(std::string),
-        //        (void *) &spaceMask,
-        //        "^.*$"),
+        SPACE_MASK(SPACE_MASK_ID,
+               "--space-mask",
+               "Mask for spaced k-mer",
+               "Mask for spaced k-mer",
+               typeid(std::string),
+               (void *) &spaceMask,
+               "^.*$"),
         HAMMING_MARGIN(HAMMING_MARGIN_ID,
                        "--hamming-margin",
                        "Allowed extra Hamming distance", 
@@ -200,7 +199,7 @@ LocalParameters::LocalParameters() :
                     "Max triplet shift between two consecutive k-mers (8-smerLen by default)",
                     typeid(int),
                     (void *) &maxShift,
-                    "[1-7]"),
+                    "[1-9]"),
         EM(EM_ID,
                 "--em",
                 "Use Expectation-Maximization for classification",
@@ -215,6 +214,41 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &neighborKmers,
                 "[0-4]"),
+        PDM_KMER(PDM_KMER_ID,
+                "--pdm-kmer",
+                "Number of bases from each end to extract PDM-aware neighbor k-mers",
+                "Number of bases from each end to extract PDM-aware neighbor k-mers",
+                typeid(int),
+                (void *) &pdmKmer,
+                "^[0-9]+$"),
+        SCORE_MODE(SCORE_MODE_ID,
+                   "--score-mode",
+                   "Scoring mode for classification",
+                   "0: DNA hamming dist. 1: BLOSUM62 score 2: Both",
+                   typeid(int),
+                   (void *) &scoreMode,
+                   "[0-2]"),
+        DB_TOTAL_LENGTH(DB_TOTAL_LENGTH_ID,
+                        "--db-size",
+                        "Total length of sequences in the database (nt)",
+                        "Total length of sequences in the database (nt)",
+                        typeid(size_t),
+                        (void *) &dbTotalLength,
+                        "^[0-9]+$"),
+        MAX_E_VALUE(MAX_E_VALUE_ID,
+                        "-e",
+                        "Ignore matches with larger E-value",
+                        "Ignore matches with larger E-value",
+                        typeid(double),
+                        (void *) &maxEValue,
+                        "^([-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?)|[0-9]*(\\.[0-9]+)?$"),
+        USE_ALL_MATCHES(USE_ALL_MATCHES_ID,
+                        "--use-all-matches",
+                        "Use all k-mer matches instead of filtering",
+                        "Use all k-mer matches instead of filtering",
+                        typeid(int),
+                        (void *) &useAllMatches,
+                        "[0-1]"),
         TARGET_TAX_ID(TARGET_TAX_ID_ID,
                "--tax-id",
                "Tax. ID of clade. -1 for unclassified reads",
@@ -348,6 +382,13 @@ LocalParameters::LocalParameters() :
                       typeid(int),
                       (void *) &validateInput,
                       "[0-1]"),
+        READING_FRAME(READING_FRAME_ID,
+                "--reading-frame",
+                "Use fixed frame (1-6). 0 for Prodigal's frame.",
+                "Use fixed frame (1-6). 0 for Prodigal's frame.",
+                typeid(int),
+                (void *) &readingFrame,
+                "^[0-6]$"),
         NEW_TAXA(NEW_TAXA_ID,
                 "--new-taxa",
                 "TSV file of new taxa to be added",
@@ -519,7 +560,6 @@ LocalParameters::LocalParameters() :
 
     // Classify
     seqMode = 2;
-    reducedAA = 0;
     minScore = 0;
     minConsCnt = 4;
     hammingMargin = 0;
@@ -597,7 +637,19 @@ LocalParameters::LocalParameters() :
     build.push_back(&VALIDATE_DB);
     build.push_back(&SYNCMER);
     build.push_back(&SMER_LEN);
-    build.push_back(&REDUCED_AA);
+    build.push_back(&PARAM_CUSTOM_METAMER);
+    build.push_back(&SPACE_MASK);
+    build.push_back(&READING_FRAME);
+
+    createCommonKmerList.push_back(&PARAM_THREADS);
+    createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);
+    createCommonKmerList.push_back(&PARAM_MASK_RESIDUES);
+    createCommonKmerList.push_back(&RAM_USAGE);
+    createCommonKmerList.push_back(&SYNCMER);
+    createCommonKmerList.push_back(&SMER_LEN);
+    createCommonKmerList.push_back(&GTDB);
+    createCommonKmerList.push_back(&CDS_INFO);
+    createCommonKmerList.push_back(&KMER_FORMAT);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
     createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);
@@ -626,7 +678,6 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&VALIDATE_INPUT);
     updateDB.push_back(&VALIDATE_DB);
     updateDB.push_back(&SYNCMER);
-    updateDB.push_back(&REDUCED_AA);
 
     //classify
     classify.push_back(&PARAM_THREADS);
@@ -648,9 +699,14 @@ LocalParameters::LocalParameters() :
     classify.push_back(&VALIDATE_DB);
     classify.push_back(&SYNCMER);
     classify.push_back(&SMER_LEN);
-    classify.push_back(&KMER_FORMAT);
+    classify.push_back(&PARAM_SUB_MAT);
+    // classify.push_back(&KMER_FORMAT);
     classify.push_back(&PRINT_LOG);
-    classify.push_back(&REDUCED_AA);
+    classify.push_back(&PDM_KMER);
+    classify.push_back(&SCORE_MODE);
+    classify.push_back(&MAX_E_VALUE);
+    classify.push_back(&DB_TOTAL_LENGTH);
+    classify.push_back(&MAX_SHIFT);
     // classify.push_back(&EM);
 
     assignUniref.push_back(&PARAM_THREADS);
@@ -689,7 +745,6 @@ LocalParameters::LocalParameters() :
     filter.push_back(&PARAM_THREADS);
     filter.push_back(&SEQ_MODE);
     filter.push_back(&VIRUS_TAX_ID);
-    filter.push_back(&REDUCED_AA);
     filter.push_back(&MIN_SCORE);
     filter.push_back(&HAMMING_MARGIN);
     filter.push_back(&MIN_SP_SCORE);
@@ -762,6 +817,8 @@ LocalParameters::LocalParameters() :
     makeBenchmarkSet.push_back(&RANDOM_SEED);
     makeBenchmarkSet.push_back(&ASSACC2TAXID);
     makeBenchmarkSet.push_back(&TEST_TYPE);
+
+    mergeAssemblyFiles.push_back(&DB_NAME);
 }
 
 void LocalParameters::printParameters(const std::string &module, int argc, const char* pargv[],
