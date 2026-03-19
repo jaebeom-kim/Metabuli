@@ -686,7 +686,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&MIN_CONS_CNT);
     classify.push_back(&MIN_CONS_CNT_EUK);
     classify.push_back(&MIN_SP_SCORE);
-    classify.push_back(&HAMMING_MARGIN);
+    // classify.push_back(&HAMMING_MARGIN);
     classify.push_back(&TAXONOMY_PATH);
     classify.push_back(&PARAM_MASK_RESIDUES);
     classify.push_back(&PARAM_MASK_PROBABILTY);
@@ -702,8 +702,8 @@ LocalParameters::LocalParameters() :
     classify.push_back(&PARAM_SUB_MAT);
     // classify.push_back(&KMER_FORMAT);
     classify.push_back(&PRINT_LOG);
-    classify.push_back(&PDM_KMER);
-    classify.push_back(&SCORE_MODE);
+    // classify.push_back(&PDM_KMER);
+    // classify.push_back(&SCORE_MODE);
     classify.push_back(&MAX_E_VALUE);
     classify.push_back(&DB_TOTAL_LENGTH);
     classify.push_back(&MAX_SHIFT);

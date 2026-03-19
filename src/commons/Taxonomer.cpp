@@ -111,7 +111,7 @@ void Taxonomer::chooseBestTaxon(uint32_t currentQuery,
     if (speciesScore.score.idScore == 0 || speciesScore.score.idScore < par.minScore) {
         queryList[currentQuery].classification = 0;
         queryList[currentQuery].idScore = speciesScore.score.idScore;
-        queryList[currentQuery].subScore = speciesScore.score.subScore;
+        // queryList[currentQuery].subScore = speciesScore.score.subScore;
         queryList[currentQuery].eValue = std::exp(speciesScore.score.logE);
         queryList[currentQuery].hammingDist = speciesScore.hammingDist;
         return;
@@ -121,7 +121,7 @@ void Taxonomer::chooseBestTaxon(uint32_t currentQuery,
     if (speciesScore.LCA) {
         queryList[currentQuery].classification = speciesScore.taxId;
         queryList[currentQuery].idScore = speciesScore.score.idScore;
-        queryList[currentQuery].subScore = speciesScore.score.subScore;
+        // queryList[currentQuery].subScore = speciesScore.score.subScore;
         queryList[currentQuery].eValue = std::exp(speciesScore.score.logE);
         queryList[currentQuery].hammingDist = speciesScore.hammingDist;
         return;
@@ -142,7 +142,7 @@ void Taxonomer::chooseBestTaxon(uint32_t currentQuery,
       queryList[currentQuery].classification = taxonomy->taxonNode(
               taxonomy->getTaxIdAtRank(speciesScore.taxId, "species"))->parentTaxId;
       queryList[currentQuery].idScore = speciesScore.score.idScore;
-      queryList[currentQuery].subScore = speciesScore.score.subScore;
+    //   queryList[currentQuery].subScore = speciesScore.score.subScore;
       queryList[currentQuery].eValue = std::exp(speciesScore.score.logE);
       queryList[currentQuery].hammingDist = speciesScore.hammingDist;
       return;
@@ -150,7 +150,7 @@ void Taxonomer::chooseBestTaxon(uint32_t currentQuery,
 
     // Store classification results
     queryList[currentQuery].idScore = speciesScore.score.idScore;
-    queryList[currentQuery].subScore = speciesScore.score.subScore;
+    // queryList[currentQuery].subScore = speciesScore.score.subScore;
     queryList[currentQuery].eValue = std::exp(speciesScore.score.logE);
     queryList[currentQuery].hammingDist = speciesScore.hammingDist;
 
@@ -389,7 +389,7 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
         bestScore.LCA = true;
         bestScore.taxId = taxonomy->LCA(maxSpecies)->taxId;
         bestScore.score.idScore /= maxSpecies.size();
-        bestScore.score.subScore /= maxSpecies.size();
+        // bestScore.score.subScore /= maxSpecies.size();
         bestScore.score.logE = bestSpScore.logE;
         return bestScore;
     }
