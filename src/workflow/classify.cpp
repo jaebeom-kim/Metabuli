@@ -24,14 +24,14 @@ void setClassifyDefaults(LocalParameters & par){
     par.ramUsage = 128;
     par.printLog = 0;
     par.taxonomyPath = "" ;
-    par.minConsCnt = 4;
-    par.minConsCntEuk = 9;
     par.maskMode = 0;
     par.maskProb = 0.9;
     par.matchPerKmer = 4;
     par.accessionLevel = 0;
     par.tieRatio = 0.95;
     par.printLineage = 0;
+    par.minAaMatch = 11;
+    par.minAaMatchEuk = 16;
 
     // unexposed experimental parameters
     par.spaceMask = "";

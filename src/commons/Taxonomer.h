@@ -44,8 +44,6 @@ private:
     // Parameters from user
     int accessionLevel;
     int minSSMatch;
-    size_t minConsCnt;
-    size_t minConsCntEuk;
     int eukaryotaTaxId;
     float tieRatio;
 
@@ -106,13 +104,7 @@ private:
         vector<MatchPath> & matchPaths,
         TaxID speciesId);
 
-    void getMatchPaths2(
-        const Match * matchList,
-        size_t matchNum,
-        vector<MatchPath> & matchPaths,
-        TaxID speciesId); 
-
-    void getMatchPaths3(
+    void getSpacedMatchPaths(
         const Match * matchList,
         size_t matchNum,
         vector<MatchPath> & matchPaths,

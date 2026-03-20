@@ -25,24 +25,24 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
     // Parameters
     accessionLevel = par.accessionLevel;
     minSSMatch = par.minSSMatch;
-    minConsCnt = (size_t) par.minConsCnt;
-    minConsCntEuk = (size_t) par.minConsCntEuk;
     eukaryotaTaxId = taxonomy->getEukaryotaTaxID();
     tieRatio = par.tieRatio;
 
 
-    maxCodonShift = par.maxShift;
     dnaShift = 3;
-    if (par.syncmer) {
+    maxCodonShift = 1; // 1 by default when NO sycmer AND NO spacing
+    if (par.syncmer && (kmerLen != windowSize)) {
+        // Both syncmer AND spacing
+        maxCodonShift = getFirstOneAfterFirstZero(metamerPattern->spaceMask) * 2;
         dnaShift = (kmerLen - par.smerLen) * 3;
-        if (maxCodonShift == 1) {
-            maxCodonShift = (kmerLen - par.smerLen);
-        }
+    } else if (par.syncmer && (kmerLen == windowSize)) {
+        // Only syncmer
+        maxCodonShift = (kmerLen - par.smerLen);
+        dnaShift = maxCodonShift * 3;
+    } else if (kmerLen != windowSize) {
+        // Only spacing
+        maxCodonShift = getFirstOneAfterFirstZero(metamerPattern->spaceMask);
     }
-    // if (par.syncmer) {
-    //     dnaShift = (8 - par.smerLen) * 3;
-    //     maxCodonShift = 8 - par.smerLen;
-    // }
 
     if (par.seqMode == 1 || par.seqMode == 2) {
         denominator = 100;
@@ -322,7 +322,7 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
                 if (windowSize == kmerLen) {
                     getMatchPaths(matchList + start, i - start, matchPaths, currentSpecies);
                 } else {
-                    getMatchPaths2(matchList + start, i - start, matchPaths, currentSpecies);
+                    getSpacedMatchPaths(matchList + start, i - start, matchPaths, currentSpecies);
                 }
             }
         }
@@ -582,76 +582,6 @@ void Taxonomer::trimMatchPath(
     }
 }
 
-// void Taxonomer::trimMatchPath2(
-//     MatchPath & newPath, 
-//     const MatchPath & path2, 
-//     int overlapLength) 
-// {
-//     const int shift = overlapLength / 3;
-//     if (newPath.start < path2.start) { 
-//         newPath.end = path2.start - 1;
-//         if (newPath.endMatch->qKmer.qInfo.frame < 3) {
-//             newPath.hammingDist = max(0, newPath.hammingDist - metamerPattern->hammingDistSum(
-//                 newPath.endMatch->qKmer.value,
-//                 newPath.endMatch->tKmer.value,
-//                 overlapLength/3,
-//                 true));
-            
-//             newPath.score -= metamerPattern->calMatchScore(
-//                 newPath.endMatch->qKmer.value,
-//                 newPath.endMatch->tKmer.value,
-//                 newPath.historyMask & ((1U << shift) - 1),
-//                 *substitutionMatrix);    
-
-//             newPath.score.idScore -= overlapLength % 3;
-//         } else {
-//             newPath.hammingDist = max(0, newPath.hammingDist - metamerPattern->hammingDistSum(
-//                 newPath.endMatch->qKmer.value,
-//                 newPath.endMatch->tKmer.value, 
-//                 overlapLength/3,
-//                 false));
-            
-//             newPath.score -= metamerPattern->calMatchScore(
-//                 newPath.endMatch->qKmer.value,
-//                 newPath.endMatch->tKmer.value,
-//                 newPath.historyMask & (~0U << (32 - shift)),
-//                 *substitutionMatrix);    
-
-//             newPath.score.idScore -= overlapLength % 3;
-//         }
-//     } else {
-//         newPath.start = path2.end + 1;
-//         if (newPath.startMatch->qKmer.qInfo.frame < 3) {
-//             newPath.hammingDist = max(0, newPath.hammingDist - metamerPattern->hammingDistSum(
-//                 newPath.startMatch->qKmer.value,
-//                 newPath.startMatch->tKmer.value, 
-//                 overlapLength/3,
-//                 false));
-            
-//             newPath.score -= metamerPattern->calMatchScore(
-//                 newPath.startMatch->qKmer.value,
-//                 newPath.startMatch->tKmer.value,
-//                 newPath.firstHistoryMask & (~0U << (32 - shift)),
-//                 *substitutionMatrix); 
-//             newPath.score.idScore -= overlapLength % 3;
-//         } else {
-//             newPath.hammingDist = max(0, newPath.hammingDist - metamerPattern->hammingDistSum(
-//                 newPath.startMatch->qKmer.value,
-//                 newPath.startMatch->tKmer.value, 
-//                 overlapLength/3,
-//                 true));
-
-//             newPath.score -= metamerPattern->calMatchScore(
-//                 newPath.startMatch->qKmer.value,
-//                 newPath.startMatch->tKmer.value,
-//                 newPath.firstHistoryMask & ((1U << shift) - 1),
-//                 *substitutionMatrix);
-//             newPath.score.idScore -= overlapLength % 3;
-//         }
-//     }
-// }
-
-
 MatchPath Taxonomer::makeMatchPath(
     const Match * match) 
 {
@@ -666,6 +596,7 @@ MatchPath Taxonomer::makeMatchPath(
         metamerPattern->hammingDistSum(
             match->qKmer.value, 
             match->tKmer.value),
+        kmerLen,
         metamerPattern->windowSize * 3);
 }
 
@@ -678,9 +609,9 @@ void Taxonomer::getMatchPaths(
     size_t i = 0;
     size_t currPos = matchList[0].qKmer.qInfo.pos;  
     uint64_t frame = matchList[0].qKmer.qInfo.frame;
-    int MIN_DEPTH = (int) minConsCnt;
+    int MIN_COVERED_POS = (int) par.minAaMatch;
     if (taxonomy->IsAncestor(eukaryotaTaxId, speciesId)) {
-        MIN_DEPTH = (int) minConsCntEuk;
+        MIN_COVERED_POS = (int) par.minAaMatchEuk;
     }
         
     connectedToNext.resize(matchNum);
@@ -737,19 +668,19 @@ void Taxonomer::getMatchPaths(
                                 matchList[nextIdx].tKmer.value, 
                                 shift,
                                 true);
-                        localMatchPaths[nextIdx].depth = bestPath->depth + shift;
+                        localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + shift;
                         localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
                     }
                 }
             } 
             for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].depth >= MIN_DEPTH) {
+                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
                     filteredMatchPaths.push_back(localMatchPaths[curIdx]);
                 }
             }
             if (i == matchNum) {
                 for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
-                    if (localMatchPaths[nextIdx].depth >= MIN_DEPTH) {
+                    if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
                         filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
                     }
                 }
@@ -806,19 +737,19 @@ void Taxonomer::getMatchPaths(
                                 matchList[nextIdx].tKmer.value, 
                                 shift,
                                 false);
-                        localMatchPaths[nextIdx].depth = bestPath->depth + shift;
+                        localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + shift;
                         localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
                     }
                 }
             } 
             for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].depth >= MIN_DEPTH) {
+                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
                     filteredMatchPaths.push_back(localMatchPaths[curIdx]);
                 }
             }
             if (i == matchNum) {
                 for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
-                    if (localMatchPaths[nextIdx].depth >= MIN_DEPTH) {
+                    if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
                         filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
                     }
                 }
@@ -834,7 +765,7 @@ void Taxonomer::makeMatchPath(
     const Match * match,
     size_t index)
 {
-    localMatchPaths[index] = MatchPath(match, metamerPattern->windowSize * 3);
+    localMatchPaths[index] = MatchPath(match, kmerLen, metamerPattern->windowSize * 3);
     localMatchPaths[index].score = metamerPattern->calMatchScore(
                                         match->qKmer.value, 
                                         match->tKmer.value,
@@ -844,10 +775,9 @@ void Taxonomer::makeMatchPath(
                                             match->qKmer.value, 
                                             match->tKmer.value);
     localMatchPaths[index].historyMask = metamerPattern->spaceMask;
-    localMatchPaths[index].firstHistoryMask = localMatchPaths[index].historyMask;
 }
 
-void Taxonomer::getMatchPaths2(
+void Taxonomer::getSpacedMatchPaths(
     const Match * matchList,
     size_t matchNum,
     vector<MatchPath> & filteredMatchPaths,
@@ -856,9 +786,9 @@ void Taxonomer::getMatchPaths2(
     size_t i = 0;
     size_t currPos = matchList[0].qKmer.qInfo.pos;  
     uint64_t frame = matchList[0].qKmer.qInfo.frame;
-    int MIN_DEPTH = (int) minConsCnt;
+    int MIN_COVERED_POS = (int) par.minAaMatch;
     if (taxonomy->IsAncestor(eukaryotaTaxId, speciesId)) {
-        MIN_DEPTH = (int) minConsCntEuk;
+        MIN_COVERED_POS = (int) par.minAaMatchEuk;
     }
         
     connectedToNext.resize(matchNum);
@@ -890,6 +820,7 @@ void Taxonomer::getMatchPaths2(
                 for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; nextIdx++) {
                     const MatchPath * bestPath = nullptr;
                     MatchScore bestScore;
+                    int newCoveredPosCnt = 0;
                     for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {                    
                         if (metamerPattern->checkOverlap(matchList[curIdx].tKmer.value, matchList[nextIdx].tKmer.value, shift)) {
                             connectedToNext[curIdx] = true;
@@ -906,6 +837,7 @@ void Taxonomer::getMatchPaths2(
                                 bestPath = &localMatchPaths[curIdx];
                                 bestScore = totalScore;
                                 localMatchPaths[nextIdx].historyMask = shiftedHistoryMask | metamerPattern->spaceMask;
+                                newCoveredPosCnt = __builtin_popcount(static_cast<unsigned int>(validPosMask));
                             }
                         }
                     }
@@ -918,21 +850,19 @@ void Taxonomer::getMatchPaths2(
                                 matchList[nextIdx].tKmer.value, 
                                 shift,
                                 true);
-                        localMatchPaths[nextIdx].depth = bestPath->depth + shift;
+                        localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + newCoveredPosCnt;
                         localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
-                        localMatchPaths[nextIdx].firstHistoryMask = 
-                            bestPath->firstHistoryMask | safe_right_shift_32(metamerPattern->spaceMask, (localMatchPaths[nextIdx].depth - 1));
                     }
                 }
             } 
             for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].depth >= MIN_DEPTH) {
+                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
                     filteredMatchPaths.push_back(localMatchPaths[curIdx]);
                 }
             }
             if (i == matchNum) {
                 for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
-                    if (localMatchPaths[nextIdx].depth >= MIN_DEPTH) {
+                    if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
                         filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
                     }
                 }
@@ -964,6 +894,7 @@ void Taxonomer::getMatchPaths2(
                 for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; nextIdx++) {
                     const MatchPath * bestPath = nullptr;
                     MatchScore bestScore;
+                    int newCoveredPosCnt = 0;
                     for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
                         if (metamerPattern->checkOverlap(matchList[nextIdx].tKmer.value, matchList[curIdx].tKmer.value, shift)) {
                             connectedToNext[curIdx] = true;
@@ -981,6 +912,7 @@ void Taxonomer::getMatchPaths2(
                                 bestPath = &localMatchPaths[curIdx];
                                 bestScore = totalScore;
                                 localMatchPaths[nextIdx].historyMask = shiftedHistoryMask | metamerPattern->spaceMask;
+                                newCoveredPosCnt = __builtin_popcount(static_cast<unsigned int>(validPosMask));
                             }
                         }
                     }
@@ -993,22 +925,19 @@ void Taxonomer::getMatchPaths2(
                                 matchList[nextIdx].tKmer.value, 
                                 shift,
                                 false);
-                        localMatchPaths[nextIdx].depth = bestPath->depth + shift;
+                        localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + newCoveredPosCnt;
                         localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
-                        localMatchPaths[nextIdx].firstHistoryMask = 
-                            bestPath->firstHistoryMask | safe_left_shift_32(metamerPattern->spaceMask, (localMatchPaths[nextIdx].depth - 1));
-                        localMatchPaths[nextIdx].firstHistoryMask &= windowMask;
                     }
                 }
             } 
             for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].depth >= MIN_DEPTH) {
+                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
                     filteredMatchPaths.push_back(localMatchPaths[curIdx]);
                 }
             }
             if (i == matchNum) {
                 for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
-                    if (localMatchPaths[nextIdx].depth >= MIN_DEPTH) {
+                    if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
                         filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
                     }
                 }
@@ -1034,230 +963,3 @@ void Taxonomer::ensureArraySize(size_t newSize) {
     std::memset(minHammingForQuotient, std::numeric_limits<uint8_t>::max(), newSize * sizeof(uint8_t));
 }
 
-
-void Taxonomer::getMatchPaths3(
-    const Match * matchList,
-    size_t matchNum,
-    vector<MatchPath> & filteredMatchPaths,
-    TaxID speciesId) 
-{
-    if (matchNum == 0) return;
-
-    int MIN_DEPTH = (int) minConsCnt;
-    if (taxonomy->IsAncestor(eukaryotaTaxId, speciesId)) {
-        MIN_DEPTH = (int) minConsCntEuk;
-    }
-    
-    // --- Step 1: Pre-calculate Groups (Start/End indices for each Position) ---
-    // This replaces the complex 'while' loops with a clean structure we can jump around in.
-    struct MatchGroup {
-        uint32_t pos;
-        size_t start;
-        size_t end; // exclusive
-    };
-    std::vector<MatchGroup> groups;
-
-    // Reset DP states
-    connectedToNext.resize(matchNum);
-    fill(connectedToNext.begin(), connectedToNext.end(), false);
-    localMatchPaths.clear();
-    localMatchPaths.resize(matchNum);
-
-    // Scan input to build groups
-    for (size_t i = 0; i < matchNum; ) {
-        uint32_t currentPos = matchList[i].qKmer.qInfo.pos;
-        size_t groupStart = i;
-
-        // Process all matches with the same position
-        while (i < matchNum && matchList[i].qKmer.qInfo.pos == currentPos) {
-            makeMatchPath(matchList + i, i);
-            i++; 
-        }
-
-        // i now represents the exclusive end of this group
-        groups.push_back({currentPos, groupStart, i});
-    }
-
-    // Only process Forward Frame as per original code logic
-    // (Note: You might want to handle reverse frame similarly if needed)
-    if (matchList[0].qKmer.qInfo.frame < 3) { 
-        
-        // --- Step 2: Flexible Chaining Loop ---
-        
-        // Outer Loop: Iterate through every group acting as the "Destination"
-        for (size_t destG = 0; destG < groups.size(); ++destG) {
-            
-            const MatchGroup& destGroup = groups[destG];
-
-            // For every match in the Destination Group...
-            for (size_t nextIdx = destGroup.start; nextIdx < destGroup.end; ++nextIdx) {
-                
-                const MatchPath * bestPath = nullptr;
-                MatchScore bestScore; // Defaults to -inf or 0
-                bool foundParent = false;
-                int winningShift = 0;
-
-                // Inner Loop: Look BACKWARDS at previous groups ("Sources")
-                // We check as many groups as allowed by maxCodonShift
-                for (int srcG = (int)destG - 1; srcG >= 0; --srcG) {
-                    
-                    const MatchGroup& srcGroup = groups[srcG];
-                    
-                    int shift = (destGroup.pos - srcGroup.pos) / 3;
-
-                    // If we exceeded the max gap, stop looking further back
-                    if (shift > maxCodonShift) break; 
-
-                    bool connectedToThisGroup = false;
-
-                    // Compare Destination Match vs All Candidates in this Source Group
-                    for (size_t curIdx = srcGroup.start; curIdx < srcGroup.end; ++curIdx) {
-                        
-                        // Check geometrical overlap
-                        if (metamerPattern->checkOverlap(matchList[curIdx].tKmer.value, matchList[nextIdx].tKmer.value, shift)) {
-                            
-                            // Mark the source as having a valid successor (it is not a tail)
-                            connectedToNext[curIdx] = true; 
-                            connectedToThisGroup = true;
-
-                            const uint32_t shiftedHistoryMask = (localMatchPaths[curIdx].historyMask << shift) & windowMask;
-                            const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
-                            
-                            const MatchScore totalScore = localMatchPaths[curIdx].score +
-                                                            metamerPattern->calMatchScore(
-                                                                matchList[nextIdx].qKmer.value, 
-                                                                matchList[nextIdx].tKmer.value, 
-                                                                validPosMask,
-                                                                *substitutionMatrix);
-
-                            // We want the BEST score across ALL checked source groups
-                            if (!foundParent || totalScore.isLargerThan(bestScore, par.scoreMode)) {
-                                bestPath = &localMatchPaths[curIdx];
-                                bestScore = totalScore;
-                                localMatchPaths[nextIdx].historyMask = shiftedHistoryMask | metamerPattern->spaceMask;
-                                winningShift = shift;
-                                foundParent = true;
-                            }
-                        }
-                    }
-                    if (connectedToThisGroup) {
-                           break; 
-                    }
-                } // End Source Group Loop
-
-                // If we found a valid parent among any of the previous allowable groups, update the state
-                if (foundParent && bestPath != nullptr) {
-                    localMatchPaths[nextIdx].start = bestPath->start;                        
-                    localMatchPaths[nextIdx].score = bestScore;
-                    localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
-                        metamerPattern->hammingDistSum(
-                            matchList[nextIdx].qKmer.value, 
-                            matchList[nextIdx].tKmer.value, 
-                            winningShift,
-                            true);
-                    localMatchPaths[nextIdx].depth = bestPath->depth + winningShift;
-                    localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
-                    localMatchPaths[nextIdx].firstHistoryMask = 
-                        bestPath->firstHistoryMask | safe_right_shift_32(metamerPattern->spaceMask, (localMatchPaths[nextIdx].depth - 1));
-                 }
-            }
-        }
-
-        // --- Step 3: Collect Results ---
-        // Any match that didn't connect to a next one (is a "tail") and is deep enough is a valid path.
-        for (size_t i = 0; i < matchNum; ++i) {
-            if (!connectedToNext[i] && localMatchPaths[i].depth >= MIN_DEPTH) {
-                filteredMatchPaths.push_back(localMatchPaths[i]);
-            }
-        }
-    } else {
-        for (size_t destG = 0; destG < groups.size(); ++destG) {
-            
-            const MatchGroup& destGroup = groups[destG];
-
-            // For every match in the Destination Group...
-            for (size_t nextIdx = destGroup.start; nextIdx < destGroup.end; ++nextIdx) {
-                
-                const MatchPath * bestPath = nullptr;
-                MatchScore bestScore; // Defaults to -inf or 0
-                bool foundParent = false;
-                int winningShift = 0;
-
-                // Inner Loop: Look BACKWARDS at previous groups ("Sources")
-                // We check as many groups as allowed by maxCodonShift
-                for (int srcG = (int)destG - 1; srcG >= 0; --srcG) {
-                    
-                    const MatchGroup& srcGroup = groups[srcG];
-                    
-                    int shift = (destGroup.pos - srcGroup.pos) / 3;
-
-                    // If we exceeded the max gap, stop looking further back
-                    if (shift > maxCodonShift) break; 
-
-                    bool connectedToThisGroup = false;
-
-                    // Compare Destination Match vs All Candidates in this Source Group
-                    for (size_t curIdx = srcGroup.start; curIdx < srcGroup.end; ++curIdx) {
-                        
-                        // Check geometrical overlap
-                        if (metamerPattern->checkOverlap(matchList[nextIdx].tKmer.value, matchList[curIdx].tKmer.value, shift)) {
-                            
-                            // Mark the source as having a valid successor (it is not a tail)
-                            connectedToNext[curIdx] = true; 
-                            connectedToThisGroup = true;
-
-                            const uint32_t shiftedHistoryMask = (localMatchPaths[curIdx].historyMask >> shift); 
-                            const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
-                            
-                            const MatchScore totalScore = localMatchPaths[curIdx].score +
-                                                            metamerPattern->calMatchScore(
-                                                                matchList[nextIdx].qKmer.value, 
-                                                                matchList[nextIdx].tKmer.value, 
-                                                                validPosMask,
-                                                                *substitutionMatrix);
-
-                            // We want the BEST score across ALL checked source groups
-                            if (!foundParent || totalScore.isLargerThan(bestScore, par.scoreMode)) {
-                                bestPath = &localMatchPaths[curIdx];
-                                bestScore = totalScore;
-                                localMatchPaths[nextIdx].historyMask = shiftedHistoryMask | metamerPattern->spaceMask;
-                                winningShift = shift;
-                                foundParent = true;
-                            }
-                        }
-                    }
-
-                    if (connectedToThisGroup) {
-                       break; 
-                    }
-                } // End Source Group Loop
-
-                // If we found a valid parent among any of the previous allowable groups, update the state
-                if (foundParent && bestPath != nullptr) {
-                    localMatchPaths[nextIdx].start = bestPath->start;                        
-                    localMatchPaths[nextIdx].score = bestScore;
-                    localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
-                        metamerPattern->hammingDistSum(
-                            matchList[nextIdx].qKmer.value, 
-                            matchList[nextIdx].tKmer.value, 
-                            winningShift,
-                            false);
-                    localMatchPaths[nextIdx].depth = bestPath->depth + winningShift;
-                    localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
-                    localMatchPaths[nextIdx].firstHistoryMask = 
-                        bestPath->firstHistoryMask | safe_left_shift_32(metamerPattern->spaceMask, (localMatchPaths[nextIdx].depth - 1));
-                    localMatchPaths[nextIdx].firstHistoryMask &= windowMask;
-                 }
-            }
-        }
-
-        // --- Step 3: Collect Results ---
-        // Any match that didn't connect to a next one (is a "tail") and is deep enough is a valid path.
-        for (size_t i = 0; i < matchNum; ++i) {
-            if (!connectedToNext[i] && localMatchPaths[i].depth >= MIN_DEPTH) {
-                filteredMatchPaths.push_back(localMatchPaths[i]);
-            }
-        }
-
-    }
-}

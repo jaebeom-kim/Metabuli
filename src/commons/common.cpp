@@ -361,3 +361,22 @@ uint32_t safe_left_shift_32(uint32_t value, unsigned int shift) {
     }
     return value << shift;
 }
+
+int getFirstOneAfterFirstZero(uint32_t mask) {
+    // 1. Find the 0-based index of the first '0' from the left (LSB)
+    // By inverting the mask, the first '0' becomes the first '1'
+    int first_zero_idx = __builtin_ctz(~mask);
+
+    // 2. Clear all bits up to and including the first '0'
+    // This creates a search mask looking strictly "after" the first 0
+    uint32_t search_mask = mask & ~((1U << (first_zero_idx + 1)) - 1);
+
+    // Edge case: if there are no 1s after the first 0
+    if (search_mask == 0) return -1; 
+
+    // 3. Find the 0-based index of the first '1' in the remaining bits
+    int first_one_idx = __builtin_ctz(search_mask);
+
+    // 4. Return the 1-based position
+    return first_one_idx;
+}

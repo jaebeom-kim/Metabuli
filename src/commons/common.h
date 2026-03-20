@@ -489,4 +489,6 @@ uint32_t parseMask(const char* s);
 uint32_t safe_right_shift_32(uint32_t value, unsigned int shift);
 uint32_t safe_left_shift_32(uint32_t value, unsigned int shift);
 
+int getFirstOneAfterFirstZero(uint32_t mask);
+
 #endif //ADCLASSIFIER2_COMMON_H

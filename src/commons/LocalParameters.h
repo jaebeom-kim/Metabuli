@@ -79,8 +79,8 @@ public:
     PARAMETER(TINFO_PATH)
     PARAMETER(RAM_USAGE)
     PARAMETER(PRINT_LOG)
-    PARAMETER(MIN_CONS_CNT)
-    PARAMETER(MIN_CONS_CNT_EUK)
+    PARAMETER(MIN_AA_MATCH)
+    PARAMETER(MIN_AA_MATCH_EUK)
     PARAMETER(MATCH_PER_KMER)
     PARAMETER(MIN_SS_MATCH)
     PARAMETER(TIE_RATIO)
@@ -178,12 +178,10 @@ public:
     int seqMode;
     float minScore;
     std::string spaceMask;
-    int minConsCnt;
     uint8_t hammingMargin;
     float minSpScore;
     int ramUsage;
     int printLog;
-    int minConsCntEuk;
     int matchPerKmer;
     int minSSMatch;
     float tieRatio;
@@ -199,7 +197,10 @@ public:
     size_t dbTotalLength;
     double maxEValue;
     int useAllMatches;
+    int minAaMatch;
+    int minAaMatchEuk;
     
+
     // Extract
     int targetTaxId;
     int extractMode;

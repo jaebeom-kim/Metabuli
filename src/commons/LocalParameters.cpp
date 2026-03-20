@@ -144,20 +144,20 @@ LocalParameters::LocalParameters() :
                   typeid(int),
                   (void *) &printLog,
                   "^[0-9]+$"),
-        MIN_CONS_CNT(MIN_CONS_CNT_ID,
-                     "--min-cons-cnt",
-                     "Min. num. of cons. matches for non-euk. classification",
-                     "Min. number of consecutive matches for prokaryote/virus classification",
+        MIN_AA_MATCH(MIN_AA_MATCH_ID,
+                     "--min-aa",
+                     "Min. num. of amino acid matches",
+                     "Min. number of amino acid matches for classification",
                      typeid(int),
-                     (void *) &minConsCnt,
+                     (void *) &minAaMatch,
                      "^[0-9]+$"),
-        MIN_CONS_CNT_EUK(MIN_CONS_CNT_EUK_ID,
-                         "--min-cons-cnt-euk",
-                         "Min. num. of cons. matches for euk. classification",
-                         "Min. number of consecutive matches for eukaryote classification",
-                         typeid(int),
-                         (void *) &minConsCntEuk,
-                         "^[0-9]+$"),
+        MIN_AA_MATCH_EUK(MIN_AA_MATCH_EUK_ID,
+                    "--min-aa-euk",
+                    "Min. num. of amino acid matches for eukaryotes",
+                    "Min. number of amino acid matches for eukaryotic classification",
+                    typeid(int),
+                    (void *) &minAaMatchEuk,
+                    "^[0-9]+$"),
         MATCH_PER_KMER(MATCH_PER_KMER_ID,
                        "--match-per-kmer",
                        "Number of matches per query k-mer. ",
@@ -188,8 +188,8 @@ LocalParameters::LocalParameters() :
                       "[0-1]"),
         MAX_SHIFT(MAX_SHIFT_ID,
                     "--max-shift",
-                    "Max triplet shift between two consecutive k-mers (8-smerLen by default)",
-                    "Max triplet shift between two consecutive k-mers (8-smerLen by default)",
+                    "Max codon shift to link k-mers (Default: auto. Specify to override).",
+                    "Max codon shift to link k-mers (Default: auto. Specify to override).",
                     typeid(int),
                     (void *) &maxShift,
                     "[1-9]"),
@@ -542,7 +542,7 @@ LocalParameters::LocalParameters() :
                     "Random seed for random number generation",
                     typeid(int),
                     (void *) &randomSeed,
-                    "^[0-9]+$", 0)
+                    "^[0-9]+$")
   {
     // Initialize the parameters
     // Superkingdom taxonomy id
@@ -554,12 +554,10 @@ LocalParameters::LocalParameters() :
     // Classify
     seqMode = 2;
     minScore = 0;
-    minConsCnt = 4;
     hammingMargin = 0;
     minSpScore = 0;
     ramUsage = 0;
     printLog = 0;
-    minConsCntEuk = 0;
     matchPerKmer = 0;
     minSSMatch = 0;
     tieRatio = 0;
@@ -664,10 +662,9 @@ LocalParameters::LocalParameters() :
     classify.push_back(&PARAM_THREADS);
     classify.push_back(&SEQ_MODE);
     classify.push_back(&MIN_SCORE);
-    classify.push_back(&MIN_CONS_CNT);
-    classify.push_back(&MIN_CONS_CNT_EUK);
+    classify.push_back(&MIN_AA_MATCH);
+    classify.push_back(&MIN_AA_MATCH_EUK);
     classify.push_back(&MIN_SP_SCORE);
-    // classify.push_back(&HAMMING_MARGIN);
     classify.push_back(&TAXONOMY_PATH);
     classify.push_back(&PARAM_MASK_RESIDUES);
     classify.push_back(&PARAM_MASK_PROBABILTY);
@@ -733,8 +730,6 @@ LocalParameters::LocalParameters() :
     filter.push_back(&RAM_USAGE);
     filter.push_back(&PRINT_LOG);
     filter.push_back(&TAXONOMY_PATH);
-    filter.push_back(&MIN_CONS_CNT);
-    filter.push_back(&MIN_CONS_CNT_EUK);
     filter.push_back(&PARAM_MASK_RESIDUES);
     filter.push_back(&PARAM_MASK_PROBABILTY);
     filter.push_back(&MATCH_PER_KMER);
