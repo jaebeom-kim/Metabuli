@@ -144,13 +144,6 @@ LocalParameters::LocalParameters() :
                   typeid(int),
                   (void *) &printLog,
                   "^[0-9]+$"),
-        MAX_GAP(MAX_GAP_ID,
-                "--max-gap",
-                "Maximum gap between two consecutive k-mers (used only with spaced k-mer)",
-                "Maximum gap between two consecutive k-mers (used only with spaced k-mer)",
-                typeid(int),
-                (void *) &maxGap,
-                "^[0-9]+$"),
         MIN_CONS_CNT(MIN_CONS_CNT_ID,
                      "--min-cons-cnt",
                      "Min. num. of cons. matches for non-euk. classification",
@@ -510,8 +503,8 @@ LocalParameters::LocalParameters() :
                 "^.*$"),
         SELECT_COLUMNS(SELECT_COLUMNS_ID,
                 "--select-columns",
-                "Select columns with number, (7:full lineage, generated if absent)",
-                "Select columns with number, (7:full lineage, generated if absent)",
+                "Columns to print (0-based csv)",
+                "Columns to print (0-based csv)",
                 typeid(std::string),
                 (void *) &selectColumns,
                 "^.*$"),
@@ -566,7 +559,6 @@ LocalParameters::LocalParameters() :
     minSpScore = 0;
     ramUsage = 0;
     printLog = 0;
-    maxGap = 0;
     minConsCntEuk = 0;
     matchPerKmer = 0;
     minSSMatch = 0;
@@ -650,17 +642,6 @@ LocalParameters::LocalParameters() :
     createCommonKmerList.push_back(&GTDB);
     createCommonKmerList.push_back(&CDS_INFO);
     createCommonKmerList.push_back(&KMER_FORMAT);
-
-    createCommonKmerList.push_back(&PARAM_THREADS);
-    createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);
-    createCommonKmerList.push_back(&PARAM_MASK_RESIDUES);
-    createCommonKmerList.push_back(&RAM_USAGE);
-    createCommonKmerList.push_back(&SYNCMER);
-    createCommonKmerList.push_back(&SMER_LEN);
-    createCommonKmerList.push_back(&GTDB);
-    createCommonKmerList.push_back(&CDS_INFO);
-    createCommonKmerList.push_back(&KMER_FORMAT);
-
 
     // updateDB
     updateDB.push_back(&PARAM_THREADS);
@@ -751,7 +732,6 @@ LocalParameters::LocalParameters() :
     filter.push_back(&PARAM_V);
     filter.push_back(&RAM_USAGE);
     filter.push_back(&PRINT_LOG);
-    filter.push_back(&MAX_GAP);
     filter.push_back(&TAXONOMY_PATH);
     filter.push_back(&MIN_CONS_CNT);
     filter.push_back(&MIN_CONS_CNT_EUK);
@@ -814,6 +794,10 @@ LocalParameters::LocalParameters() :
     classifiedRefiner.push_back(&HIGHER_RANK_FILE);
     classifiedRefiner.push_back(&PARAM_THREADS);
     classifiedRefiner.push_back(&MIN_SCORE);
+    classifiedRefiner.push_back(&MAX_E_VALUE);
+    classifiedRefiner.push_back(&PRINT_LINEAGE);
+    classifiedRefiner.push_back(&TAXONOMY_PATH);
+
     makeBenchmarkSet.push_back(&RANDOM_SEED);
     makeBenchmarkSet.push_back(&ASSACC2TAXID);
     makeBenchmarkSet.push_back(&TEST_TYPE);

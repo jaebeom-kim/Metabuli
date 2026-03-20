@@ -79,7 +79,6 @@ public:
     PARAMETER(TINFO_PATH)
     PARAMETER(RAM_USAGE)
     PARAMETER(PRINT_LOG)
-    PARAMETER(MAX_GAP)
     PARAMETER(MIN_CONS_CNT)
     PARAMETER(MIN_CONS_CNT_EUK)
     PARAMETER(MATCH_PER_KMER)
@@ -184,7 +183,6 @@ public:
     float minSpScore;
     int ramUsage;
     int printLog;
-    int maxGap;
     int minConsCntEuk;
     int matchPerKmer;
     int minSSMatch;

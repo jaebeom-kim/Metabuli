@@ -42,7 +42,6 @@ private:
     uint32_t windowMask;
 
     // Parameters from user
-    int maxGap;
     int accessionLevel;
     int minSSMatch;
     size_t minConsCnt;

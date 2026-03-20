@@ -23,7 +23,6 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
         substitutionMatrix = new SubstitutionMatrix(par.scoringMatrixFile.values.aminoacid().c_str(), 2.0, par.scoreBias);
     }
     // Parameters
-    maxGap = par.maxGap;
     accessionLevel = par.accessionLevel;
     minSSMatch = par.minSSMatch;
     minConsCnt = (size_t) par.minConsCnt;
