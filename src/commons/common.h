@@ -115,7 +115,7 @@ struct Query {
 
     Query() = default;
     Query(int queryLength, int kmerCnt, const std::string & name)
-        : classification(0), idScore(0), subScore(0), eValue(0), hammingDist(0),
+        : classification(0), idScore(0), subScore(0), eValue(-1), hammingDist(0),
           queryLength(queryLength), queryLength2(0), kmerCnt(kmerCnt), kmerCnt2(0),
           name(name) {}
 };

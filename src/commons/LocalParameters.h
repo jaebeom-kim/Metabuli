@@ -73,6 +73,7 @@ public:
 
     // Classify
     PARAMETER(SEQ_MODE)
+    PARAMETER(PRECISION_MODE)
     PARAMETER(MIN_SCORE)
     PARAMETER(HAMMING_MARGIN)
     PARAMETER(MIN_SP_SCORE)
@@ -176,6 +177,7 @@ public:
 
     // Classify
     int seqMode;
+    int precisionMode;
     float minScore;
     std::string spaceMask;
     uint8_t hammingMargin;

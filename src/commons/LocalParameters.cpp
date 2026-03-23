@@ -95,6 +95,13 @@ LocalParameters::LocalParameters() :
                  typeid(int),
                  (void *) &seqMode,
                  "[1-3]"),
+        PRECISION_MODE(PRECISION_MODE_ID,
+                    "--precise",
+                    "Use presets for precise mode. 1: short-read, 2: HiFi long-read.",
+                    "Use presets for precise mode. 1: short-read, 2: HiFi long-read.",
+                    typeid(int),
+                    (void *) &precisionMode,
+                    "[0-2]"),
         MIN_SCORE(MIN_SCORE_ID,
                   "--min-score",
                   "Min. sequence similarity score",
@@ -230,8 +237,8 @@ LocalParameters::LocalParameters() :
                         "^[0-9]+$"),
         MAX_E_VALUE(MAX_E_VALUE_ID,
                         "-e",
-                        "Ignore matches with larger E-value",
-                        "Ignore matches with larger E-value",
+                        "Ignore matches with larger E-value (0 to disable)",
+                        "Ignore matches with larger E-value (0 to disable)",
                         typeid(double),
                         (void *) &maxEValue,
                         "^([-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?)|[0-9]*(\\.[0-9]+)?$"),
@@ -661,10 +668,12 @@ LocalParameters::LocalParameters() :
     //classify
     classify.push_back(&PARAM_THREADS);
     classify.push_back(&SEQ_MODE);
+    classify.push_back(&PRECISION_MODE);
+    classify.push_back(&MAX_E_VALUE);
     classify.push_back(&MIN_SCORE);
+    classify.push_back(&MIN_SP_SCORE);
     classify.push_back(&MIN_AA_MATCH);
     classify.push_back(&MIN_AA_MATCH_EUK);
-    classify.push_back(&MIN_SP_SCORE);
     classify.push_back(&TAXONOMY_PATH);
     classify.push_back(&PARAM_MASK_RESIDUES);
     classify.push_back(&PARAM_MASK_PROBABILTY);
@@ -679,10 +688,10 @@ LocalParameters::LocalParameters() :
     classify.push_back(&SMER_LEN);
     classify.push_back(&PARAM_SUB_MAT);
     // classify.push_back(&KMER_FORMAT);
-    classify.push_back(&PRINT_LOG);
+    // classify.push_back(&PRINT_LOG);
     // classify.push_back(&PDM_KMER);
     // classify.push_back(&SCORE_MODE);
-    classify.push_back(&MAX_E_VALUE);
+    
     classify.push_back(&DB_TOTAL_LENGTH);
     classify.push_back(&MAX_SHIFT);
     // classify.push_back(&EM);

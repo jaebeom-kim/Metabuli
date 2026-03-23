@@ -8,7 +8,7 @@
 #include "validateDatabase.h"
 
 void setClassifyDefaults(LocalParameters & par){    
-    par.maxEValue = 1000;
+    par.maxEValue = 0;
     par.syncmer = 0;
     par.smerLen = 5;
     par.kmerFormat = 1;

@@ -75,7 +75,7 @@ void classifiedRefinerDefault(LocalParameters & par){
     par.rank = "";
     par.higherRankFile = 0;
     par.minScore = 0.0;
-    par.maxEValue = 1000;
+    par.maxEValue = 0;
 }
 
 int classifiedRefiner(int argc, const char **argv, const Command &command) {
@@ -111,6 +111,7 @@ int classifiedRefiner(const string &classifiedFile, const LocalParameters &par) 
     TaxonomyWrapper * taxonomy = loadTaxonomy(dbDir, taxonomyDir);
     unordered_map<TaxID, TaxID> extern2intern; // for external2internalTaxID
     taxonomy->getExternal2internalTaxID(extern2intern); // fill extern2intern
+    bool useEvalue = (par.maxEValue > 0);
 
     string reportFileName = classifiedFile.substr(0, classifiedFile.find_last_of('.')) + "_refined_report.tsv";
     Reporter * reporter = new Reporter(par, taxonomy,reportFileName);
@@ -357,7 +358,7 @@ int classifiedRefiner(const string &classifiedFile, const LocalParameters &par) 
                         !(contamsTaxIds.size() > 0 && checktaxId(taxonomy, contamsTaxIds, data.taxonomyId)) &&
                         !(targetsTaxIds.size() > 0 && !checktaxId(taxonomy, targetsTaxIds, data.taxonomyId)) && 
                         !(data.isClassified == true && par.minScore > data.dnaIdentityScore) &&
-                        !(data.isClassified == true && hasEvalue && data.evalue > par.maxEValue)) { 
+                        !(data.isClassified == true && hasEvalue && useEvalue && data.evalue > par.maxEValue)) { 
                         
                         stringstream ss;
                         stringstream tt;

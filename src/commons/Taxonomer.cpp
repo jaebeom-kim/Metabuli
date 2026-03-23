@@ -343,7 +343,7 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
             }
             score.idScore = score.idScore / queryLength;
             score.idScore = min(score.idScore, 1.0f);
-            if ((score.idScore < par.minScore) || (score.logE > logMaxEValue)) {
+            if ((score.idScore < par.minScore) || (useEvalueFilter && score.logE > logMaxEValue)) {
                 continue;
             }
 
