@@ -2,19 +2,22 @@
 #define ADCLASSIFIER2_COMMON_H
 #include <cstddef>
 #include <utility>
-#include "LocalParameters.h"
-#include "TaxonomyWrapper.h"
+
 #include <iostream>
 #include <unordered_set>
 #include "FileUtil.h"
 // #include "Match.h"
 #include <cstdint>
+#include <bitset>
 
 #include <queue>
 #include <mutex>
 #include <condition_variable>
 #include <cmath>
 
+#include "LocalParameters.h"
+#include "TaxonomyWrapper.h"
+#include "printBinary.h"
 
 
 #define likely(x) __builtin_expect((x),1)
@@ -490,5 +493,8 @@ uint32_t safe_right_shift_32(uint32_t value, unsigned int shift);
 uint32_t safe_left_shift_32(uint32_t value, unsigned int shift);
 
 int getFirstOneAfterFirstZero(uint32_t mask);
+
+uint64_t disperseBits(uint64_t source, uint64_t pattern, int chunk_size);
+uint64_t stretchBits(uint64_t pattern, int repeat_count);
 
 #endif //ADCLASSIFIER2_COMMON_H

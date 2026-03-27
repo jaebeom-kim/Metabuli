@@ -688,7 +688,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&SMER_LEN);
     classify.push_back(&PARAM_SUB_MAT);
     // classify.push_back(&KMER_FORMAT);
-    // classify.push_back(&PRINT_LOG);
+    classify.push_back(&PRINT_LOG);
     // classify.push_back(&PDM_KMER);
     // classify.push_back(&SCORE_MODE);
     

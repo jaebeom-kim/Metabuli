@@ -210,6 +210,34 @@ MatchScore SingleCodePattern::calMatchScore(
     return {idScore, 0.0f, prob};
 }
 
+MatchScore SingleCodePattern::calMatchScore(
+    uint64_t aa, 
+    uint64_t codon1, 
+    uint64_t codon2, 
+    uint32_t validPosMask) const  
+{
+    float idScore = 0.0f;
+    double prob = 0.0;
+    while (validPosMask) {
+        const int i = __builtin_ctz(validPosMask);
+        validPosMask &= validPosMask - 1;
+
+        const int sAA = bitPerAA * i;
+        const int sDNA = bitPerCodon * i;
+
+        const int myAA   = (aa >> sAA)  & aaMask;
+        const int myCodon1 = (codon1  >> sDNA) & codonMask;
+        const int myCodon2 = (codon2  >> sDNA) & codonMask;
+        
+        const int hammingDist = geneticCode->getHammingDist(myAA, myCodon1, myCodon2);
+      
+        idScore  += (hammingDist == 0) ? 3.0f : (2.0f - 0.5f * hammingDist);
+        prob     += lnFreq[geneticCode->aminoacids[myAA] - 'A'];
+    }
+
+    return {idScore, 0.0f, prob};
+
+}
 
 float SingleCodePattern::substitutionScore(
     uint64_t kmer1,

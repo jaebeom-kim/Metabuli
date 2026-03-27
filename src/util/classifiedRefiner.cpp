@@ -241,7 +241,7 @@ int classifiedRefiner(const string &classifiedFile, const LocalParameters &par) 
     #pragma omp parallel default(none) shared(file, refinedFileAppend, cout, taxonomy, \
         extern2intern, contamsTaxIds, targetsTaxIds, columnsIdx, par, totalSeqCnt, \
         resultChunk, taxcntSum, upperRanks, upperRankFileAppend, \
-        createUpperRanksFile, criterionRank, hasEvalue, hasLineage)
+        createUpperRanksFile, criterionRank, hasEvalue, hasLineage, useEvalue)
     {
     
         #pragma omp single
@@ -319,7 +319,7 @@ int classifiedRefiner(const string &classifiedFile, const LocalParameters &par) 
                     const string &localLine = chunk[localIdx];
                     vector<string> fields = Util::split(localLine, "\t");
 
-                    int matchCountIdx = 6; // 0-based
+                    size_t matchCountIdx = 6; // 0-based
                     matchCountIdx += hasEvalue ? 1 : 0;
                     matchCountIdx += hasLineage ? 1 : 0;
 
@@ -388,7 +388,7 @@ int classifiedRefiner(const string &classifiedFile, const LocalParameters &par) 
 
                         for (size_t i = 0; i < printCols.size(); i++) {
                             cout << fields[printCols[i]] << "\t";
-                            if (printCols[i] < fields.size()) ss << fields[printCols[i]] << "\t";
+                            if (printCols[i] < static_cast<int>(fields.size())) ss << fields[printCols[i]] << "\t";
                         }
                         if (par.printLineage && !hasLineage) {
                             cout << data.fullLineage << "\t";

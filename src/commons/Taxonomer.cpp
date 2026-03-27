@@ -35,6 +35,8 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
         // Both syncmer AND spacing
         maxCodonShift = getFirstOneAfterFirstZero(metamerPattern->spaceMask) * 2;
         dnaShift = (kmerLen - par.smerLen) * 3;
+        bitPerCodon = (static_cast<const SpacedPattern*>(metamerPattern))->bitPerCodon;
+        bitPerAA = (static_cast<const SpacedPattern*>(metamerPattern))->bitPerAA;
     } else if (par.syncmer && (kmerLen == windowSize)) {
         // Only syncmer
         maxCodonShift = (kmerLen - par.smerLen);
@@ -42,6 +44,8 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
     } else if (kmerLen != windowSize) {
         // Only spacing
         maxCodonShift = getFirstOneAfterFirstZero(metamerPattern->spaceMask);
+        bitPerCodon = (static_cast<const SpacedPattern*>(metamerPattern))->bitPerCodon;
+        bitPerAA = (static_cast<const SpacedPattern*>(metamerPattern))->bitPerAA;
     }
 
     if (par.seqMode == 1 || par.seqMode == 2) {
@@ -308,21 +312,21 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
     }
     while (i  < end + 1) {
         TaxID currentSpecies = matchList[i].tKmer.tInfo.speciesId;
-        size_t start = i;
+        size_t speciesStart = i;
         size_t previousPathSize = matchPaths.size();
         // For current species
         while ((i < end + 1) && currentSpecies == matchList[i].tKmer.tInfo.speciesId) {
             uint8_t curFrame = matchList[i].qKmer.qInfo.frame;
-            size_t start = i;
+            size_t frameStart = i;
             // For current frame
             while ((i < end + 1) && currentSpecies == matchList[i].tKmer.tInfo.speciesId && curFrame == matchList[i].qKmer.qInfo.frame) {
                 i ++;
             }
-            if (i - start > 1) {
+            if (i - frameStart > 1) {
                 if (windowSize == kmerLen) {
-                    getMatchPaths(matchList + start, i - start, matchPaths, currentSpecies);
+                    getMatchPaths(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
                 } else {
-                    getSpacedMatchPaths(matchList + start, i - start, matchPaths, currentSpecies);
+                    getSpacedMatchPaths2(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
                 }
             }
         }
@@ -353,7 +357,7 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
             }
             if (score.isLargerThan(bestSpScore, par.scoreMode)) {
                 bestSpScore = score;
-                bestSpeciesRange = make_pair(start, i);
+                bestSpeciesRange = make_pair(speciesStart, i);
             }
         }
     }
@@ -474,18 +478,36 @@ MatchScore Taxonomer::combineMatchPaths(
                         isOverlapped = true;
                         break;
                     }
-                    
-                    if (overlappedLength < 24) {
-                        trimMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
-                        continue;
+
+                    if (windowSize == kmerLen) {
+                        if (overlappedLength < (windowSize * 3)) { 
+                            trimMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
+                        } else {
+                            isOverlapped = true;
+                            break;
+                        }
                     } else {
-                        isOverlapped = true;
-                        break;
+                        bool trimmed = trimSpacedMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
+                        if (!trimmed) {
+                            isOverlapped = true;
+                            break;
+                        }
                     }
-                    if (matchPaths[i].end - matchPaths[i].start + 1 < windowSize * 3) { // Current path trimmed too much 
-                        isOverlapped = true;
-                        break;
-                    }  
+                    
+                    // if (overlappedLength < (windowSize * 3)) { 
+                    //     if (windowSize == kmerLen) {
+                    //         trimMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
+                    //     } else {
+                    //         bool trimmed = trimSpacedMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
+                    //         if (!trimmed) {
+                    //             isOverlapped = true;
+                    //             break;
+                    //         }
+                    //     }
+                    // } else {
+                    //     isOverlapped = true;
+                    //     break;
+                    // }
                 } 
             }
             if (!isOverlapped) {
@@ -508,6 +530,64 @@ MatchScore Taxonomer::combineMatchPaths(
 bool Taxonomer::isMatchPathOverlapped(const MatchPath & matchPath1,
                                       const MatchPath & matchPath2) {
     return !((matchPath1.end < matchPath2.start) || (matchPath2.end < matchPath1.start));                                       
+}
+
+bool Taxonomer::trimSpacedMatchPath(
+    MatchPath & newPath, 
+    const MatchPath & existingPath, 
+    int overlapLength) 
+{
+    int overlapAaNum = 0;
+    if (overlapLength >= windowSize * 3) {
+        overlapAaNum = windowSize;
+    } else {
+        overlapAaNum = overlapLength / 3;
+    }
+    int extraPanelty = overlapLength - overlapAaNum * 3;
+
+    uint32_t baseMask = (1U << overlapAaNum) - 1;
+    if (newPath.start < existingPath.start) { 
+        // Trim right end of newPath
+        if (newPath.rightEndTrimmed) return false; 
+        newPath.rightEndTrimmed = true;
+
+        newPath.end = existingPath.start - 1;
+        uint32_t validPosMask = newPath.endMatch->qKmer.qInfo.frame < 3
+            ? (newPath.lastHistoryMask & baseMask)
+            : (newPath.lastHistoryMask & (baseMask << (windowSize - overlapAaNum)));
+            
+        newPath.score -= metamerPattern->calMatchScore(
+            newPath.lastAAs,
+            newPath.lastCodons_t,
+            newPath.lastCodons_q,
+            validPosMask);
+        
+        // newPath.score.idScore -= overlapLength % 3;
+        newPath.score.idScore -= extraPanelty;
+        
+    } else {
+        // Trim left end of newPath
+        if (newPath.leftEndTrimmed) return false;
+        newPath.leftEndTrimmed = true;
+        
+        newPath.start = existingPath.end + 1;
+        uint32_t validPosMask = newPath.startMatch->qKmer.qInfo.frame < 3
+            ? (newPath.firstHistoryMask & (baseMask << (windowSize - overlapAaNum)))
+            : (newPath.firstHistoryMask & baseMask);
+
+        newPath.score -= metamerPattern->calMatchScore(
+            newPath.firstAAs,
+            newPath.firstCodons_t,
+            newPath.firstCodons_q,
+            validPosMask);
+
+        // newPath.score.idScore -= overlapLength % 3;
+        newPath.score.idScore -= extraPanelty;
+    }
+
+    newPath.score.idScore = max(0.0f, newPath.score.idScore);
+    
+    return true;
 }
 
 void Taxonomer::trimMatchPath(
@@ -761,7 +841,7 @@ void Taxonomer::getMatchPaths(
     }
 }
 
-void Taxonomer::makeMatchPath(
+void Taxonomer::makeSpacedMatchPath(
     const Match * match,
     size_t index)
 {
@@ -771,10 +851,29 @@ void Taxonomer::makeMatchPath(
                                         match->tKmer.value,
                                         *substitutionMatrix);
 
-    localMatchPaths[index].hammingDist = metamerPattern->hammingDistSum(
-                                            match->qKmer.value, 
-                                            match->tKmer.value);
-    localMatchPaths[index].historyMask = metamerPattern->spaceMask;
+    // localMatchPaths[index].hammingDist = metamerPattern->hammingDistSum(
+    //                                         match->qKmer.value, 
+    //                                         match->tKmer.value);
+    
+    localMatchPaths[index].lastHistoryMask  = metamerPattern->spaceMask;
+    localMatchPaths[index].lastAAs = disperseBits(
+        match->tKmer.value >> metamerPattern->totalDNABits,
+        metamerPattern->spaceMask,
+        bitPerAA);
+    localMatchPaths[index].lastCodons_t = disperseBits(
+        match->tKmer.value & metamerPattern->dnaMask,
+        metamerPattern->spaceMask,
+        bitPerCodon);
+    localMatchPaths[index].lastCodons_q = disperseBits(
+        match->qKmer.value & metamerPattern->dnaMask,
+        metamerPattern->spaceMask,
+        bitPerCodon);
+
+                                                
+    localMatchPaths[index].firstHistoryMask = localMatchPaths[index].lastHistoryMask;
+    localMatchPaths[index].firstAAs         = localMatchPaths[index].lastAAs;
+    localMatchPaths[index].firstCodons_t    = localMatchPaths[index].lastCodons_t;
+    localMatchPaths[index].firstCodons_q    = localMatchPaths[index].lastCodons_q;
 }
 
 void Taxonomer::getSpacedMatchPaths(
@@ -783,171 +882,262 @@ void Taxonomer::getSpacedMatchPaths(
     vector<MatchPath> & filteredMatchPaths,
     TaxID speciesId) 
 {
+    if (matchNum == 0) return;
+
     size_t i = 0;
     size_t currPos = matchList[0].qKmer.qInfo.pos;  
     uint64_t frame = matchList[0].qKmer.qInfo.frame;
-    int MIN_COVERED_POS = (int) par.minAaMatch;
-    if (taxonomy->IsAncestor(eukaryotaTaxId, speciesId)) {
-        MIN_COVERED_POS = (int) par.minAaMatchEuk;
-    }
+    bool isForward = (frame < 3);
+
+    int MIN_COVERED_POS = taxonomy->IsAncestor(eukaryotaTaxId, speciesId) ? 
+                          (int) par.minAaMatchEuk : (int) par.minAaMatch;
         
-    connectedToNext.resize(matchNum);
-    fill(connectedToNext.begin(), connectedToNext.end(), false);
+    connectedToNext.assign(matchNum, false); 
     localMatchPaths.clear();
     localMatchPaths.resize(matchNum);
 
-    if (frame < 3) { // Forward frame
-        size_t curPosMatchStart = i;        
-        while (i < matchNum && matchList[i].qKmer.qInfo.pos == currPos) {
-            makeMatchPath(matchList + i, i);
-            ++ i;
+    size_t curPosMatchStart = i;        
+    while (i < matchNum && matchList[i].qKmer.qInfo.pos == currPos) {
+        makeSpacedMatchPath(matchList + i, i);
+        ++i;
+    }
+    size_t curPosMatchEnd = i; // exclusive
+
+    while (i < matchNum) {
+        uint32_t nextPos = matchList[i].qKmer.qInfo.pos;
+        size_t nextPosMatchStart = i;
+        while (i < matchNum  && nextPos == matchList[i].qKmer.qInfo.pos) {
+            makeSpacedMatchPath(matchList + i, i);
+            ++i;
         }
-        size_t curPosMatchEnd = i; // exclusive
+        size_t nextPosMatchEnd = i; // exclusive
 
-        while (i < matchNum) {
-            uint32_t nextPos = matchList[i].qKmer.qInfo.pos;
-            size_t nextPosMatchStart = i;
-            while (i < matchNum  && nextPos == matchList[i].qKmer.qInfo.pos) {
-                makeMatchPath(matchList + i, i);
-                ++ i;
-            }
-            size_t nextPosMatchEnd = i; // exclusive
-
-            // Check if current position and next position are consecutive
-            int shift = (nextPos - currPos) / 3;
-            if (shift > 0 && shift <= maxCodonShift) {
-                // Compare curPosMatches and nextPosMatches.
-                for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; nextIdx++) {
-                    const MatchPath * bestPath = nullptr;
-                    MatchScore bestScore;
-                    int newCoveredPosCnt = 0;
-                    for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {                    
-                        if (metamerPattern->checkOverlap(matchList[curIdx].tKmer.value, matchList[nextIdx].tKmer.value, shift)) {
-                            connectedToNext[curIdx] = true;
-                            const uint32_t shiftedHistoryMask = (localMatchPaths[curIdx].historyMask << shift) & windowMask;
-                            const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
-                            const MatchScore totalScore = localMatchPaths[curIdx].score +
-                                                            metamerPattern->calMatchScore(
-                                                                matchList[nextIdx].qKmer.value, 
-                                                                matchList[nextIdx].tKmer.value, 
-                                                                validPosMask,
-                                                                *substitutionMatrix);
-
-                            if (totalScore.isLargerThan(bestScore, par.scoreMode)) {
-                                bestPath = &localMatchPaths[curIdx];
-                                bestScore = totalScore;
-                                localMatchPaths[nextIdx].historyMask = shiftedHistoryMask | metamerPattern->spaceMask;
-                                newCoveredPosCnt = __builtin_popcount(static_cast<unsigned int>(validPosMask));
-                            }
-                        }
-                    }
-                    if (bestPath != nullptr) {
-                        localMatchPaths[nextIdx].start = bestPath->start;                        
-                        localMatchPaths[nextIdx].score = bestScore;
-                        localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
-                            metamerPattern->hammingDistSum(
+        // Check if current position and next position are consecutive
+        int shift = (nextPos - currPos) / 3;
+        if (shift > 0 && shift <= maxCodonShift) {
+            for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; nextIdx++) {
+                const MatchPath * bestPath = nullptr;
+                MatchScore bestScore;
+                uint32_t bestHistoryMask = 0;
+                int newCoveredPosCnt = 0;
+                
+                for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
+                    
+                    uint64_t kmer1 = isForward ? matchList[curIdx].tKmer.value : matchList[nextIdx].tKmer.value;
+                    uint64_t kmer2 = isForward ? matchList[nextIdx].tKmer.value : matchList[curIdx].tKmer.value;
+                    
+                    if (metamerPattern->checkOverlap(kmer1, kmer2, shift)) {
+                        connectedToNext[curIdx] = true;
+                        
+                        const uint32_t shiftedHistoryMask = isForward ? 
+                            ((localMatchPaths[curIdx].lastHistoryMask << shift) & windowMask) : 
+                            (localMatchPaths[curIdx].lastHistoryMask >> shift);
+                        
+                        const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
+                        const MatchScore totalScore = localMatchPaths[curIdx].score +
+                            metamerPattern->calMatchScore(
                                 matchList[nextIdx].qKmer.value, 
                                 matchList[nextIdx].tKmer.value, 
-                                shift,
-                                true);
-                        localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + newCoveredPosCnt;
-                        localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
-                    }
-                }
-            } 
-            for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
-                    filteredMatchPaths.push_back(localMatchPaths[curIdx]);
-                }
-            }
-            if (i == matchNum) {
-                for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
-                    if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
-                        filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
-                    }
-                }
-            }
-            curPosMatchStart = nextPosMatchStart;
-            curPosMatchEnd = nextPosMatchEnd;
-            currPos = nextPos;    
-        }
-    } else {
-        size_t curPosMatchStart = i;        
-        while (i < matchNum && matchList[i].qKmer.qInfo.pos == currPos) {
-            makeMatchPath(matchList + i, i);
-            ++ i;
-        }
-        size_t curPosMatchEnd = i; // exclusive
+                                validPosMask,
+                                *substitutionMatrix);
 
-        while (i < matchNum) {
-            uint32_t nextPos = matchList[i].qKmer.qInfo.pos;
-            size_t nextPosMatchStart = i;
-            while (i < matchNum  && nextPos == matchList[i].qKmer.qInfo.pos) {
-                makeMatchPath(matchList + i, i);
-                ++ i;
-            }
-            size_t nextPosMatchEnd = i; // exclusive
-
-            // Check if current position and next position are consecutive
-            int shift = (nextPos - currPos) / 3;
-            if (shift > 0 && shift <= maxCodonShift) {
-                for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; nextIdx++) {
-                    const MatchPath * bestPath = nullptr;
-                    MatchScore bestScore;
-                    int newCoveredPosCnt = 0;
-                    for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                        if (metamerPattern->checkOverlap(matchList[nextIdx].tKmer.value, matchList[curIdx].tKmer.value, shift)) {
-                            connectedToNext[curIdx] = true;
-                            const uint32_t shiftedHistoryMask = (localMatchPaths[curIdx].historyMask >> shift); 
-                            const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
-                            const MatchScore totalScore = 
-                                localMatchPaths[curIdx].score + 
-                                metamerPattern->calMatchScore(
-                                    matchList[nextIdx].qKmer.value, 
-                                    matchList[nextIdx].tKmer.value, 
-                                    validPosMask,
-                                    *substitutionMatrix);
-
-                            if (totalScore.isLargerThan(bestScore, par.scoreMode)) {
-                                bestPath = &localMatchPaths[curIdx];
-                                bestScore = totalScore;
-                                localMatchPaths[nextIdx].historyMask = shiftedHistoryMask | metamerPattern->spaceMask;
-                                newCoveredPosCnt = __builtin_popcount(static_cast<unsigned int>(validPosMask));
-                            }
+                        if (totalScore.isLargerThan(bestScore, par.scoreMode)) {
+                            bestPath = &localMatchPaths[curIdx];
+                            bestScore = totalScore;
+                            bestHistoryMask = shiftedHistoryMask | metamerPattern->spaceMask;
+                            newCoveredPosCnt = __builtin_popcount(static_cast<unsigned int>(validPosMask));
                         }
                     }
-                    if (bestPath != nullptr) {
-                        localMatchPaths[nextIdx].start = bestPath->start;                        
-                        localMatchPaths[nextIdx].score = bestScore;
-                        localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
-                            metamerPattern->hammingDistSum(
-                                matchList[nextIdx].qKmer.value, 
-                                matchList[nextIdx].tKmer.value, 
-                                shift,
-                                false);
-                        localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + newCoveredPosCnt;
-                        localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
-                    }
                 }
-            } 
-            for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
-                    filteredMatchPaths.push_back(localMatchPaths[curIdx]);
-                }
-            }
-            if (i == matchNum) {
-                for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
-                    if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
-                        filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
-                    }
+                
+                if (bestPath != nullptr) {
+                    localMatchPaths[nextIdx].start = bestPath->start;  
+                    localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
+
+                    // Update scores
+                    localMatchPaths[nextIdx].score = bestScore;
+                    localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
+                        metamerPattern->hammingDistSum(
+                            matchList[nextIdx].qKmer.value, 
+                            matchList[nextIdx].tKmer.value, 
+                            shift,
+                            isForward);
+                    localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + newCoveredPosCnt;                    
+                    localMatchPaths[nextIdx].lastHistoryMask = bestHistoryMask;      
                 }
             }
-            curPosMatchStart = nextPosMatchStart;
-            curPosMatchEnd = nextPosMatchEnd;
-            currPos = nextPos;    
+        } 
+        
+        for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
+            if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
+                filteredMatchPaths.push_back(localMatchPaths[curIdx]);
+            }
         }
+        
+        if (i == matchNum) {
+            for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
+                if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
+                    filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
+                }
+            }
+        }
+        
+        curPosMatchStart = nextPosMatchStart;
+        curPosMatchEnd = nextPosMatchEnd;
+        currPos = nextPos;    
     }
 }
+
+void Taxonomer::getSpacedMatchPaths2(
+    const Match * matchList,
+    size_t matchNum,
+    vector<MatchPath> & filteredMatchPaths,
+    TaxID speciesId) 
+{
+    if (matchNum == 0) return;
+
+    size_t i = 0;
+    size_t currPos = matchList[0].qKmer.qInfo.pos;  
+    uint64_t frame = matchList[0].qKmer.qInfo.frame;
+    bool isForward = (frame < 3);
+
+    int MIN_COVERED_POS = taxonomy->IsAncestor(eukaryotaTaxId, speciesId) ? 
+                          (int) par.minAaMatchEuk : (int) par.minAaMatch;
+        
+    connectedToNext.assign(matchNum, false); 
+    localMatchPaths.clear();
+    localMatchPaths.resize(matchNum);
+
+    size_t curPosMatchStart = i;        
+    while (i < matchNum && matchList[i].qKmer.qInfo.pos == currPos) {
+        makeSpacedMatchPath(matchList + i, i);
+        ++i;
+    }
+    size_t curPosMatchEnd = i; // exclusive
+
+    while (i < matchNum) {
+        uint32_t nextPos = matchList[i].qKmer.qInfo.pos;
+        size_t nextPosMatchStart = i;
+        while (i < matchNum  && nextPos == matchList[i].qKmer.qInfo.pos) {
+            makeSpacedMatchPath(matchList + i, i);
+            ++i;
+        }
+        size_t nextPosMatchEnd = i; // exclusive
+
+        // Check if current position and next position are consecutive
+        int shift = (nextPos - currPos) / 3;
+        if (shift > 0 && shift <= maxCodonShift) {
+            for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; nextIdx++) {
+                const MatchPath * bestPath = nullptr;
+                MatchScore bestScore;
+                uint32_t bestHistoryMask = 0;
+                uint64_t bestLastCodons = 0;
+                int newCoveredPosCnt = 0;
+                
+                for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
+
+                    uint32_t shiftedHistoryMask = isForward ? 
+                        ((localMatchPaths[curIdx].lastHistoryMask << shift) & windowMask) : 
+                        (localMatchPaths[curIdx].lastHistoryMask >> shift);
+                    
+                    uint32_t checkPos = shiftedHistoryMask & metamerPattern->spaceMask;
+                    uint64_t checkPosExtended = stretchBits(checkPos, bitPerCodon);
+                    
+                    uint64_t shiftedLastCodons = isForward ? 
+                        (localMatchPaths[curIdx].lastCodons_t << (shift * bitPerCodon)) : 
+                        (localMatchPaths[curIdx].lastCodons_t >> (shift * bitPerCodon));
+                    
+                    uint64_t shiftedLastCodons_masked = shiftedLastCodons & checkPosExtended;
+                    uint64_t currentCodons_masked = localMatchPaths[nextIdx].lastCodons_t & checkPosExtended;
+                    
+                    if (shiftedLastCodons_masked == currentCodons_masked) {
+                        connectedToNext[curIdx] = true;
+                        const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
+                        const MatchScore totalScore = localMatchPaths[curIdx].score +
+                            metamerPattern->calMatchScore(
+                                matchList[nextIdx].qKmer.value, 
+                                matchList[nextIdx].tKmer.value, 
+                                validPosMask,
+                                *substitutionMatrix);
+
+                        if (totalScore.isLargerThan(bestScore, par.scoreMode)) {
+                            bestPath = &localMatchPaths[curIdx];
+                            bestScore = totalScore;
+                            bestLastCodons = shiftedLastCodons | localMatchPaths[nextIdx].lastCodons_t;
+                            bestHistoryMask = shiftedHistoryMask | metamerPattern->spaceMask;
+                            newCoveredPosCnt = __builtin_popcount(static_cast<unsigned int>(validPosMask));
+                        }
+                    }
+                }
+                
+                if (bestPath != nullptr) {
+                    // Store left end of the path
+                    int depth = (localMatchPaths[nextIdx].start - bestPath->start) / 3;
+                    if (depth < windowSize) {
+                        uint32_t shiftedFirstHistroyMask = isForward ? 
+                            (localMatchPaths[nextIdx].firstHistoryMask >> depth) :
+                            (localMatchPaths[nextIdx].firstHistoryMask << depth);
+                        localMatchPaths[nextIdx].firstHistoryMask = shiftedFirstHistroyMask | bestPath->firstHistoryMask;
+
+                        uint64_t shiftedFirstCodons_t = isForward ? 
+                            (localMatchPaths[nextIdx].firstCodons_t >> (depth * bitPerCodon)) :
+                            (localMatchPaths[nextIdx].firstCodons_t << (depth * bitPerCodon));
+                        localMatchPaths[nextIdx].firstCodons_t = shiftedFirstCodons_t | bestPath->firstCodons_t;
+
+                        uint64_t shiftedFirstCodons_q = isForward ? 
+                            (localMatchPaths[nextIdx].firstCodons_q >> (depth * bitPerCodon)) :
+                            (localMatchPaths[nextIdx].firstCodons_q << (depth * bitPerCodon));
+                        localMatchPaths[nextIdx].firstCodons_q = shiftedFirstCodons_q | bestPath->firstCodons_q;
+
+                        uint64_t shiftedFirstAAs = isForward ? 
+                            (localMatchPaths[nextIdx].firstAAs >> (depth * bitPerAA)) :
+                            (localMatchPaths[nextIdx].firstAAs << (depth * bitPerAA));
+                        localMatchPaths[nextIdx].firstAAs = shiftedFirstAAs | bestPath->firstAAs;
+                    }
+                    localMatchPaths[nextIdx].start = bestPath->start;  
+                    localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
+                    
+                    // Store right end of the path
+                    localMatchPaths[nextIdx].lastHistoryMask = bestHistoryMask;
+                    localMatchPaths[nextIdx].lastCodons_t = bestLastCodons;
+
+                    uint64_t shiftedLastCodons_q = isForward ? 
+                        (bestPath->lastCodons_q << (shift * bitPerCodon)) :
+                        (bestPath->lastCodons_q >> (shift * bitPerCodon));
+                    localMatchPaths[nextIdx].lastCodons_q = shiftedLastCodons_q | localMatchPaths[nextIdx].lastCodons_q;
+
+                    uint64_t shiftedLastAAs = isForward ? 
+                        (bestPath->lastAAs << (shift * bitPerAA)) :
+                        (bestPath->lastAAs >> (shift * bitPerAA));
+                    localMatchPaths[nextIdx].lastAAs = shiftedLastAAs | localMatchPaths[nextIdx].lastAAs;
+
+                    // Update scores
+                    localMatchPaths[nextIdx].score = bestScore;
+                    localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + newCoveredPosCnt;                    
+                }
+            }
+        } 
+        
+        for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
+            if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
+                filteredMatchPaths.push_back(localMatchPaths[curIdx]);
+            }
+        }
+        
+        if (i == matchNum) {
+            for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
+                if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
+                    filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
+                }
+            }
+        }
+        
+        curPosMatchStart = nextPosMatchStart;
+        curPosMatchEnd = nextPosMatchEnd;
+        currPos = nextPos;    
+    }
+}
+
 
 void Taxonomer::ensureArraySize(size_t newSize) {
     if (newSize > arraySize_filterRedundantMatches) {

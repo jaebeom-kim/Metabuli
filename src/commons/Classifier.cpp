@@ -32,6 +32,7 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
                 cout << "Using SingleCodePattern with custom metamer." << endl;
                 metamerPattern = new SingleCodePattern(par.customMetamer);
             } else {
+                cout << "Using SpacedPattern with custom metamer." << endl;
                 uint32_t mask = parseMask(par.spaceMask.c_str());
                 metamerPattern = new SpacedPattern(par.customMetamer, mask);
             }

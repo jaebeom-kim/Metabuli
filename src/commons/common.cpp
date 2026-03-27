@@ -380,3 +380,59 @@ int getFirstOneAfterFirstZero(uint32_t mask) {
     // 4. Return the 1-based position
     return first_one_idx;
 }
+
+uint64_t disperseBits(uint64_t source, uint64_t pattern, int chunk_size) {
+    uint64_t result = 0;
+    int result_shift = 0; // Tracks where we are writing in the result
+
+    // Create a mask to extract 'chunk_size' bits (e.g., if chunk_size is 3, mask is 0b111)
+    uint64_t mask = (1ULL << chunk_size) - 1;
+
+    while (pattern > 0) {
+        // If the current right-most bit of the pattern is 1
+        if (pattern & 1) {
+            // 1. Extract the chunk from the source
+            uint64_t chunk = source & mask;
+            
+            // 2. Place it into the result at the correct shifted position
+            result |= (chunk << result_shift);
+            
+            // 3. Shift the source down to prepare the next chunk
+            source >>= chunk_size;
+        }
+        
+        // Move to the next bit in the pattern
+        pattern >>= 1;
+        
+        // Move our writing position in the result forward by the chunk size
+        result_shift += chunk_size;
+        
+    }
+
+    return result;
+}
+
+uint64_t stretchBits(uint64_t pattern, int repeat_count) {
+    uint64_t result = 0;
+    int result_shift = 0; // Tracks where we are writing in the result
+    
+    // Create a block of 1s equal to the repeat_count (e.g., for 3, mask is 0b111)
+    uint64_t ones_chunk = (1ULL << repeat_count) - 1;
+
+    while (pattern > 0) {
+        // If the current right-most bit of the pattern is 1
+        if (pattern & 1) {
+            // Place the chunk of 1s into the result at the current position
+            result |= (ones_chunk << result_shift);
+        }
+        // Note: If the bit is 0, we do nothing, which naturally leaves 0s in the result
+        
+        // Move to the next bit in the pattern
+        pattern >>= 1;
+        
+        // Move our writing position forward by the repeat count
+        result_shift += repeat_count;
+    }
+
+    return result;
+}

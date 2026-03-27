@@ -36,6 +36,8 @@ private:
 
     // spaced k-mer
     int unmaskedPos[9];
+    int bitPerCodon;
+    int bitPerAA;
     int spaceNum;
     int kmerLen;
     int windowSize;
@@ -109,12 +111,18 @@ private:
         size_t matchNum,
         vector<MatchPath> & matchPaths,
         TaxID speciesId); 
+    
+    void getSpacedMatchPaths2(
+        const Match * matchList,
+        size_t matchNum,
+        vector<MatchPath> & matchPaths,
+        TaxID speciesId); 
 
     MatchPath makeMatchPath(
         const Match * match
     );
 
-    void makeMatchPath(
+    void makeSpacedMatchPath(
         const Match * match,
         size_t index
     );
@@ -128,7 +136,7 @@ private:
         
     bool isMatchPathOverlapped(const MatchPath & matchPath1, const MatchPath & matchPath2);
     void trimMatchPath(MatchPath & path1, const MatchPath & path2, int overlapLength);
-    void trimMatchPath2(MatchPath & path1, const MatchPath & path2, int overlapLength);
+    bool trimSpacedMatchPath(MatchPath & path1, const MatchPath & path2, int overlapLength);
     void sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i);
 
 public:
