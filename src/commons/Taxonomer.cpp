@@ -1120,6 +1120,10 @@ void Taxonomer::getSpacedMatchPaths2(
         
         for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
             if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
+                float gapPenalty = 
+                    (localMatchPaths[curIdx].end - localMatchPaths[curIdx].start + 1) // spanned bases
+                    - localMatchPaths[curIdx].coveredPosCnt * 3; // AA-matched bases
+                localMatchPaths[curIdx].score.idScore = max(0.0f, localMatchPaths[curIdx].score.idScore - gapPenalty);
                 filteredMatchPaths.push_back(localMatchPaths[curIdx]);
             }
         }
@@ -1127,6 +1131,10 @@ void Taxonomer::getSpacedMatchPaths2(
         if (i == matchNum) {
             for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
                 if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
+                    float gapPenalty = 
+                        (localMatchPaths[nextIdx].end - localMatchPaths[nextIdx].start + 1) // spanned bases
+                        - localMatchPaths[nextIdx].coveredPosCnt * 3; // AA-matched bases
+                    localMatchPaths[nextIdx].score.idScore = max(0.0f, localMatchPaths[nextIdx].score.idScore - gapPenalty);
                     filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
                 }
             }

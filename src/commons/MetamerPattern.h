@@ -103,6 +103,10 @@ public:
     // virtual void printAA(uint64_t value, int len) const = 0;
     // virtual void printDNA(uint64_t value, int len) const = 0;
     virtual std::string toDnaString(uint64_t value) const = 0;
+
+    float calIdScore(uint8_t hammingDist) const {
+        return (hammingDist == 0) ? 3.0f : (2.0f - 0.5f * hammingDist);
+    }
     
 };
 
