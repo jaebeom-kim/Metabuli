@@ -47,14 +47,12 @@ private:
     int accessionLevel;
     int minSSMatch;
     int eukaryotaTaxId;
-    float tieRatio;
 
     // Internal
     int denominator;
     int maxCodonShift;
     int dnaShift;
     // int smerLength;
-    int minSubSpeciesMatch;
     size_t dbSize;
     double logMaxEValue;
     bool useEvalueFilter = false;

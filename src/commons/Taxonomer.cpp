@@ -26,7 +26,6 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
     accessionLevel = par.accessionLevel;
     minSSMatch = par.minSSMatch;
     eukaryotaTaxId = taxonomy->getEukaryotaTaxID();
-    tieRatio = par.tieRatio;
 
 
     dnaShift = 3;
@@ -178,11 +177,9 @@ void Taxonomer::filterRedundantMatches(const Match *matchList,
     
     ensureArraySize(maxQuotient + 1);
 
-    // std::fill_n(bestMatchTaxIdForQuotient, maxQuotient + 1, 0);
-
     for (size_t i = bestSpeciesRange.first; i < bestSpeciesRange.second; i ++) {
         size_t currQuotient = matchList[i].qKmer.qInfo.pos / dnaShift;
-        uint8_t hamming = metamerPattern->hammingDistSum(matchList[i].qKmer.value, matchList[i].tKmer.value, kmerLen, true);
+        uint8_t hamming = metamerPattern->hammingDistSum(matchList[i].qKmer.value, matchList[i].tKmer.value);
 
         if (bestMatchForQuotient[currQuotient] == nullptr) {
             bestMatchForQuotient[currQuotient] = matchList + i;
@@ -217,7 +214,7 @@ void Taxonomer::printSpeciesMatches(
 }
 
 TaxID Taxonomer::lowerRankClassification(const unordered_map<TaxID, unsigned int> & taxCnt, TaxID spTaxId, int queryLength) {
-    unsigned int minSubSpeciesMatch = ((queryLength - 1)/denominator);
+    unsigned int minSubSpeciesMatch = ((queryLength - 1)/denominator) + (windowSize != kmerLen);
     cladeCnt.clear();
     getSpeciesCladeCounts(taxCnt, cladeCnt, spTaxId);
     if (accessionLevel == 2) { // Don't do accession-level classification
@@ -380,8 +377,15 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
     // }
 
     maxSpecies.clear();
+    float myTieRatio;
+    if (windowSize == kmerLen) {
+        myTieRatio = par.tieRatio;
+    } else {
+        float diff = 0.05f;
+        myTieRatio = (par.tieRatio - diff) + (bestSpScore.idScore * diff); 
+    }
     for (size_t i = 0; i < sp2score.size(); i++) {
-        if (sp2score[i].second.isLargerThan(bestSpScore * tieRatio, par.scoreMode)) {
+        if (sp2score[i].second.isLargerThan(bestSpScore * myTieRatio, par.scoreMode)) {
             maxSpecies.push_back(sp2score[i].first);
             bestScore.score += sp2score[i].second;   
         }
@@ -1159,5 +1163,6 @@ void Taxonomer::ensureArraySize(size_t newSize) {
     }
     std::memset(bestMatchForQuotient, 0, newSize * sizeof(const Match*));
     std::memset(minHammingForQuotient, std::numeric_limits<uint8_t>::max(), newSize * sizeof(uint8_t));
+    std::fill_n(bestMatchTaxIdForQuotient, newSize, 0);
 }
 
