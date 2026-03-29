@@ -214,7 +214,7 @@ void Taxonomer::printSpeciesMatches(
 }
 
 TaxID Taxonomer::lowerRankClassification(const unordered_map<TaxID, unsigned int> & taxCnt, TaxID spTaxId, int queryLength) {
-    unsigned int minSubSpeciesMatch = ((queryLength - 1)/denominator) + (windowSize != kmerLen);
+    unsigned int minSubSpeciesMatch = ((queryLength - 1)/denominator) + (kmerLen > 8);
     cladeCnt.clear();
     getSpeciesCladeCounts(taxCnt, cladeCnt, spTaxId);
     if (accessionLevel == 2) { // Don't do accession-level classification
