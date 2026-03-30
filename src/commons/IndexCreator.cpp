@@ -1232,7 +1232,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                 prodigal->getExtendedORFs_fixed(
                                     prodigal->finalGenes, prodigal->nodes, extendedORFs,
                                     prodigal->fng, e.sequence.l,
-                                    orfNum, intergenicKmers, e.sequence.s, metamerPattern->windowSize);
+                                    orfNum, intergenicKmers, e.sequence.s, metamerPattern->windowSize * 3);
                                 // Get k-mers from extended ORFs
                                 for (size_t orfCnt = 0; orfCnt < orfNum; orfCnt++) {
                                     tempCheck = kmerExtractor->extractTargetKmers(
@@ -1254,7 +1254,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                 prodigal->getExtendedORFs_fixed(
                                     prodigal->finalGenes, prodigal->nodes, extendedORFs,
                                     prodigal->fng, e.sequence.l,
-                                    orfNum, intergenicKmers, reverseComplement, metamerPattern->windowSize);
+                                    orfNum, intergenicKmers, reverseComplement, metamerPattern->windowSize * 3);
 
                                 // Get reverse masked sequence
                                 if (par.maskMode) {
