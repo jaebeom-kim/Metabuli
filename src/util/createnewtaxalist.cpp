@@ -183,10 +183,6 @@ int getTaxonomyOfAccessions(
     return count;               
 }
 
-void createnewtaxalistDefault(LocalParameters & par) {
-    // par.threads = 16;
-}
-
 
 int createnewtaxalist(int argc, const char **argv, const Command &command) {
     LocalParameters &par = LocalParameters::getLocalInstance();
@@ -318,6 +314,7 @@ int createnewtaxalist(TaxonomyWrapper * oldTaxonomy,
         TaxonNode const* node = newTaxonomy->taxonNode(it.second);
         size_t count = 0;
         while (true) {
+            // If the same name observed, use the same tax ID as the old taxonomy.
             if (usedName2externalTaxid.find(newTaxonomy->getString(node->nameIdx)) != usedName2externalTaxid.end()) {
                 changedTaxIDs[node->taxId] = usedName2externalTaxid[newTaxonomy->getString(node->nameIdx)];
                 break;
@@ -339,6 +336,8 @@ int createnewtaxalist(TaxonomyWrapper * oldTaxonomy,
             }
             if (usedExternalTaxIDs.find(node->taxId) != usedExternalTaxIDs.end()) {
                 changedTaxIDs[node->taxId] = oldTaxonomy->getSmallestUnusedExternalTaxID(usedExternalTaxIDs);
+            } else {
+                usedExternalTaxIDs.insert(node->taxId);
             }
             node = newTaxonomy->taxonNode(node->parentTaxId);
             count ++;
