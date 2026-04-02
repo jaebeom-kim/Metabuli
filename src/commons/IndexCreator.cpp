@@ -1301,7 +1301,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                             }                            
                         }
                         idx++;
-                        if (par.maskMode) {
+                        if (doMasking) {
                             delete[] maskedSeq;
                         }
                         if (idx == accessionBatches[batchIdx].lengths.size()) {
