@@ -79,7 +79,16 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
     } else {
         useEvalueFilter = false;
     }
-    // size_t tempSize = 562762599 * 2; // for nr database
+
+    if (par.priorityTaxa.empty()) {
+        priorityTaxa = {};
+    } else {
+        std::vector<std::string> taxaStr = Util::split(par.priorityTaxa, ",");
+        for (const std::string &taxIdStr : taxaStr) {
+            TaxID taxId = taxonomy->getInternalTaxID(stoi(taxIdStr));
+            priorityTaxa.push_back(taxId);
+        }
+    }
 }
 
 Taxonomer::~Taxonomer() {
@@ -376,35 +385,49 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
     // }
 
     maxSpecies.clear();
-    float myTieRatio;
-    if (windowSize == kmerLen) {
-        myTieRatio = par.tieRatio;
-    } else {
-        float diff = 0.09f;
-        myTieRatio = (par.tieRatio - diff) + (bestSpScore.idScore * diff); 
-    }
+
+    const float diff = 0.09f;
+    const float myTieRatio = (windowSize == kmerLen) 
+                            ? par.tieRatio 
+                            : (par.tieRatio - diff) + (bestSpScore.idScore * diff);
+    
+    std::vector<size_t> tiedIndices;
     for (size_t i = 0; i < sp2score.size(); i++) {
         if (sp2score[i].second.isLargerThan(bestSpScore * myTieRatio, par.scoreMode)) {
             maxSpecies.push_back(sp2score[i].first);
+            tiedIndices.push_back(i);
             bestScore.score += sp2score[i].second;   
         }
     }
-    
-    // More than one species --> LCA    
+
+    if (maxSpecies.size() > 1 && !priorityTaxa.empty()) {
+        std::vector<TaxID> tempPrioritySpecies; 
+        TaxonScore tempBestScore; 
+        
+        for (size_t i = 0; i < maxSpecies.size(); ++i) {
+            if (taxonomy->isAunderB(maxSpecies[i], priorityTaxa)) {
+                tempPrioritySpecies.push_back(maxSpecies[i]);
+                tempBestScore.score += sp2score[tiedIndices[i]].second; 
+            }
+        }
+        
+        if (!tempPrioritySpecies.empty()) {
+            maxSpecies = std::move(tempPrioritySpecies);
+            bestScore.score = tempBestScore.score;
+        }
+    }
+
     if (maxSpecies.size() > 1) {
-        bestScore.LCA = true;
         bestScore.taxId = taxonomy->LCA(maxSpecies)->taxId;
+        bestScore.LCA = true;
         bestScore.score.idScore /= maxSpecies.size();
-        // bestScore.score.subScore /= maxSpecies.size();
-        bestScore.score.logE = bestSpScore.logE;
-        return bestScore;
+    } else if (maxSpecies.size() == 1) {
+        bestScore.taxId = maxSpecies[0];
+        bestScore.LCA = false;
     }
     
-    // One species
-    bestScore.taxId = maxSpecies[0];
     bestScore.score.logE = bestSpScore.logE;
-    
-    return bestScore;                                  
+    return bestScore;                                 
 }
 
 void Taxonomer::sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i) {

@@ -47,6 +47,7 @@ private:
     int accessionLevel;
     int minSSMatch;
     int eukaryotaTaxId;
+    std::vector<TaxID> priorityTaxa;
 
     // Internal
     int denominator;
