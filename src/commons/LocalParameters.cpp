@@ -678,7 +678,7 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&GTDB);
     updateDB.push_back(&VALIDATE_INPUT);
     updateDB.push_back(&VALIDATE_DB);
-    updateDB.push_back(&SYNCMER);
+    // updateDB.push_back(&SYNCMER);
     updateDB.push_back(&NO_MASK_TAXA);
 
     //classify
