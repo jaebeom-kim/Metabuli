@@ -24,7 +24,6 @@ Taxonomer::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, cons
     }
     // Parameters
     accessionLevel = par.accessionLevel;
-    minSSMatch = par.minSSMatch;
     eukaryotaTaxId = taxonomy->getEukaryotaTaxID();
 
 
@@ -222,7 +221,10 @@ void Taxonomer::printSpeciesMatches(
 }
 
 TaxID Taxonomer::lowerRankClassification(const unordered_map<TaxID, unsigned int> & taxCnt, TaxID spTaxId, int queryLength) {
-    unsigned int minSubSpeciesMatch = ((queryLength - 1)/denominator) + (kmerLen > 8);
+    int minSubSpeciesMatch = ((queryLength - 1)/denominator) + (kmerLen > 8) - (par.syncmer == 1);
+    if (minSubSpeciesMatch < 0) {
+        minSubSpeciesMatch = 0;
+    }
     cladeCnt.clear();
     getSpeciesCladeCounts(taxCnt, cladeCnt, spTaxId);
     if (accessionLevel == 2) { // Don't do accession-level classification

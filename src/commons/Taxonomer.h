@@ -45,7 +45,6 @@ private:
 
     // Parameters from user
     int accessionLevel;
-    int minSSMatch;
     int eukaryotaTaxId;
     std::vector<TaxID> priorityTaxa;
 
