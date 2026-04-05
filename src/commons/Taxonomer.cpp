@@ -331,7 +331,7 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
                 if (windowSize == kmerLen) {
                     getMatchPaths(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
                 } else {
-                    getSpacedMatchPaths2(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
+                    getSpacedMatchPaths(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
                 }
             }
         }
@@ -387,9 +387,10 @@ TaxonScore Taxonomer::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpec
     maxSpecies.clear();
 
     const float diff = 0.09f;
-    const float myTieRatio = (windowSize == kmerLen) 
-                            ? par.tieRatio 
-                            : (par.tieRatio - diff) + (bestSpScore.idScore * diff);
+    const float myTieRatio = (par.tieRatio - diff) + (bestSpScore.idScore * diff);
+    // const float myTieRatio = (windowSize == kmerLen) 
+    //                         ? par.tieRatio 
+    //                         : (par.tieRatio - diff) + (bestSpScore.idScore * diff);
     
     std::vector<size_t> tiedIndices;
     for (size_t i = 0; i < sp2score.size(); i++) {
@@ -437,8 +438,8 @@ void Taxonomer::sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i) {
            if (a.score.idScore != b.score.idScore) {
              return a.score.idScore > b.score.idScore;
            }
-           if (a.hammingDist != b.hammingDist) {
-             return a.hammingDist < b.hammingDist;
+           if (a.coveredPosCnt != b.coveredPosCnt) {
+             return a.coveredPosCnt < b.coveredPosCnt;
            }
            return a.start > b.start;
          });
@@ -448,8 +449,8 @@ void Taxonomer::sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i) {
            if (a.score.subScore != b.score.subScore) {
              return a.score.subScore > b.score.subScore;
            }
-           if (a.hammingDist != b.hammingDist) {
-             return a.hammingDist < b.hammingDist;
+           if (a.coveredPosCnt != b.coveredPosCnt) {
+             return a.coveredPosCnt < b.coveredPosCnt;
            }
            return a.start > b.start;
          });
@@ -461,8 +462,8 @@ void Taxonomer::sortMatchPath(std::vector<MatchPath> & matchPaths, size_t i) {
            if (aTotal != bTotal) {
              return aTotal > bTotal;
            }
-           if (a.hammingDist != b.hammingDist) {
-             return a.hammingDist < b.hammingDist;
+           if (a.coveredPosCnt != b.coveredPosCnt) {
+             return a.coveredPosCnt < b.coveredPosCnt;
            }
            return a.start > b.start;
          });
@@ -505,12 +506,17 @@ MatchScore Taxonomer::combineMatchPaths(
                     }
 
                     if (windowSize == kmerLen) {
-                        if (overlappedLength < (windowSize * 3)) { 
-                            trimMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
-                        } else {
+                        bool trimmed = trimMatchPath2(matchPaths[i], combinedMatchPaths[j], overlappedLength);
+                        if (!trimmed) {
                             isOverlapped = true;
                             break;
                         }
+                        // if (overlappedLength < (windowSize * 3)) { 
+                        //     trimMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
+                        // } else {
+                        //     isOverlapped = true;
+                        //     break;
+                        // }
                     } else {
                         bool trimmed = trimSpacedMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
                         if (!trimmed) {
@@ -615,6 +621,50 @@ bool Taxonomer::trimSpacedMatchPath(
     return true;
 }
 
+bool Taxonomer::trimMatchPath2(
+    MatchPath & newPath, 
+    const MatchPath & existingPath, 
+    int overlapLength) 
+{
+    int overlapAaNum = 0;
+    if (overlapLength >= windowSize * 3) {
+        overlapAaNum = windowSize;
+    } else {
+        overlapAaNum = overlapLength / 3;
+    }
+    int extraPanelty = overlapLength - overlapAaNum * 3;
+
+    bool trimFromRight = (newPath.endMatch->qKmer.qInfo.frame < 3) ^ (newPath.start >= existingPath.start);
+
+    if (newPath.start < existingPath.start) { 
+
+        if (newPath.rightEndTrimmed) return false;
+        newPath.rightEndTrimmed = true;
+
+        newPath.end = existingPath.start - 1;
+        newPath.score -= metamerPattern->calMatchScore(
+            newPath.endMatch->qKmer.value,
+            newPath.endMatch->tKmer.value,
+            overlapAaNum,
+            trimFromRight);            
+        
+    } else {
+        if (newPath.leftEndTrimmed) return false;
+        newPath.leftEndTrimmed = true;
+
+        newPath.start = existingPath.end + 1;
+        newPath.score -= metamerPattern->calMatchScore(
+            newPath.startMatch->qKmer.value,
+            newPath.startMatch->tKmer.value,
+            overlapAaNum,
+            trimFromRight);
+    }
+    newPath.score.idScore -= extraPanelty;
+    newPath.score.idScore = max(0.0f, newPath.score.idScore);
+
+    return true;
+}
+
 void Taxonomer::trimMatchPath(
     MatchPath & newPath, 
     const MatchPath & path2, 
@@ -633,7 +683,6 @@ void Taxonomer::trimMatchPath(
                 newPath.endMatch->qKmer.value,
                 newPath.endMatch->tKmer.value,
                 overlapLength/3,
-                *substitutionMatrix,
                 true);
 
             newPath.score.idScore -= overlapLength % 3;
@@ -648,7 +697,6 @@ void Taxonomer::trimMatchPath(
                 newPath.endMatch->qKmer.value,
                 newPath.endMatch->tKmer.value,
                 overlapLength/3,
-                *substitutionMatrix,
                 false);
 
             newPath.score.idScore -= overlapLength % 3;
@@ -666,7 +714,6 @@ void Taxonomer::trimMatchPath(
                 newPath.startMatch->qKmer.value,
                 newPath.startMatch->tKmer.value,
                 overlapLength/3,
-                *substitutionMatrix,
                 false);
             newPath.score.idScore -= overlapLength % 3;
         } else {
@@ -680,7 +727,6 @@ void Taxonomer::trimMatchPath(
                 newPath.startMatch->qKmer.value,
                 newPath.startMatch->tKmer.value,
                 overlapLength/3,
-                *substitutionMatrix,
                 true);
             newPath.score.idScore -= overlapLength % 3;
         }
@@ -696,11 +742,7 @@ MatchPath Taxonomer::makeMatchPath(
             match->qKmer.value, 
             match->tKmer.value, 
             metamerPattern->windowSize, 
-            *substitutionMatrix,
             true),
-        metamerPattern->hammingDistSum(
-            match->qKmer.value, 
-            match->tKmer.value),
         kmerLen,
         metamerPattern->windowSize * 3);
 }
@@ -764,15 +806,14 @@ void Taxonomer::getMatchPaths(
                                 matchList[nextIdx].qKmer.value, 
                                 matchList[nextIdx].tKmer.value, 
                                 shift,
-                                *substitutionMatrix,
                                 true);
 
-                        localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
-                            metamerPattern->hammingDistSum(
-                                matchList[nextIdx].qKmer.value, 
-                                matchList[nextIdx].tKmer.value, 
-                                shift,
-                                true);
+                        // localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
+                        //     metamerPattern->hammingDistSum(
+                        //         matchList[nextIdx].qKmer.value, 
+                        //         matchList[nextIdx].tKmer.value, 
+                        //         shift,
+                        //         true);
                         localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + shift;
                         localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
                     }
@@ -833,15 +874,14 @@ void Taxonomer::getMatchPaths(
                                 matchList[nextIdx].qKmer.value, 
                                 matchList[nextIdx].tKmer.value, 
                                 shift,
-                                *substitutionMatrix,
                                 false);
 
-                        localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
-                            metamerPattern->hammingDistSum(
-                                matchList[nextIdx].qKmer.value, 
-                                matchList[nextIdx].tKmer.value, 
-                                shift,
-                                false);
+                        // localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
+                        //     metamerPattern->hammingDistSum(
+                        //         matchList[nextIdx].qKmer.value, 
+                        //         matchList[nextIdx].tKmer.value, 
+                        //         shift,
+                        //         false);
                         localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + shift;
                         localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
                     }
@@ -873,13 +913,8 @@ void Taxonomer::makeSpacedMatchPath(
     localMatchPaths[index] = MatchPath(match, kmerLen, metamerPattern->windowSize * 3);
     localMatchPaths[index].score = metamerPattern->calMatchScore(
                                         match->qKmer.value, 
-                                        match->tKmer.value,
-                                        *substitutionMatrix);
-
-    // localMatchPaths[index].hammingDist = metamerPattern->hammingDistSum(
-    //                                         match->qKmer.value, 
-    //                                         match->tKmer.value);
-    
+                                        match->tKmer.value);
+ 
     localMatchPaths[index].lastHistoryMask  = metamerPattern->spaceMask;
     localMatchPaths[index].lastAAs = disperseBits(
         match->tKmer.value >> metamerPattern->totalDNABits,
@@ -902,118 +937,6 @@ void Taxonomer::makeSpacedMatchPath(
 }
 
 void Taxonomer::getSpacedMatchPaths(
-    const Match * matchList,
-    size_t matchNum,
-    vector<MatchPath> & filteredMatchPaths,
-    TaxID speciesId) 
-{
-    if (matchNum == 0) return;
-
-    size_t i = 0;
-    size_t currPos = matchList[0].qKmer.qInfo.pos;  
-    uint64_t frame = matchList[0].qKmer.qInfo.frame;
-    bool isForward = (frame < 3);
-
-    int MIN_COVERED_POS = taxonomy->IsAncestor(eukaryotaTaxId, speciesId) ? 
-                          (int) par.minAaMatchEuk : (int) par.minAaMatch;
-        
-    connectedToNext.assign(matchNum, false); 
-    localMatchPaths.clear();
-    localMatchPaths.resize(matchNum);
-
-    size_t curPosMatchStart = i;        
-    while (i < matchNum && matchList[i].qKmer.qInfo.pos == currPos) {
-        makeSpacedMatchPath(matchList + i, i);
-        ++i;
-    }
-    size_t curPosMatchEnd = i; // exclusive
-
-    while (i < matchNum) {
-        uint32_t nextPos = matchList[i].qKmer.qInfo.pos;
-        size_t nextPosMatchStart = i;
-        while (i < matchNum  && nextPos == matchList[i].qKmer.qInfo.pos) {
-            makeSpacedMatchPath(matchList + i, i);
-            ++i;
-        }
-        size_t nextPosMatchEnd = i; // exclusive
-
-        // Check if current position and next position are consecutive
-        int shift = (nextPos - currPos) / 3;
-        if (shift > 0 && shift <= maxCodonShift) {
-            for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; nextIdx++) {
-                const MatchPath * bestPath = nullptr;
-                MatchScore bestScore;
-                uint32_t bestHistoryMask = 0;
-                int newCoveredPosCnt = 0;
-                
-                for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-                    
-                    uint64_t kmer1 = isForward ? matchList[curIdx].tKmer.value : matchList[nextIdx].tKmer.value;
-                    uint64_t kmer2 = isForward ? matchList[nextIdx].tKmer.value : matchList[curIdx].tKmer.value;
-                    
-                    if (metamerPattern->checkOverlap(kmer1, kmer2, shift)) {
-                        connectedToNext[curIdx] = true;
-                        
-                        const uint32_t shiftedHistoryMask = isForward ? 
-                            ((localMatchPaths[curIdx].lastHistoryMask << shift) & windowMask) : 
-                            (localMatchPaths[curIdx].lastHistoryMask >> shift);
-                        
-                        const uint32_t validPosMask = metamerPattern->spaceMask & (~shiftedHistoryMask);
-                        const MatchScore totalScore = localMatchPaths[curIdx].score +
-                            metamerPattern->calMatchScore(
-                                matchList[nextIdx].qKmer.value, 
-                                matchList[nextIdx].tKmer.value, 
-                                validPosMask,
-                                *substitutionMatrix);
-
-                        if (totalScore.isLargerThan(bestScore, par.scoreMode)) {
-                            bestPath = &localMatchPaths[curIdx];
-                            bestScore = totalScore;
-                            bestHistoryMask = shiftedHistoryMask | metamerPattern->spaceMask;
-                            newCoveredPosCnt = __builtin_popcount(static_cast<unsigned int>(validPosMask));
-                        }
-                    }
-                }
-                
-                if (bestPath != nullptr) {
-                    localMatchPaths[nextIdx].start = bestPath->start;  
-                    localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
-
-                    // Update scores
-                    localMatchPaths[nextIdx].score = bestScore;
-                    localMatchPaths[nextIdx].hammingDist = bestPath->hammingDist + 
-                        metamerPattern->hammingDistSum(
-                            matchList[nextIdx].qKmer.value, 
-                            matchList[nextIdx].tKmer.value, 
-                            shift,
-                            isForward);
-                    localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + newCoveredPosCnt;                    
-                    localMatchPaths[nextIdx].lastHistoryMask = bestHistoryMask;      
-                }
-            }
-        } 
-        
-        for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
-            if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
-                filteredMatchPaths.push_back(localMatchPaths[curIdx]);
-            }
-        }
-        
-        if (i == matchNum) {
-            for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
-                if (localMatchPaths[nextIdx].coveredPosCnt >= MIN_COVERED_POS) {
-                    filteredMatchPaths.push_back(localMatchPaths[nextIdx]);
-                }
-            }
-        }
-        
-        curPosMatchStart = nextPosMatchStart;
-        curPosMatchEnd = nextPosMatchEnd;
-        currPos = nextPos;    
-    }
-}
-
-void Taxonomer::getSpacedMatchPaths2(
     const Match * matchList,
     size_t matchNum,
     vector<MatchPath> & filteredMatchPaths,
@@ -1082,8 +1005,7 @@ void Taxonomer::getSpacedMatchPaths2(
                             metamerPattern->calMatchScore(
                                 matchList[nextIdx].qKmer.value, 
                                 matchList[nextIdx].tKmer.value, 
-                                validPosMask,
-                                *substitutionMatrix);
+                                validPosMask);
 
                         if (totalScore.isLargerThan(bestScore, par.scoreMode)) {
                             bestPath = &localMatchPaths[curIdx];
