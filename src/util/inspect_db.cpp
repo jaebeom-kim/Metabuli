@@ -49,28 +49,16 @@ int inspect_db(int argc, const char **argv, const Command &command){
     size_t startIdx = par.kmerBegin;
     size_t endIdx = par.kmerEnd;
 
-    DeltaIdxReader * deltaIdxReader;
-    if (par.storeKmerPos) {
-        deltaIdxReader = new DeltaIdxReader(dbDir + "/diffIdx", dbDir + "/info", dbDir + "/kmerpos", 1024 * 1024 * 4, 1024 * 1024 * 4);
-    } else {
-        deltaIdxReader = new DeltaIdxReader(dbDir + "/diffIdx", dbDir + "/info", 1024 * 1024 * 4, 1024 * 1024 * 4);
-    }
-
-    // DeltaIdxReader * deltaIdxReader = new DeltaIdxReader(dbDir + "/diffIdx", dbDir + "/info", 1024 * 1024 * 4, 1024 * 1024 * 4);
+    DeltaIdxReader * deltaIdxReader = new DeltaIdxReader(dbDir + "/diffIdx", dbDir + "/info", 1024 * 1024 * 4, 1024 * 1024 * 4);
     deltaIdxReader->setReadPosition(DiffIdxSplit{0, 0, 0});
 
     size_t idx = 0;
-    cout << "Inspecting the database..." << endl;
-    TaxID internalTaxId = taxonomy->getInternalTaxID(1847562405);
     while (!deltaIdxReader->isCompleted()) {
         Kmer kmer = deltaIdxReader->next();
-        if (taxonomy->IsAncestor(internalTaxId, kmer.tInfo.taxId)) {
-            cout << kmer.tInfo.pos << "\n";
+        if (taxonomy->getOriginalTaxID(kmer.tInfo.taxId) == 2567792) {
+            metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\t";
+            cout <<kmer.tInfo.taxId << "\n";
         }
-        // if (taxonomy->getOriginalTaxID(kmer.tInfo.taxId) == 2567792) {
-        //     metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\t";
-        //     cout <<kmer.tInfo.taxId << "\n";
-        // }
         idx++;        
     }
                    

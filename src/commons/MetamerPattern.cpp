@@ -133,11 +133,10 @@ SingleCodePattern::SingleCodePattern(const std::string & customFile) {
 
 MatchScore SingleCodePattern::calMatchScore(
     uint64_t kmer1, 
-    uint64_t kmer2,
-    const SubstitutionMatrix& matrix) const 
+    uint64_t kmer2) const 
 {
     float idScore = 0.0f;
-    float subScore = 0.0f;
+    // float subScore = 0.0f;
     double prob = 0.0;
     const uint64_t aaPart = kmer1 >> totalDNABits;
     int aaBitSum = 0;
@@ -146,39 +145,35 @@ MatchScore SingleCodePattern::calMatchScore(
         const int myAA = (aaPart >> aaBitSum) & aaMask;
         const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
         const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
-        const int idx1 = matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCode->aa2codon[myAA][codon1].c_str())
-        ];
-        const int idx2 = matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCode->aa2codon[myAA][codon2].c_str())
-        ];
+        // const int idx1 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(
+        //         geneticCode->aa2codon[myAA][codon1].c_str())
+        // ];
+        // const int idx2 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(
+        //         geneticCode->aa2codon[myAA][codon2].c_str())
+        // ];
 
         const int hammingDist = geneticCode->getHammingDist(myAA, codon1, codon2);
         idScore += (hammingDist == 0) ? 3.0f : (2.0f - 0.5f * hammingDist);
-        subScore += matrix.subMatrix[idx1][idx2];
+        // subScore += matrix.subMatrix[idx1][idx2];
         prob += lnFreq[geneticCode->aminoacids[myAA] - 'A'];
 
         aaBitSum += bitPerAA;
         dnaBitSum += bitPerCodon;
         
     }  
-    return {idScore, subScore, prob};
+    return {idScore, 0.0f, prob};
 }
 
 MatchScore SingleCodePattern::calMatchScore(
     uint64_t kmer1,
     uint64_t kmer2,
     uint32_t count,
-    const SubstitutionMatrix& matrix,
     bool fromR) const 
 {
-    // cout << "count: " << count << ", fromR: " << fromR << std::endl;
-    // printDNA(kmer1); cout << "\t"; printAA(kmer1); cout << std::endl;
-    // printDNA(kmer2); cout << "\t"; printAA(kmer2); cout << std::endl;
     float idScore = 0.0f;
-    float subScore = 0.0f;
+    // float subScore = 0.0f;
     double prob = 0.0;
     const uint64_t aaPart = kmer1 >> totalDNABits;
 
@@ -193,36 +188,54 @@ MatchScore SingleCodePattern::calMatchScore(
         const int codon1 = (kmer1 >> dnaBitSum) & codonMask;
         const int codon2 = (kmer2 >> dnaBitSum) & codonMask;
 
-        // #pragma omp critical
-        // {
-        //     cout << "Debug: i=" << i << ", fromR=" << fromR 
-        //          << ", aaBitSum=" << aaBitSum << ", dnaBitSum=" << dnaBitSum 
-        //          << ", myAA=" << myAA << ", codon1=" << codon1 << ", codon2=" << codon2 << std::endl;
-        //     cout << "      Kmer1: "; print_binary64(64, kmer1); cout << std::endl;
-        //     cout << "      Kmer2: "; print_binary64(64, kmer2); cout << std::endl;
-        //     cout << geneticCode->aa2codon[myAA][codon1] << " vs " << geneticCode->aa2codon[myAA][codon2] << std::endl;
-        // }
-
-        const int idx1 = matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCode->aa2codon[myAA][codon1].c_str())
-        ];
-        const int idx2 = matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCode->aa2codon[myAA][codon2].c_str())
-        ];
+        // const int idx1 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(
+        //         geneticCode->aa2codon[myAA][codon1].c_str())
+        // ];
+        // const int idx2 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(
+        //         geneticCode->aa2codon[myAA][codon2].c_str())
+        // ];
 
         const int hammingDist = geneticCode->getHammingDist(myAA, codon1, codon2);
         idScore += (hammingDist == 0) ? 3.0f : (2.0f - 0.5f * hammingDist);
-        subScore += matrix.subMatrix[idx1][idx2];
+        // subScore += matrix.subMatrix[idx1][idx2];
         prob += lnFreq[geneticCode->aminoacids[myAA] - 'A'];
 
         aaBitSum += bitPerAA * fromR;
         dnaBitSum += bitPerCodon * fromR;
     }
-    return {idScore, subScore, prob};
+    return {idScore, 0.0f, prob};
 }
 
+MatchScore SingleCodePattern::calMatchScore(
+    uint64_t aa, 
+    uint64_t codon1, 
+    uint64_t codon2, 
+    uint32_t validPosMask) const  
+{
+    float idScore = 0.0f;
+    double prob = 0.0;
+    while (validPosMask) {
+        const int i = __builtin_ctz(validPosMask);
+        validPosMask &= validPosMask - 1;
+
+        const int sAA = bitPerAA * i;
+        const int sDNA = bitPerCodon * i;
+
+        const int myAA   = (aa >> sAA)  & aaMask;
+        const int myCodon1 = (codon1  >> sDNA) & codonMask;
+        const int myCodon2 = (codon2  >> sDNA) & codonMask;
+        
+        const int hammingDist = geneticCode->getHammingDist(myAA, myCodon1, myCodon2);
+      
+        idScore  += (hammingDist == 0) ? 3.0f : (2.0f - 0.5f * hammingDist);
+        prob     += lnFreq[geneticCode->aminoacids[myAA] - 'A'];
+    }
+
+    return {idScore, 0.0f, prob};
+
+}
 
 float SingleCodePattern::substitutionScore(
     uint64_t kmer1,
@@ -412,11 +425,10 @@ MatchScore SpacedPattern::calMatchScore(
     uint64_t kmer1,
     uint64_t kmer2,
     uint32_t validPosMask,
-    const SubstitutionMatrix& matrix,
     bool fromR) const 
 {
     float idScore = 0.0f;
-    float subScore = 0.0f;
+    // float subScore = 0.0f;
     double prob = 0.0;
     const uint64_t aaPart = kmer1 >> totalDNABits;
     while (validPosMask) {
@@ -430,23 +442,23 @@ MatchScore SpacedPattern::calMatchScore(
         const int codon1 = (kmer1  >> sDNA) & codonMask;
         const int codon2 = (kmer2  >> sDNA) & codonMask;
         
-        const int idx1 = matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCode->aa2codon[myAA][codon1].c_str())
-        ];
+        // const int idx1 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(
+        //         geneticCode->aa2codon[myAA][codon1].c_str())
+        // ];
 
-        const int idx2 = matrix.aa2num[
-            translateNucl->translateSingleCodon(
-                geneticCode->aa2codon[myAA][codon2].c_str())
-        ];
+        // const int idx2 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(
+        //         geneticCode->aa2codon[myAA][codon2].c_str())
+        // ];
 
         const int hammingDist = geneticCode->getHammingDist(myAA, codon1, codon2);
         idScore  += (hammingDist == 0) ? 3.0f : (2.0f - 0.5f * hammingDist);
-        subScore += matrix.subMatrix[idx1][idx2];
+        // subScore += matrix.subMatrix[idx1][idx2];
         prob     += lnFreq[geneticCode->aminoacids[myAA] - 'A'];
     }
 
-    return {idScore, subScore, prob};
+    return {idScore, 0.0f, prob};
 }
 
 
@@ -570,11 +582,10 @@ MatchScore MultiCodePattern::calMatchScore(
     uint64_t kmer1,
     uint64_t kmer2,
     uint32_t count,
-    const SubstitutionMatrix& matrix,
     bool fromR) const
 {
     float idScore = 0.0f;
-    float subScore = 0.0f;
+    // float subScore = 0.0f;
     double prob = 0.0;
     const uint64_t aaPart = kmer1 >> totalDNABits;
 
@@ -598,32 +609,31 @@ MatchScore MultiCodePattern::calMatchScore(
 
         const auto& gc = geneticCodes[codePattern[i]];
 
-        const int idx1 = matrix.aa2num[
-            translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon1].c_str())
-        ];
-        const int idx2 = matrix.aa2num[
-            translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon2].c_str())
-        ];
+        // const int idx1 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon1].c_str())
+        // ];
+        // const int idx2 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon2].c_str())
+        // ];
 
         const int hammingDist = gc->getHammingDist(myAA, codon1, codon2);
         idScore += (hammingDist == 0) ? 3.0f : (2.0f - 0.5f * hammingDist);
-        subScore += matrix.subMatrix[idx1][idx2];
+        // subScore += matrix.subMatrix[idx1][idx2];
         prob += lnFreq[gc->aminoacids[myAA] - 'A'];
 
         aaBitSum += currAABit * fromR;
         dnaBitSum += currDnaBit * fromR;
     }
 
-    return {idScore, subScore, prob};
+    return {idScore, 0.0f, prob};
 }
 
 MatchScore MultiCodePattern::calMatchScore(
     uint64_t kmer1,
-    uint64_t kmer2,
-    const SubstitutionMatrix& matrix) const
+    uint64_t kmer2) const
 {
     float idScore = 0.0f;
-    float subScore = 0.0f;
+    // float subScore = 0.0f;
     double prob = 0.0;
     const uint64_t aaPart = kmer1 >> totalDNABits;
     int aaBitSum = totalAABits;
@@ -640,20 +650,20 @@ MatchScore MultiCodePattern::calMatchScore(
 
         const auto& gc = geneticCodes[codePattern[i]];
 
-        const int idx1 = matrix.aa2num[
-            translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon1].c_str())
-        ];
-        const int idx2 = matrix.aa2num[
-            translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon2].c_str())
-        ];
+        // const int idx1 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon1].c_str())
+        // ];
+        // const int idx2 = matrix.aa2num[
+        //     translateNucl->translateSingleCodon(gc->aa2codon[myAA][codon2].c_str())
+        // ];
 
         const int hammingDist = gc->getHammingDist(myAA, codon1, codon2);
         idScore += (hammingDist == 0) ? 3.0f : (2.0f - 0.5f * hammingDist);
-        subScore += matrix.subMatrix[idx1][idx2];
+        // subScore += matrix.subMatrix[idx1][idx2];
         prob += lnFreq[gc->aminoacids[myAA] - 'A'];
     }
 
-    return {idScore, subScore, prob};
+    return {idScore, 0.0f, prob};
 }
 
 float MultiCodePattern::substitutionScore(
@@ -809,7 +819,7 @@ uint8_t LegacyPattern::hammingDistSum(uint64_t kmer1, uint64_t kmer2) const {
     return hammingSum;
 
 }
-MatchScore LegacyPattern::calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, const SubstitutionMatrix& matrix, bool fromR) const {
+MatchScore LegacyPattern::calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, bool fromR) const {
     float idScore = 0.0f;
     int dnaBitSum = (fromR) ? 0 : totalDNABits;
     for (int i = 0; i < count; ++i) {
@@ -822,7 +832,7 @@ MatchScore LegacyPattern::calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t
     }
     return {idScore, 0.0f, 0.0};
 }
-MatchScore LegacyPattern::calMatchScore(uint64_t kmer1, uint64_t kmer2, const SubstitutionMatrix& matrix) const {
+MatchScore LegacyPattern::calMatchScore(uint64_t kmer1, uint64_t kmer2) const {
     float idScore = 0.0f;
     const int bCodon = bitPerCodon;
     for (int i = 0; i < kmerLen; ++i) {

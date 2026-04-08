@@ -38,25 +38,27 @@ private:
     EvalueComputation *evaluer = nullptr;
 
     // spaced k-mer
+    int bitPerCodon;
+    int bitPerAA;
+    int spaceNum;
     int kmerLen;
     int windowSize;
     uint32_t windowMask;
 
     // Parameters from user
     int accessionLevel;
-    size_t minConsCnt;
-    size_t minConsCntEuk;
     int eukaryotaTaxId;
-    float tieRatio;
+    std::vector<TaxID> priorityTaxa;
 
     // Internal
     int denominator;
     int maxCodonShift;
     int dnaShift;
-    int minSubSpeciesMatch;
-    size_t dbSize;
+    // int smerLength;
     double logMaxEValue;
     bool useEvalueFilter = false;
+
+    // vector<const Match *> speciesMatches;
 
     // chooseBestTaxon
     unordered_map<TaxID, unsigned int> taxCnt;
@@ -74,7 +76,7 @@ private:
     unordered_map<TaxID, TaxonCounts> cladeCnt;
 
     // filterRedundantMatches
-    // const Match **bestMatchForQuotient;
+    const MatchType **bestMatchForQuotient;
     TaxID *bestMatchTaxIdForQuotient;
     uint8_t *minHammingForQuotient;
     size_t arraySize_filterRedundantMatches;
@@ -84,7 +86,6 @@ private:
     unordered_map<TaxID, unsigned int> taxCounts;
 
     void ensureArraySize(size_t newSize);
-
 
     void printSpeciesMatches (
        const MatchType *matchList,
@@ -99,11 +100,16 @@ private:
         size_t offset,
         Query & query);
 
-    void getMatchPaths(
-        const MatchType * matchList,
-        size_t matchNum,
-        vector<MatchPath<MatchType>> & matchPaths,
-        TaxID speciesId);
+    MatchPath<MatchType> makeMatchPath(
+        const MatchType * match
+    );
+
+    // void makeMatchPath(
+    //     const MatchType * match,
+    //     const MatchType * matchList,
+    //     size_t matchNum,
+    //     vector<MatchPath<MatchType>> & matchPaths,
+    //     TaxID speciesId);
 
     void getMatchPaths_lookbackDP(
         const MatchType * matchList,
@@ -117,12 +123,19 @@ private:
         vector<MatchPath<MatchType>> & matchPaths,
         TaxID speciesId);
 
+    void getMatchPaths(
+        const MatchType * matchList,
+        size_t matchNum,
+        vector<MatchPath<MatchType>> & matchPaths,
+        TaxID speciesId);
+    
+    void getSpacedMatchPaths(
+        const MatchType * matchList,
+        size_t matchNum,
+        vector<MatchPath<MatchType>> & matchPaths,
+        TaxID speciesId); 
 
-    MatchPath<MatchType> makeMatchPath(
-        const MatchType * match
-    );
-
-    void makeMatchPath(
+    void makeSpacedMatchPath(
         const MatchType * match,
         size_t index
     );
@@ -135,10 +148,12 @@ private:
         int queryLength);
         
     bool isMatchPathOverlapped(const MatchPath<MatchType> & matchPath1, const MatchPath<MatchType> & matchPath2);
-    void trimMatchPath(MatchPath<MatchType> & path1, const MatchPath<MatchType> & path2, int overlapLength);
-    void trimMatchPath2(MatchPath<MatchType> & path1, const MatchPath<MatchType> & path2, int overlapLength);
+
+    bool trimMatchPath(MatchPath<MatchType> & path1, const MatchPath<MatchType> & path2, int overlapLength);
+    bool trimSpacedMatchPath(MatchPath<MatchType> & path1, const MatchPath<MatchType> & path2, int overlapLength);
     void sortMatchPath(std::vector<MatchPath<MatchType>> & matchPaths, size_t i);
 
+   
 public:
 
     unordered_map<TaxID, vector<uint8_t>> sp2coverage;
@@ -149,7 +164,7 @@ public:
         const LocalParameters & par, 
         TaxonomyWrapper * taxonomy, 
         const MetamerPattern *metamerPattern);
-
+        
     ~Taxonomer();
 
     void chooseBestTaxon(uint32_t currentQuery,

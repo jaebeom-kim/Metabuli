@@ -90,11 +90,9 @@ int KmerExtractor::getKmerCount(
 {
     if (!par.pdmKmer) {
         return LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, true) * syncmerRatio;
-        return LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, true) * syncmerRatio;
     } else {
         return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, false) * syncmerRatio;
-        return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, false) * syncmerRatio;
-    }
+    } 
 }
 
 int KmerExtractor::getPDMKmerCount( 
@@ -705,7 +703,6 @@ void KmerExtractor::fillQueryKmerBuffer(
             Kmer kmer;
             while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
                 kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
-                // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\n";
             }
         } else {
             int begin, end;

@@ -52,6 +52,7 @@ jobs:
           export CC=gcc-11 ; export CXX=g++-11
           if [ "${STATIC}" -eq "1" ]; then
             LIBGOMP=/usr/lib/gcc/x86_64-linux-gnu/11
+            
             cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DFORCE_STATIC_DEPS=1 -DHAVE_TESTS=1 \
               -DOpenMP_C_FLAGS="-fopenmp -I${LIBGOMP}" -DOpenMP_C_LIB_NAMES=gomp -DOpenMP_CXX_FLAGS="-fopenmp -I${LIBGOMP}" -DOpenMP_CXX_LIB_NAMES=gomp -DOpenMP_gomp_LIBRARY=${LIBGOMP}/libgomp.a \
               -DENABLE_WERROR=0 -DHAVE_${SIMD}=1 -DHAVE_MPI=${MPI} ..
@@ -144,7 +145,7 @@ jobs:
   - job: build_windows
     displayName: Windows
     pool:
-      vmImage: 'windows-2019'
+      vmImage: 'windows-2022'
     variables:
       CYGWIN_ROOT: $(System.Workfolder)\cygwin
       CYGWIN_MIRROR: http://cygwin.mirror.constant.com

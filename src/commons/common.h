@@ -2,19 +2,22 @@
 #define ADCLASSIFIER2_COMMON_H
 #include <cstddef>
 #include <utility>
-#include "LocalParameters.h"
-#include "TaxonomyWrapper.h"
+
 #include <iostream>
 #include <unordered_set>
 #include "FileUtil.h"
 // #include "Match.h"
 #include <cstdint>
+#include <bitset>
 
 #include <queue>
 #include <mutex>
 #include <condition_variable>
 #include <cmath>
 
+#include "LocalParameters.h"
+#include "TaxonomyWrapper.h"
+#include "printBinary.h"
 
 
 #define likely(x) __builtin_expect((x),1)
@@ -124,7 +127,7 @@ struct Query {
 
     Query() = default;
     Query(int queryLength, int kmerCnt, const std::string & name)
-        : classification(0), idScore(0), subScore(0), eValue(0), hammingDist(0),
+        : classification(0), idScore(0), subScore(0), eValue(-1), hammingDist(0),
           queryLength(queryLength), queryLength2(0), kmerCnt(kmerCnt), kmerCnt2(0),
           name(name) {}
 };
@@ -351,6 +354,8 @@ void process_mem_usage(double& vm_usage, double& resident_set);
 
 TaxonomyWrapper * loadTaxonomy(const std::string & dbDir, const std::string & taxonomyDir = "");
 
+TaxonomyWrapper * loadTaxonomyDB(const std::string & taxDbFile);
+
 int loadDbParameters(LocalParameters & par, const std::string & dbDir);
 
 int searchAccession2TaxID(const std::string & name, const std::unordered_map<std::string, int> & acc2taxid);
@@ -498,7 +503,8 @@ inline double computeLEM_logE(
 {
     const double aaQueryLen = queryLengthNt / 3.0;    
     const double aaMatchLen = spanLengthNt / 3.0;
-    return std::log((aaQueryLen - aaMatchLen + 1) * 6.0) + 
+    double lenDiff = std::max(0.0, aaQueryLen - aaMatchLen);
+    return std::log((lenDiff + 1) * 6.0) + 
         std::log(dbSizeNt / 3.0) +
         logP;
 }
@@ -511,5 +517,9 @@ uint32_t safe_left_shift_32(uint32_t value, unsigned int shift);
 std::string reverseComplement(std::string &read);
 
 char *reverseComplement(char *read, size_t length);
+int getFirstOneAfterFirstZero(uint32_t mask);
+
+uint64_t disperseBits(uint64_t source, uint64_t pattern, int chunk_size);
+uint64_t stretchBits(uint64_t pattern, int repeat_count);
 
 #endif //ADCLASSIFIER2_COMMON_H

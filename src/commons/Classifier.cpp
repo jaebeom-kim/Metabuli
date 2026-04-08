@@ -10,15 +10,24 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
     matchPerKmer = par.matchPerKmer;
     loadDbParameters(par, par.filenames[1 + (par.seqMode == 2)]);
     kmerFormat = par.kmerFormat;
+    if (par.dbTotalLength == 0) {
+        par.dbTotalLength = readDbSize(par.filenames[1 + (par.seqMode == 2)]);
+    }
 
     cout << "Database name : " << par.dbName << endl;
     cout << "Creation date : " << par.dbDate << endl;
     
     taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
 
+    if (par.precisionMode != 0) {
+        preciseModePreset(par);
+    }
+
     if (kmerFormat == 1) {
         metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
-        cout << "Using legacy k-mer format." << endl;
+        cerr << "Warning: the specified database uses an old k-mer format." << endl;
+        cerr << "   E-value calculation is not supported." << endl;
+        par.maxEValue = 0;
     } else if (!par.customMetamer.empty()) {
         int codeNum = getCodeNum(par.customMetamer);
         if (codeNum == 1) {
@@ -26,6 +35,7 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
                 cout << "Using SingleCodePattern with custom metamer." << endl;
                 metamerPattern = new SingleCodePattern(par.customMetamer);
             } else {
+                cout << "Using SpacedPattern with custom metamer." << endl;
                 uint32_t mask = parseMask(par.spaceMask.c_str());
                 metamerPattern = new SpacedPattern(par.customMetamer, mask);
             }
@@ -40,13 +50,6 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
             cout << "Using SpacedPattern with RegularGeneticCode" << endl;
             uint32_t mask = parseMask(par.spaceMask.c_str());
             metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
-        }
-    }
-
-    if (par.storeKmerPos) {
-        C_LOG2_C.resize(256);
-        for (int i = 1; i < 256; ++i) {
-            C_LOG2_C[i] = i * std::log2(static_cast<double>(i));
         }
     }
     kmerExtractor = new KmerExtractor(par, metamerPattern);
@@ -65,6 +68,7 @@ Classifier::~Classifier() {
     delete metamerPattern;
     if (mappingResList) delete[] mappingResList;
 }
+
 
 uint64_t Classifier::calculateBufferSize(
     uint64_t queryListSize,
@@ -89,9 +93,56 @@ uint64_t Classifier::calculateBufferSize(
     size_t availableBytes = totalBytes - (par.threads * bytesPerThread) - overhead - queryListBytes; 
     size_t bytePerKmer = sizeof(Kmer) + matchPerKmer * matchSize;
     size_t totalSize = availableBytes / bytePerKmer;
-
     return totalSize;
 }
+    
+void Classifier::preciseModePreset(LocalParameters & par) {
+    uint32_t mask = parseMask(par.spaceMask.c_str());
+    size_t windowSize = par.spaceMask.length();
+    size_t kmerLen = __builtin_popcount(mask);
+
+    float minScoreCp = par.minScore;
+    float minSpScoreCp = par.minSpScore;
+    double maxEValueCp = par.maxEValue;
+
+    if (par.precisionMode == 1) { // short-read preset
+        if (windowSize == kmerLen || kmerLen == 0) {
+            std::cout << "Using short-read presets for contiguous k-mer search: " << std::endl;
+            std::cout << "   --min-score 0.15 --min-sp-score 0.5 -e 0.001" << std::endl;
+            par.minScore = 0.15;
+            par.minSpScore = 0.5;
+            par.maxEValue = 0.001;
+        } else {
+            std::cout << "Using short-read presets for spaced k-mer search: " << std::endl;
+            std::cout << "   --min-score 0.2 --min-sp-score 0.6 -e 0.001" << std::endl;
+            par.minScore = 0.2;
+            par.minSpScore = 0.6;
+            par.maxEValue = 0.001;
+        }
+    } else if (par.precisionMode == 2) { // HiFi long-read preset
+        std::cout << "Using HiFi long-read presets: " << std::endl;
+        std::cout << "   --min-score 0.07 --min-sp-score 0.3 -e 0.001" << std::endl;
+        par.minScore = 0.07;
+        par.minSpScore = 0.3;
+        par.maxEValue = 0.001;
+    }
+
+    if (minScoreCp != 0 && minScoreCp != par.minScore) {
+        std::cout << "Overriding preset --min-score " << par.minScore << " with user specified value " << minScoreCp << std::endl;
+        par.minScore = minScoreCp;
+    }
+    if (minSpScoreCp != 0 && minSpScoreCp != par.minSpScore) {
+        std::cout << "Overriding preset --min-sp-score " << par.minSpScore << " with user specified value " << minSpScoreCp << std::endl;
+        par.minSpScore = minSpScoreCp;
+    }
+    if (maxEValueCp != 1 && maxEValueCp != par.maxEValue) {
+        std::cout << "Overriding preset --e-value " << par.maxEValue << " with user specified value " << maxEValueCp << std::endl;
+        par.maxEValue = maxEValueCp;
+    }
+
+}
+
+
 
 void Classifier::classifyReads() {
     Buffer<Kmer> queryKmerBuffer;
@@ -164,7 +215,7 @@ void Classifier::classifyReads() {
                 kmerMatcher->sortMatches(&matchBuffer);
 
                 // 5) Assign taxonomy
-                assignTaxonomy<Match>(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
 
                 // 6) Write classification results
                 start = time(nullptr);
@@ -382,6 +433,12 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
             }
         }
 
+    }
+
+    if (par.printLog) {
+#ifdef OPENMP
+        omp_set_num_threads(par.threads);
+#endif
     }
 
     if (par.printLog) {
@@ -673,131 +730,6 @@ void Classifier::loadOriginalResults(
         int length = atoi(columns[3].c_str());
         emResults.emplace_back(queryName, length);
     }
-}
-
-void Classifier::startClassify(const LocalParameters &par) {
-    Buffer<Kmer> queryKmerBuffer;
-    Buffer<Match> matchBuffer;
-    vector<Query> queryList;
-    size_t numOfTatalQueryKmerCnt = 0;
-    reporter->openReadClassificationFile();
-
-    bool complete = false;
-    size_t processedReadCnt = 0;
-    size_t tries = 0;
-    size_t totalSeqCnt = 0;
-    
-    // Extract k-mers from query sequences and compare them to target k-mer DB
-    while (!complete) {
-        tries++;
-        queryIndexer->setBytesPerKmer(matchPerKmer);
-        queryIndexer->indexQueryFile(processedReadCnt);
-        const vector<QuerySplit> & queryReadSplit = queryIndexer->getQuerySplits();
-        if (tries == 1) {
-            totalSeqCnt = queryIndexer->getReadNum_1();
-            cout << "--------------------" << endl;
-            cout << "Total read count : " << queryIndexer->getReadNum_1() << endl;
-            cout << "Total read length: " << queryIndexer->getTotalReadLength() <<  "nt" << endl;
-            cout << "--------------------" << endl;
-        }
-
-        // Set up kseq
-        KSeqWrapper* kseq1 = KSeqFactory(par.filenames[0].c_str());
-        KSeqWrapper* kseq2 = nullptr;
-        if (par.seqMode == 2) { kseq2 = KSeqFactory(par.filenames[1].c_str()); }
-
-        // Move kseq to unprocessed reads
-        for (size_t i = 0; i < processedReadCnt; i++) {
-            kseq1->ReadEntry();
-            if (par.seqMode == 2) { kseq2->ReadEntry(); }
-        }
-
-        for (size_t splitIdx = 0; splitIdx < queryReadSplit.size(); splitIdx++) {
-            // Allocate memory for query list
-            queryList.clear();
-            queryList.resize(queryReadSplit[splitIdx].end - queryReadSplit[splitIdx].start);
-
-            // Allocate memory for query k-mer buffer
-            queryKmerBuffer.reallocateMemory(queryReadSplit[splitIdx].kmerCnt);
-            queryKmerBuffer.init();
-            // memset(queryKmerBuffer.buffer, 0, queryReadSplit[splitIdx].kmerCnt * sizeof(Kmer));
-
-            // Allocate memory for match buffer
-            if (queryReadSplit.size() == 1) {
-                size_t remain = queryIndexer->getAvailableRam() 
-                                - (queryReadSplit[splitIdx].kmerCnt * sizeof(Kmer)) 
-                                - (queryIndexer->getReadNum_1() * 200); // TODO: check it later
-                matchBuffer.reallocateMemory(remain / sizeof(Match));
-            } else {
-                matchBuffer.reallocateMemory(queryReadSplit[splitIdx].kmerCnt * matchPerKmer);
-            }
-
-            // Initialize query k-mer buffer and match buffer
-            matchBuffer.startIndexOfReserve = 0;
-
-            // Extract query k-mers
-            kmerExtractor->extractQueryKmers(queryKmerBuffer,
-                                             queryList,
-                                             queryReadSplit[splitIdx],
-                                             par,
-                                             kseq1,
-                                             kseq2);
-            
-            // Search matches between query and target k-mers
-            bool searchComplete = false;
-            searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer, dbDir);
-            if (searchComplete) {
-                cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << endl;
-                kmerMatcher->sortMatches(&matchBuffer);
-                // for (size_t i = 0; matchBuffer.startIndexOfReserve < matchBuffer.startIndexOfReserve; i++) {
-                //     matchBuffer.buffer[i].printMatch();
-                // }
-                assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
-                reporter->writeReadClassification(queryList);
-                if (par.em) {
-                    reporter->writeMappings(queryList, processedReadCnt);
-                    getTopSpecies(queryList);
-                }
-                processedReadCnt += queryReadSplit[splitIdx].readCnt;
-                cout << "Processed read count   : " << processedReadCnt << " (" << (double) processedReadCnt / (double) totalSeqCnt << ")" << endl;
-                // numOfTatalQueryKmerCnt += queryKmerBuffer.startIndexOfReserve;
-            } else { // search was incomplete
-                matchPerKmer += 4;
-                cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << endl;
-                break;
-            }
-            cout << "--------------------" << endl;
-        }
-         
-        delete kseq1;
-        if (par.seqMode == 2) {
-            delete kseq2;
-        }
-        if (processedReadCnt == totalSeqCnt) {
-            complete = true;
-        }
-
-        cout << "--------------------" << endl;
-    }
-
-    // Finalize original classification results
-    cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << endl;    
-    reporter->closeReadClassificationFile();
-    reporter->writeReportFile(totalSeqCnt, taxCounts, ReportType::Default);
-    cout << "Taxonomic classification completed." << endl;
-
-    // Perform EM algorithm    
-    if (par.em) {
-        cout << "Running EM algorithm for taxonomic re-assignment..." << endl;
-        reporter->freeMappingWriteBuffer();        
-        loadOriginalResults(reporter->getClassificationFileName(), totalSeqCnt);   
-        em(totalSeqCnt);
-        reporter->writeReclassifyResults(emResults);
-        reporter->writeReportFile(totalSeqCnt, emTaxCounts, ReportType::EM);
-        reporter->writeReportFile(totalSeqCnt, reclassifyTaxCounts, ReportType::EM_RECLASSIFY);
-    }
-    
-    return;
 }
 
 CovMetric Classifier::calculateAdjustedEvenness(

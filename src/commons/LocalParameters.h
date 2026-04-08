@@ -51,6 +51,7 @@ public:
     std::vector<MMseqsParameter*> assignUniref;
     std::vector<MMseqsParameter*> createCommonKmerList;
     std::vector<MMseqsParameter*> mergeAssemblyFiles;
+    std::vector<MMseqsParameter*> createTaxDb;
 
     // UniRef
     PARAMETER(UNIREF_NUMBERS)
@@ -73,15 +74,15 @@ public:
 
     // Classify
     PARAMETER(SEQ_MODE)
+    PARAMETER(PRECISION_MODE)
     PARAMETER(MIN_SCORE)
     PARAMETER(HAMMING_MARGIN)
     PARAMETER(MIN_SP_SCORE)
     PARAMETER(TINFO_PATH)
     PARAMETER(RAM_USAGE)
     PARAMETER(PRINT_LOG)
-    PARAMETER(MAX_GAP)
-    PARAMETER(MIN_CONS_CNT)
-    PARAMETER(MIN_CONS_CNT_EUK)
+    PARAMETER(MIN_AA_MATCH)
+    PARAMETER(MIN_AA_MATCH_EUK)
     PARAMETER(MATCH_PER_KMER)
     PARAMETER(MIN_SS_MATCH)
     PARAMETER(TIE_RATIO)
@@ -94,6 +95,7 @@ public:
     PARAMETER(DB_TOTAL_LENGTH)
     PARAMETER(MAX_E_VALUE)
     PARAMETER(USE_ALL_MATCHES)
+    PARAMETER(TIE_BRAKER)
 
     // extract
     PARAMETER(TARGET_TAX_ID)
@@ -124,6 +126,7 @@ public:
     PARAMETER(READING_FRAME)
     PARAMETER(STORE_KMER_POS)
     PARAMETER(REP_GENOME_LIST)
+    PARAMETER(NO_MASK_TAXA)
 
     // DB updated parameters
     PARAMETER(NEW_TAXA)
@@ -179,15 +182,13 @@ public:
 
     // Classify
     int seqMode;
+    int precisionMode;
     float minScore;
     std::string spaceMask;
-    int minConsCnt;
     uint8_t hammingMargin;
     float minSpScore;
     int ramUsage;
     int printLog;
-    int maxGap;
-    int minConsCntEuk;
     int matchPerKmer;
     int minSSMatch;
     float tieRatio;
@@ -203,7 +204,11 @@ public:
     size_t dbTotalLength;
     double maxEValue;
     int useAllMatches;
+    int minAaMatch;
+    int minAaMatchEuk;
+    std::string priorityTaxa;
     
+
     // Extract
     int targetTaxId;
     int extractMode;
@@ -226,6 +231,7 @@ public:
     int readingFrame;
     int storeKmerPos;
     std::string repGenomeList;
+    std::string noMaskTaxa;
 
     // DB updated parameters
     std::string newTaxa;

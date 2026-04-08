@@ -161,51 +161,65 @@ inline MatchScore operator+(MatchScore lhs, const MatchScore& rhs) {
     return lhs;
 }
 
-
 template <typename MatchType>
 struct MatchPath {
-    MatchPath() : start(0), end(0), score(), hammingDist(0), depth(0),  historyMask(0), startMatch(nullptr), endMatch(nullptr), prevMatchIdx(-1) {}
+    MatchPath() : start(0), end(0), score(), hammingDist(0), coveredPosCnt(0), startMatch(nullptr), endMatch(nullptr), lastHistoryMask(0), firstHistoryMask(0) {}
 
-    MatchPath(int start, int end, MatchScore score, int hammingDist, int depth, const MatchType * startMatch, const MatchType * endMatch) :
-         start(start), end(end), score(score), hammingDist(hammingDist), depth(depth),  historyMask(0), startMatch(startMatch), endMatch(endMatch), prevMatchIdx(-1) {}
+    MatchPath(int start, int end, MatchScore score, int hammingDist, int coveredPosCnt, const MatchType * startMatch, const MatchType * endMatch) :
+         start(start), end(end), score(score), hammingDist(hammingDist), coveredPosCnt(coveredPosCnt), startMatch(startMatch), endMatch(endMatch), lastHistoryMask(0), firstHistoryMask(0) {}
 
     
-    MatchPath(const MatchType * startMath, int windowSizeNt) 
+    MatchPath(const MatchType * startMath, int kmerLen, int windowSizeNt) 
         : start(startMath->qKmer.qInfo.pos),
           end(startMath->qKmer.qInfo.pos + windowSizeNt - 1), 
           score(),
           hammingDist(0),
-          depth(1),
-          historyMask(0),
+          coveredPosCnt(kmerLen),
           startMatch(startMath),
           endMatch(startMath),
-          prevMatchIdx(-1) {}
+          lastHistoryMask(0),
+          firstHistoryMask(0) {}
     
-    MatchPath(const MatchType * startMatch, MatchScore score, int hammingDist, int kmerLenNt) 
+    MatchPath(
+        const MatchType * startMatch,
+        MatchScore score, 
+        int kmerLen, 
+        int windowLenNt) 
         : start(startMatch->qKmer.qInfo.pos),
-          end(startMatch->qKmer.qInfo.pos + kmerLenNt - 1),
+          end(startMatch->qKmer.qInfo.pos + windowLenNt - 1),
           score(score),
-          hammingDist(hammingDist),
-          depth(1),
-          historyMask(0),
+          coveredPosCnt(kmerLen),
           startMatch(startMatch),
           endMatch(startMatch),
-          prevMatchIdx(-1) {}
+          lastHistoryMask(0),
+          firstHistoryMask(0) {}
     
     int start;                // query coordinate
     int end;                  // query coordinate
     MatchScore score;
-    int hammingDist;
-    int depth;
-    uint32_t historyMask;         // For spaced pattern with history
+    int hammingDist = 0;
+    int coveredPosCnt;
+    const MatchType * startMatch;
+    const MatchType * endMatch;
 
-    const MatchType * startMatch; // Start match of the path
-    const MatchType * endMatch;   // It is always the current match
-    int prevMatchIdx;
+    uint32_t lastHistoryMask;      
+    uint64_t lastAAs = 0;      
+    uint64_t lastCodons_t = 0;
+    uint64_t lastCodons_q = 0;
+   
+    uint32_t firstHistoryMask;    
+    uint64_t firstAAs = 0;
+    uint64_t firstCodons_t = 0;
+    uint64_t firstCodons_q = 0;
+
+    bool rightEndTrimmed = false;     
+    bool leftEndTrimmed = false;      
+
+    int prevMatchIdx = -1;
     std::vector<const MatchType*> chain;
 
     void printMatchPath() {
-        std::cout << start << " " << end << " " << score.idScore << " " << score.subScore << " " << hammingDist << " " << depth << std::endl;
+        std::cout << start << " " << end << " " << score.idScore << " " << score.subScore << " " << hammingDist << " " << coveredPosCnt << std::endl;
     }
 };
 

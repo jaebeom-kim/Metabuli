@@ -28,6 +28,8 @@ IndexCreator::IndexCreator(
     versionFileName = dbDir + "/db.version";
     paramterFileName = dbDir + "/db.parameters";
 
+    this->totalLength = par.dbTotalLength;
+
     if (kmerFormat == 1) { // Use the legacy metamer pattern
         metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
     } else if (!par.customMetamer.empty()) {
@@ -67,6 +69,15 @@ IndexCreator::IndexCreator(
     MARKER = ~ metamerPattern->dnaMask;
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
+
+    if (!par.noMaskTaxa.empty()) { 
+        vector<string> taxaNotToMaskStr = Util::split(par.noMaskTaxa, ",");
+        for (const string &taxIdStr : taxaNotToMaskStr) {
+            TaxID taxId = taxonomy->getInternalTaxID(stoi(taxIdStr));
+            taxaNotToMask.push_back(taxId);
+        }
+    }
+
 }
 
 IndexCreator::IndexCreator(
@@ -1828,6 +1839,16 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                 size_t idx = 0;
                 while (kseq->ReadEntry()) {
                     if (seqCnt == accessionBatches[batchIdx].orders[idx]) {
+                        bool doMasking = par.maskMode;
+                        bool isNotToMask = taxonomy->isAunderB(accessionBatches[batchIdx].taxIDs[idx], taxaNotToMask);
+                        if (isNotToMask) {
+                            #pragma omp critical
+                            {
+                                cout << "Masking is not applied to " << kseq->entry.name.s << " because it belongs to a taxon that is set to be not masked.\n";
+                            }
+                        }
+                        doMasking = doMasking && !isNotToMask;
+
                         if (accessionBatches[batchIdx].taxIDs[idx] == 0) {
                             #pragma omp critical
                             {
@@ -1838,7 +1859,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                         const KSeqWrapper::KSeqEntry & e = kseq->entry;
                         // Mask low complexity regions
                         char *maskedSeq = nullptr;
-                        if (par.maskMode) {
+                        if (doMasking) {
                             maskedSeq = new char[e.sequence.l + 1]; // TODO: reuse the buffer
                             SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, probMatrix, par.maskProb, subMat);
                             maskedSeq[e.sequence.l] = '\0';
@@ -1940,9 +1961,10 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                 // Get extended ORFs
                                 prodigal->getPredictedGenes((unsigned char *) e.sequence.s, e.sequence.l);
                                 prodigal->removeCompletelyOverlappingGenes();
-                                prodigal->getExtendedORFs(prodigal->finalGenes, prodigal->nodes, extendedORFs,
-                                                             prodigal->fng, e.sequence.l,
-                                                        orfNum, intergenicKmers, e.sequence.s);
+                                prodigal->getExtendedORFs_fixed(
+                                    prodigal->finalGenes, prodigal->nodes, extendedORFs,
+                                    prodigal->fng, e.sequence.l,
+                                    orfNum, intergenicKmers, e.sequence.s, metamerPattern->windowSize * 3);
                                 // Get k-mers from extended ORFs
                                 for (size_t orfCnt = 0; orfCnt < orfNum; orfCnt++) {
                                     tempCheck = kmerExtractor->extractTargetKmers(
@@ -1961,12 +1983,13 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                 // Get extended ORFs
                                 prodigal->getPredictedGenes((unsigned char *) rcomp, e.sequence.l);
                                 prodigal->removeCompletelyOverlappingGenes();
-                                prodigal->getExtendedORFs(prodigal->finalGenes, prodigal->nodes, extendedORFs,
-                                                                 prodigal->fng, e.sequence.l,
-                                                            orfNum, intergenicKmers, rcomp);
+                                prodigal->getExtendedORFs_fixed(
+                                    prodigal->finalGenes, prodigal->nodes, extendedORFs,
+                                    prodigal->fng, e.sequence.l,
+                                    orfNum, intergenicKmers, rcomp, metamerPattern->windowSize * 3);
 
                                 // Get reverse masked sequence
-                                if (par.maskMode) {
+                                if (doMasking) {
                                     delete[] maskedSeq;
                                     maskedSeq = new char[e.sequence.l + 1];
                                     SeqIterator::maskLowComplexityRegions((unsigned char *) rcomp, (unsigned char *) maskedSeq, probMatrix, par.maskProb, subMat);
@@ -1991,7 +2014,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                             }                            
                         }
                         idx++;
-                        if (par.maskMode) {
+                        if (doMasking) {
                             delete[] maskedSeq;
                         }
                         if (idx == accessionBatches[batchIdx].lengths.size()) {
@@ -2051,8 +2074,24 @@ void IndexCreator::writeDbParameters() {
             EXIT(EXIT_FAILURE);
         }
         string line;
+        bool inSection = false;
         while (getline(metamerFile, line)) {
-            fprintf(handle, "%s\n", line.c_str());
+            if (line.empty()) {
+                continue;
+            }
+
+            if (line.find("===BEGIN_CUSTOM_METAMER===") != string::npos) {
+                inSection = true;
+            }
+
+            if (inSection) {            
+               fprintf(handle, "%s\n", line.c_str());
+            }
+
+            // Stop printing AFTER we have printed the END tag
+            if (line.find("===END_CUSTOM_METAMER===") != string::npos) {
+                inSection = false;
+            }
         }
         metamerFile.close();
     }
