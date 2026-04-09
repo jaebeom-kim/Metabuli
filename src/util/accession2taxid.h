@@ -3,6 +3,6 @@
 
 #include <string>
 
-int accession2taxid(const std::string & assemblyList, const std::string & assacc2taxidFile);
+int accession2taxid(const std::string & assemblyList, const std::string & assacc2taxidFile, int mode);
 
 #endif //METABULI_ACCESSION2TAXID_H

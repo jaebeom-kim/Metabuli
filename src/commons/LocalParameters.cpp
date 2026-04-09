@@ -826,6 +826,8 @@ LocalParameters::LocalParameters() :
     mergeAssemblyFiles.push_back(&DB_NAME);
 
     createTaxDb.push_back(&GTDB);
+
+    accession2taxid.push_back(&GTDB);
 }
 
 void LocalParameters::printParameters(const std::string &module, int argc, const char* pargv[],

@@ -15,6 +15,7 @@ using namespace std;
 
 int accession2taxid(int argc, const char **argv, const Command &command) {
     LocalParameters &par = LocalParameters::getLocalInstance();
+    par.gtdb = 1;
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
     const std::string & assemblyList = par.filenames[0];
     const std::string & assacc2taxidFile = par.filenames[1];
@@ -29,10 +30,10 @@ int accession2taxid(int argc, const char **argv, const Command &command) {
         return 0;
     }
 
-    return accession2taxid(assemblyList, assacc2taxidFile);
+    return accession2taxid(assemblyList, assacc2taxidFile, par.gtdb);
 }
 
-int accession2taxid(const std::string & assemblyList, const std::string & assacc2taxidFile) {
+int accession2taxid(const std::string & assemblyList, const std::string & assacc2taxidFile, int mode) {
 
     cout << "Load assembly accession to taxid mapping" << endl;
     FILE *handle = fopen(assacc2taxidFile.c_str(), "r");
@@ -69,7 +70,12 @@ int accession2taxid(const std::string & assemblyList, const std::string & assacc
     cout << "Generate accession to taxid mapping" << endl;
     unordered_map<string, int> acc2taxid;
     vector<string> unmapped;
-    regex regex1("(GC[AF]_[0-9]+\\.[0-9]+)");
+    regex regex1;
+    if (mode == 1) {
+        regex1 = regex("(GCA_[0-9]+\\.[0-9]+)");
+    } else {
+        regex1 = regex("CHROM_Genome_\\d{4}");
+    }
     
 #pragma omp parallel default(none), shared(acc2taxid, cout, assacc2taxid, assemblies, unmapped, regex1)
 {
