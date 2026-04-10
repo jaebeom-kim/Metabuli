@@ -74,7 +74,7 @@ int accession2taxid(const std::string & assemblyList, const std::string & assacc
     if (mode == 1) {
         regex1 = regex("(GCA_[0-9]+\\.[0-9]+)");
     } else {
-        regex1 = regex("CHROM_Genome_\\d{4}");
+        regex1 = regex("HROM_Genome_\\d{4}");
     }
     
 #pragma omp parallel default(none), shared(acc2taxid, cout, assacc2taxid, assemblies, unmapped, regex1)
