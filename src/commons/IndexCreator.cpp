@@ -363,28 +363,13 @@ void IndexCreator::createCommonKmerIndex() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 void IndexCreator::createIndexWithPos() {
     Buffer<Kmer> kmerBuffer(calculateBufferSize(par.ramUsage, sizeof(Kmer)));
     cout << "Target metamer buffer size: " << kmerBuffer.bufferSize << endl;
 
     indexReferenceSequences(kmerBuffer.bufferSize);
     getSpeciesBatches();
+    recordSpeciesGenomeSize();
     printSpeciesBatches();
     cout << "Species batches prepared: " << spBatches.size() << " species." << endl;
 
@@ -1547,7 +1532,11 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                     uint64_t genomicPos  = 0;
                     uint64_t scaleFactor = 0;
                     if (fastaBatches[i].whichFasta == spBatches[spIdx].repGenomeFasta) {
-                        scaleFactor = (65535ULL << 32) / spBatches[spIdx].repGenomeSize; 
+                        if (spBatches[spIdx].repGenomeSize >= 65535) {
+                            scaleFactor = (65535ULL << 32) / spBatches[spIdx].repGenomeSize; 
+                        } else {
+                            scaleFactor = UINT64_MAX;
+                        }
                     }
 
                     while (kseq->ReadEntry()) {

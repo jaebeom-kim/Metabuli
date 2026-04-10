@@ -916,6 +916,8 @@ int KmerExtractor::extractTargetKmers(
         if (scaleFactor == 0) {
             kmerBuffer.buffer[posToWrite++] = { kmer.value, taxId, 0 };
             // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\t" << 0 << endl;
+        } else if (scaleFactor == UINT64_MAX) {
+            kmerBuffer.buffer[posToWrite++] = { kmer.value, taxId, kmer.pos + static_cast<uint32_t>(posOffset) + 1 };
         } else {
             uint32_t binID = ((static_cast<uint64_t>(kmer.pos) + posOffset) * scaleFactor) >> 32;
             kmerBuffer.buffer[posToWrite++] = { kmer.value, taxId, binID + 1 };

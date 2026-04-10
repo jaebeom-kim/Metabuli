@@ -333,6 +333,19 @@ protected:
         size_t seqLen,
         const vector<CDSinfo> &cdsInfo, 
         std::vector<SequenceBlock> & fragments);
+
+    void recordSpeciesGenomeSize() {
+        string fileName = dbDir + "/" + "species2genomeSize.tsv";
+        ofstream out(fileName);
+        if (!out.is_open()) {
+            cerr << "Failed to open file for writing: " << fileName << endl;
+            return;
+        }
+        for (const auto & spBatch : spBatches) {
+            out << spBatch.speciesID << "\t" << taxonomy->getOriginalTaxID(spBatch.speciesID) << "\t" << spBatch.repGenomeSize << endl;
+        }
+        out.close();
+    }
     
 
 

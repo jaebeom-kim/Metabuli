@@ -157,15 +157,14 @@ void Taxonomer<MatchType>::chooseBestTaxon(
     // cout << "Current query: " << currentQuery << endl;
     if constexpr (std::is_same<MatchType, MatchWithPos>::value) {
         sp2scoreSum[speciesScore.taxId] += speciesScore.score.idScore;
+        sp2totalReadLength[speciesScore.taxId] += queryList[currentQuery].queryLength + queryList[currentQuery].queryLength2;
         auto & speciesBins = sp2coverage[speciesScore.taxId];
         if (speciesBins.empty()) { speciesBins.resize(65536, 0); }
         uint8_t * bins = speciesBins.data();
         for (size_t i = speciesScore.matchPathRange.first; i < speciesScore.matchPathRange.second; i ++) {
             const vector<const MatchType*> & currentChain = combinedMatchPaths[i].chain;
             for (size_t j = 0; j < currentChain.size(); j ++) {
-                //  currentChain[j]->printMatch();
                 const uint16_t binId = currentChain[j]->posId; 
-                // cout << "binId: " << binId << endl;
                 if (bins[binId] < 255) {
                     bins[binId]++;
                 }

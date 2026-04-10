@@ -68,12 +68,19 @@ protected:
     std::unordered_set<TaxID> topSpeciesSet;
 
     // Coverage
+    unordered_map<TaxID, uint64_t> sp2genomeSize;
+    unordered_map<TaxID, uint64_t> sp2totalReadLength;
     unordered_map<TaxID, vector<uint8_t>> sp2coverage_global;
     unordered_map<TaxID, double> sp2scoreSum_global;
     unordered_map<TaxID, CovMetric> sp2covMetric;
     std::vector<double> C_LOG2_C;
 
-    CovMetric calculateAdjustedEvenness(const std::vector<uint8_t>& bins, double k_mers_per_read, uint64_t genomeSize = 65536);
+    CovMetric calCovMetrics(
+        const std::vector<uint8_t>& bins, 
+        double k_mers_per_read, 
+        int readCnt, 
+        uint64_t totalReadLength,
+        uint64_t genomeSize = 65536);
 
     void countUniqueKmerPerSpecies(vector<uint32_t> & sp2uniqKmerCnt);
 
@@ -82,6 +89,26 @@ protected:
     void loadOriginalResults(const string & classificationFileName, size_t seqNum);
 
     void preciseModePreset(LocalParameters & par);
+
+    void parseSp2GenomeSize() {
+        std::string fileName = dbDir + "/species2genomeSize.tsv";
+        ifstream infile(fileName);
+        if (!infile.is_open()) {
+            cerr << "Error: Could not open species to genome size file " << fileName << endl;
+            return;
+        }
+        string line;
+        while (getline(infile, line)) {
+            if (line.empty()) continue;
+            vector<string> columns = TaxonomyWrapper::splitByDelimiter(line, "\t", 3);
+            sp2genomeSize[static_cast<TaxID>(stoul(columns[0]))] = stoull(columns[2]);
+        }
+        infile.close();
+    }
+
+    unordered_map<TaxID, TaxonCounts> getCladeCounts() {
+        return taxonomy->getCladeCounts(taxCounts, taxonomy->getParentToChildren());
+    }
 
 public:
     void classifyReads();

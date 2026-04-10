@@ -360,8 +360,16 @@ void Classifier::classifyReadsWithPos() {
     std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
     reporter->closeReadClassificationFile();
 
+    parseSp2GenomeSize();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = getCladeCounts();
     for (const auto& [spId, bins] : sp2coverage_global) {
-        sp2covMetric[spId] = calculateAdjustedEvenness(bins, 84);
+        sp2covMetric[spId] = calCovMetrics(
+            bins,
+            84,
+            cladeCounts[spId].cladeCount,
+            sp2totalReadLength[spId],
+            sp2genomeSize[spId]
+        );
     }
     
     reporter->filterClassificationFile(reporter->getClassificationFileName(), reporter->getClassificationFileName() + ".filtered", sp2covMetric, 0.4);
@@ -415,6 +423,7 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
             {
                 for (auto& [spId, localArray] : taxonomer.sp2coverage) {
                     sp2scoreSum_global[spId] += taxonomer.sp2scoreSum[spId];
+                    sp2totalReadLength[spId] += taxonomer.sp2totalReadLength[spId];
 
                     // Ensure the global map has this species
                     if (sp2coverage_global.find(spId) == sp2coverage_global.end()) {
@@ -732,29 +741,51 @@ void Classifier::loadOriginalResults(
     }
 }
 
-CovMetric Classifier::calculateAdjustedEvenness(
-    const std::vector<uint8_t>& bins, 
+CovMetric Classifier::calCovMetrics(
+    const std::vector<uint8_t>& bins,
     double k_mers_per_read,
+    int readCnt,
+    uint64_t totalReadLength,
     uint64_t genomeSize) 
 {
     uint64_t totalCount = 0;
     double sum_c_log_c = 0.0;
     int occupiedBins = 0;
 
-    for (uint8_t count : bins) {
+    // Macro-bin tracking
+    int occupiedMacroBins = 0;
+    bool macro_seen[256] = {false};
+
+    size_t binLimit = std::min(genomeSize + 1, static_cast<uint64_t>(65536));
+    for (size_t i = 1; i < binLimit; ++i) {
+        uint8_t count = bins[i];
+        if (count == 0) continue; // Skip empty bins
+
         totalCount += count;
-        if (count > 0) occupiedBins++;
-        sum_c_log_c += C_LOG2_C[count]; // O(1) table lookup
+        occupiedBins++;
+        sum_c_log_c += C_LOG2_C[count];
+
+        size_t macro_bin_idx = i >> 8; // Equivalent to i / 256
+        if (!macro_seen[macro_bin_idx]) {
+            macro_seen[macro_bin_idx] = true;
+            occupiedMacroBins++;
+        }
     }
 
     if (totalCount == 0) {
-        return {0.0, 0.0, 0.0, 0.0}; 
+        return {0.0, 0.0, 0.0, 0.0, 0.0}; 
     }
 
-    double effective_bins = std::min(65536.0, static_cast<double>(genomeSize));
+    double effective_bins = std::min(65535.0, static_cast<double>(genomeSize));
     if (effective_bins <= 1.0) {
-        return {0.0, 0.0, 0.0, 0.0};
+        return {0.0, 0.0, 0.0, 0.0, 0.0};
     }
+
+    // Calculate Macro-bin Coverage
+    double max_macro_bins = std::ceil(effective_bins / 256.0);
+    max_macro_bins = std::min(max_macro_bins, 256.0);
+    double macro_coverage = static_cast<double>(occupiedMacroBins) / max_macro_bins;
+    macro_coverage = std::min(1.0, macro_coverage);
 
     // 3. Calculate Coverage (Breadth)
     double coverage = static_cast<double>(occupiedBins) / effective_bins;
@@ -770,10 +801,10 @@ CovMetric Classifier::calculateAdjustedEvenness(
     double evenness = (max_H_standard > 0.0001) ? std::min(1.0, H_obs / max_H_standard) : 0.0;
 
     // 6. Calculate Expected Occupied Bins under random uniform distribution
-    k_mers_per_read = std::max(1.0, k_mers_per_read);
-    double independent_events = static_cast<double>(totalCount) / k_mers_per_read;
-    independent_events = std::max(1.0, independent_events);
-    double expected_occupied = effective_bins * (1.0 - std::exp(-independent_events / effective_bins));
+    double read_length = static_cast<double>(totalReadLength) / readCnt;
+    double bin_size_bp = static_cast<double>(genomeSize) / effective_bins;
+    double bins_per_read = 1.0 + (read_length / bin_size_bp);
+    double expected_occupied = effective_bins * (1.0 - std::exp(-(readCnt * bins_per_read) / effective_bins));
 
     // 7. Calculate Expected Maximum Entropy (Poisson adjusted)
     double expected_max_H = std::log2(std::max(1.0, expected_occupied));
@@ -784,11 +815,10 @@ CovMetric Classifier::calculateAdjustedEvenness(
         adjustedEvenness = std::min(1.0, H_obs / expected_max_H);
     }
 
-    // double effective_bins = ;
     double unified_score = std::pow(2.0, H_obs) / effective_bins;
 
     // 9. Return the populated struct
-    return {evenness, coverage, adjustedEvenness, unified_score};
+    return {evenness, coverage, adjustedEvenness, unified_score, macro_coverage};
 }
 
 
