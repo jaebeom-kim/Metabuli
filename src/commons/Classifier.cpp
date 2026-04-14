@@ -52,6 +52,14 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
             metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
         }
     }
+
+    if (par.storeKmerPos) {
+        C_LOG2_C.resize(256);
+        for (int i = 1; i < 256; ++i) {
+            C_LOG2_C[i] = i * std::log2(static_cast<double>(i));
+        }
+    }
+
     kmerExtractor = new KmerExtractor(par, metamerPattern);
     queryIndexer = new QueryIndexer(par);
     kmerMatcher = new KmerMatcher(par, taxonomy, metamerPattern);
@@ -360,20 +368,31 @@ void Classifier::classifyReadsWithPos() {
     std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
     reporter->closeReadClassificationFile();
 
+    std::cout << "1" << std::endl;
     parseSp2GenomeSize();
+    std::cout << "2" << std::endl;
     unordered_map<TaxID, TaxonCounts> cladeCounts = getCladeCounts();
+    std::cout << "3" << std::endl;
     for (const auto& [spId, bins] : sp2coverage_global) {
         sp2covMetric[spId] = calCovMetrics(
             bins,
-            84,
             cladeCounts[spId].cladeCount,
             sp2totalReadLength[spId],
             sp2genomeSize[spId]
         );
+        sp2covMetric[spId].avgScore = sp2scoreSum_global[spId] / cladeCounts[spId].cladeCount;
     }
+    std::cout << "4" << std::endl;
     
-    reporter->filterClassificationFile(reporter->getClassificationFileName(), reporter->getClassificationFileName() + ".filtered", sp2covMetric, 0.4);
+    reporter->filterClassificationFile(
+        reporter->getClassificationFileName(), 
+        reporter->getClassificationFileName() + ".filtered", 
+        sp2covMetric, 
+        0.4
+    );
+    std::cout << "5" << std::endl;
     reporter->writeReportFile(processedReadCnt, taxCounts, sp2covMetric, ReportType::Default);
+
     std::cout << "Taxonomic classification completed." << std::endl;
 
 }
@@ -743,7 +762,6 @@ void Classifier::loadOriginalResults(
 
 CovMetric Classifier::calCovMetrics(
     const std::vector<uint8_t>& bins,
-    double k_mers_per_read,
     int readCnt,
     uint64_t totalReadLength,
     uint64_t genomeSize) 
@@ -814,6 +832,7 @@ CovMetric Classifier::calCovMetrics(
     if (expected_max_H >= 0.0001) {
         adjustedEvenness = std::min(1.0, H_obs / expected_max_H);
     }
+
 
     double unified_score = std::pow(2.0, H_obs) / effective_bins;
 

@@ -77,7 +77,6 @@ protected:
 
     CovMetric calCovMetrics(
         const std::vector<uint8_t>& bins, 
-        double k_mers_per_read, 
         int readCnt, 
         uint64_t totalReadLength,
         uint64_t genomeSize = 65536);

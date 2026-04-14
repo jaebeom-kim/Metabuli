@@ -496,14 +496,14 @@ void Reporter::writeReport(
         auto evIt = species2covMetrics.find(taxID);
         if (evIt != species2covMetrics.end()) {
             // Found: Print the three scores formatted to 4 decimal places
-            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t%.4f\t%.4f\t%.4f\t%.4f\t%s%s\n",
+            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%s%s\n",
                     100 * cladeCount / double(totalReads), cladeCount, taxCount,
                     taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID),
-                    evIt->second.evenness, evIt->second.coverage, evIt->second.adjustedEvenness, evIt->second.unifiedScore,
+                    evIt->second.evenness, evIt->second.coverage, evIt->second.macroCoverage,evIt->second.adjustedEvenness, evIt->second.unifiedScore, evIt->second.avgScore,
                     std::string(2 * depth, ' ').c_str(), taxonomy->getString(taxon->nameIdx));
         } else {
             // Not Found (Higher rank/not a species): Print '-' placeholders for the three columns
-            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t-\t-\t-\t-\t%s%s\n",
+            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t-\t-\t-\t-\t-\t-\t%s%s\n",
                     100 * cladeCount / double(totalReads), cladeCount, taxCount,
                     taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID), 
                     std::string(2 * depth, ' ').c_str(), taxonomy->getString(taxon->nameIdx));
@@ -630,6 +630,8 @@ void Reporter::rollUpCoverageMetrics(
     double weightedCoverage = 0.0;
     double weightedAdjEvenness = 0.0;
     double weightedUnifiedScore = 0.0;
+    double weightedAvgScore = 0.0;
+    double weightedMacroCoverage = 0.0;
     uint64_t totalChildReads = 0;
 
     // 1. Recursively process all children FIRST (Post-order traversal)
@@ -649,6 +651,9 @@ void Reporter::rollUpCoverageMetrics(
                 weightedCoverage += metricIt->second.coverage * reads;
                 weightedAdjEvenness += metricIt->second.adjustedEvenness * reads;
                 weightedUnifiedScore += metricIt->second.unifiedScore * reads;
+                weightedAvgScore += metricIt->second.avgScore * reads;
+                weightedMacroCoverage += metricIt->second.macroCoverage * reads; // Assuming macro coverage is the same as coverage for weighting
+
                 totalChildReads += reads;
             }
         }
@@ -661,6 +666,8 @@ void Reporter::rollUpCoverageMetrics(
         parentMetric.coverage = weightedCoverage / static_cast<double>(totalChildReads);
         parentMetric.adjustedEvenness = weightedAdjEvenness / static_cast<double>(totalChildReads);
         parentMetric.unifiedScore = weightedUnifiedScore / static_cast<double>(totalChildReads);
+        parentMetric.avgScore = weightedAvgScore / static_cast<double>(totalChildReads);
+        parentMetric.macroCoverage = weightedMacroCoverage / static_cast<double>(totalChildReads);
         
         // Save it to the map
         allMetrics[currentTaxID] = parentMetric;

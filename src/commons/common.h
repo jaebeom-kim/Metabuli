@@ -33,6 +33,8 @@ struct CovMetric {
     double adjustedEvenness;
     double unifiedScore;
     double macroCoverage;
+    double avgScore;
+
 };
 
 

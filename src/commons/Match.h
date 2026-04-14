@@ -215,7 +215,7 @@ struct MatchPath {
     bool rightEndTrimmed = false;     
     bool leftEndTrimmed = false;      
 
-    int prevMatchIdx = -1;
+    uint64_t prevMatchIdx = UINT64_MAX;
     std::vector<const MatchType*> chain;
 
     void printMatchPath() {
