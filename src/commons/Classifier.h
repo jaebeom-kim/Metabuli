@@ -109,6 +109,12 @@ protected:
         return taxonomy->getCladeCounts(taxCounts, taxonomy->getParentToChildren());
     }
 
+    void rollUpCoverageMetrics(
+        const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
+        const std::unordered_map<TaxID, TaxonCounts>& cladeCounts,
+        std::unordered_map<TaxID, CovMetric>& allMetrics, // Starts with species, gets filled with all ranks
+        TaxID currentTaxID);
+
 public:
     void classifyReads();
     void classifyReadsWithPos();

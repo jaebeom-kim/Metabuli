@@ -371,7 +371,9 @@ void Classifier::classifyReadsWithPos() {
     std::cout << "1" << std::endl;
     parseSp2GenomeSize();
     std::cout << "2" << std::endl;
-    unordered_map<TaxID, TaxonCounts> cladeCounts = getCladeCounts();
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
+
     std::cout << "3" << std::endl;
     for (const auto& [spId, bins] : sp2coverage_global) {
         sp2covMetric[spId] = calCovMetrics(
@@ -383,6 +385,8 @@ void Classifier::classifyReadsWithPos() {
         sp2covMetric[spId].avgScore = sp2scoreSum_global[spId] / cladeCounts[spId].cladeCount;
     }
     std::cout << "4" << std::endl;
+
+    rollUpCoverageMetrics(parentToChildren, cladeCounts, sp2covMetric, 1);
     
     reporter->filterClassificationFile(
         reporter->getClassificationFileName(), 
@@ -841,3 +845,68 @@ CovMetric Classifier::calCovMetrics(
 }
 
 
+void Classifier::rollUpCoverageMetrics(
+    const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
+    const std::unordered_map<TaxID, TaxonCounts>& cladeCounts,
+    std::unordered_map<TaxID, CovMetric>& allMetrics, // Starts with species, gets filled with all ranks
+    TaxID currentTaxID) 
+{
+// NEW BASE CASE: If this node already has a metric calculated (i.e., it's a Species),
+    // it is the base of our roll-up. Stop recursing down to subspecies and return immediately.
+    if (allMetrics.find(currentTaxID) != allMetrics.end()) {
+        return;
+    }
+
+    // Secondary Base Case: True leaf node (no children at all) but no pre-calculated metric
+    auto childrenIt = parentToChildren.find(currentTaxID);
+    if (childrenIt == parentToChildren.end() || childrenIt->second.empty()) {
+        return; 
+    }
+
+    double weightedEvenness = 0.0;
+    double weightedCoverage = 0.0;
+    double weightedAdjEvenness = 0.0;
+    double weightedUnifiedScore = 0.0;
+    double weightedAvgScore = 0.0;
+    double weightedMacroCoverage = 0.0;
+    uint64_t totalChildReads = 0;
+
+    // 1. Recursively process all children FIRST (Post-order traversal)
+    for (TaxID childID : childrenIt->second) {
+        rollUpCoverageMetrics(parentToChildren, cladeCounts, allMetrics, childID);
+        
+        // 2. Gather data for the weighted average
+        auto countIt = cladeCounts.find(childID);
+        auto metricIt = allMetrics.find(childID);
+
+        if (countIt != cladeCounts.end() && metricIt != allMetrics.end()) {
+            uint64_t reads = countIt->second.cladeCount;
+            
+            // Only include children that actually have metrics and reads
+            if (reads > 0) {
+                weightedEvenness += metricIt->second.evenness * reads;
+                weightedCoverage += metricIt->second.coverage * reads;
+                weightedAdjEvenness += metricIt->second.adjustedEvenness * reads;
+                weightedUnifiedScore += metricIt->second.unifiedScore * reads;
+                weightedAvgScore += metricIt->second.avgScore * reads;
+                weightedMacroCoverage += metricIt->second.macroCoverage * reads; // Assuming macro coverage is the same as coverage for weighting
+
+                totalChildReads += reads;
+            }
+        }
+    }
+
+    // 3. Calculate the final weighted metrics for THIS parent node
+    if (totalChildReads > 0) {
+        CovMetric parentMetric;
+        parentMetric.evenness = weightedEvenness / static_cast<double>(totalChildReads);
+        parentMetric.coverage = weightedCoverage / static_cast<double>(totalChildReads);
+        parentMetric.adjustedEvenness = weightedAdjEvenness / static_cast<double>(totalChildReads);
+        parentMetric.unifiedScore = weightedUnifiedScore / static_cast<double>(totalChildReads);
+        parentMetric.avgScore = weightedAvgScore / static_cast<double>(totalChildReads);
+        parentMetric.macroCoverage = weightedMacroCoverage / static_cast<double>(totalChildReads);
+        
+        // Save it to the map
+        allMetrics[currentTaxID] = parentMetric;
+    } 
+}

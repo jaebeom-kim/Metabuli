@@ -579,7 +579,8 @@ void Reporter::filterClassificationFile(
             auto evIt = sp2covMetric.find(speciesTaxID);
             
             // 4. If the species is in the map AND its score is below the cutoff, rewrite it
-            if (evIt != sp2covMetric.end() && evIt->second.adjustedEvenness < cutoff) {
+            if (evIt != sp2covMetric.end() && 
+                (evIt->second.adjustedEvenness < 0.6 || evIt->second.avgScore < 0.2) ) {
                 // Reconstruct the line exactly as your original "unclassified" else-block did
                 outFile << "0\t"          // is_classified
                         << columns[1] << "\t" // name
