@@ -236,11 +236,18 @@ void Classifier::classifyReads() {
     }
     delete savedSeq_1;
     delete savedSeq_2;
+
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
+
+    for (const auto & it : sp2score_global) {
+        sp2score_global[it.first] = it.second / cladeCounts[it.first].cladeCount;
+    }
     
     // Finalize original classification results
     std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
     reporter->closeReadClassificationFile();
-    reporter->writeReportFile(processedReadCnt, taxCounts, ReportType::Default);
+    reporter->writeReportFile(processedReadCnt, cladeCounts, ReportType::Default);
     std::cout << "Taxonomic classification completed." << std::endl;
 
 }
@@ -350,10 +357,13 @@ void Classifier::startClassify(const LocalParameters &par) {
         cout << "--------------------" << endl;
     }
 
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
+
     // Finalize original classification results
     cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << endl;    
     reporter->closeReadClassificationFile();
-    reporter->writeReportFile(totalSeqCnt, taxCounts, ReportType::Default);
+    reporter->writeReportFile(totalSeqCnt, cladeCounts, ReportType::Default);
     cout << "Taxonomic classification completed." << endl;
 
     // Perform EM algorithm    
@@ -363,8 +373,11 @@ void Classifier::startClassify(const LocalParameters &par) {
         loadOriginalResults(reporter->getClassificationFileName(), totalSeqCnt);   
         em(totalSeqCnt);
         reporter->writeReclassifyResults(emResults);
-        reporter->writeReportFile(totalSeqCnt, emTaxCounts, ReportType::EM);
-        reporter->writeReportFile(totalSeqCnt, reclassifyTaxCounts, ReportType::EM_RECLASSIFY);
+        unordered_map<TaxID, TaxonCounts> emCladeCounts = taxonomy->getCladeCounts(emTaxCounts, parentToChildren);
+        reporter->writeReportFile(totalSeqCnt, emCladeCounts, ReportType::EM);
+
+        unordered_map<TaxID, TaxonCounts> reclassifyCladeCounts = taxonomy->getCladeCounts(reclassifyTaxCounts, parentToChildren);
+        reporter->writeReportFile(totalSeqCnt, reclassifyCladeCounts, ReportType::EM_RECLASSIFY);
     }
     
     return;
@@ -408,6 +421,13 @@ void Classifier::assignTaxonomy(const Match *matchList,
                             queryList,
                             par);
         }
+
+        #pragma omp critical
+        {
+            for (const auto & it : taxonomer.sp2scoreSum) {
+                sp2score_global[it.first] += it.second;
+            }
+        }    
     }
 
     if (par.printLog) {

@@ -119,12 +119,12 @@ void Reporter::kronaReport(FILE *FP, const TaxonomyWrapper &taxDB, const std::un
 
 void Reporter::writeReportFile(
     int numOfQuery, 
-    unordered_map<TaxID, unsigned int> &taxCnt, 
+    unordered_map<TaxID, TaxonCounts> cladeCounts,
     ReportType reportType,
     string kronaFileName) 
 {
-    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
-    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCnt, parentToChildren);
+    // std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    // unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCnt, parentToChildren);
     FILE *fp = nullptr;
     if (reportType == ReportType::Default) {
         fp = fopen(reportFileName.c_str(), "w");
@@ -133,7 +133,7 @@ void Reporter::writeReportFile(
     } else if (reportType == ReportType::EM_RECLASSIFY) {
         fp = fopen(reportFileName_em_reclassify.c_str(), "w");
     }
-    fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\trank\ttaxID\tname\n");
+    fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\tavg_score\trank\ttaxID\tname\n");
     writeReport(fp, cladeCounts, numOfQuery);
     fclose(fp);
 

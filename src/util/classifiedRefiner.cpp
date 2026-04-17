@@ -22,7 +22,7 @@ struct ClassificationResult {
     int taxonomyId;
     int effectiveReadLength;
     float dnaIdentityScore;
-    float evalue;               
+    double evalue;               
     std::string classificationRank;
     std::string taxIdKmerCounts;
     std::string fullLineage;
@@ -49,7 +49,7 @@ ClassificationResult parseFields(
         if (fields[evalueIdx] == "-") {
             result.evalue = -1.0f; 
         } else {
-            result.evalue = std::stof(fields[evalueIdx]);
+            result.evalue = std::stod(fields[evalueIdx]);
         }
     }
     result.classificationRank = fields[rankIdx];

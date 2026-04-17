@@ -58,7 +58,7 @@ public:
     //     int depth = 0
     // );
 
-    void writeReportFile(int numOfQuery, unordered_map<TaxID, unsigned int> &taxCnt, ReportType reportType, string kronaFileName = "");
+    void writeReportFile(int numOfQuery, unordered_map<TaxID, TaxonCounts> cladeCounts, ReportType reportType, string kronaFileName = "");
     
     void writeReport(FILE *FP, const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
                      unsigned long totalReads, TaxID taxID = 0, int depth = 0);

@@ -56,6 +56,8 @@ protected:
     TaxonomyWrapper * taxonomy = nullptr;
 
     unordered_map<TaxID, unsigned int> taxCounts;
+    unordered_map<TaxID, double> sp2score_global;
+
 
     size_t mappingResListSize = 0;
 

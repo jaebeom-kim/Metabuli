@@ -145,6 +145,8 @@ void Taxonomer::chooseBestTaxon(uint32_t currentQuery,
     for (auto & tax : taxCnt) {
       queryList[currentQuery].taxCnt[tax.first] = tax.second;    
     }
+
+    sp2scoreSum[speciesScore.taxId] += speciesScore.score.idScore;
     
     // If score is not enough, classify to the parent of the selected species
     if (speciesScore.score.idScore < par.minSpScore) {

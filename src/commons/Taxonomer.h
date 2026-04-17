@@ -139,6 +139,8 @@ public:
 
     ~Taxonomer();
 
+    std::unordered_map<TaxID, double> sp2scoreSum;
+
     void chooseBestTaxon(uint32_t currentQuery,
                          size_t offset,
                          size_t end,
