@@ -277,6 +277,13 @@ LocalParameters::LocalParameters() :
                 typeid(float),
                 (void *) &minCladeProportion,
                 "^0(\\.[0-9]+)?|1(\\.0+)?$"),
+        PRINT_FILTERED_RESULTS(PRINT_FILTERED_RESULTS_ID,
+                "--filtered-results",
+                "Print filtered classification results",
+                "Print filtered classification results",
+                typeid(std::string),
+                (void *) &outFilteredResults,
+                "^.*$"),
         TARGET_TAX_ID(TARGET_TAX_ID_ID,
                "--tax-id",
                "Tax. ID of clade. -1 for unclassified reads",
@@ -843,6 +850,10 @@ LocalParameters::LocalParameters() :
     refineReport.push_back(&MIN_AVG_SCORE);
     refineReport.push_back(&MIN_CLADE_COUNT);
     refineReport.push_back(&MIN_CLADE_PROPORTION);
+    refineReport.push_back(&PRINT_FILTERED_RESULTS);
+    refineReport.push_back(&EXCLUDE_TAXID);
+    refineReport.push_back(&MIN_SCORE);
+    refineReport.push_back(&MAX_E_VALUE);
 
     makeBenchmarkSet.push_back(&RANDOM_SEED);
     makeBenchmarkSet.push_back(&ASSACC2TAXID);

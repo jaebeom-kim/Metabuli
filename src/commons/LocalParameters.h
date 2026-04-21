@@ -97,9 +97,12 @@ public:
     PARAMETER(MAX_E_VALUE)
     PARAMETER(USE_ALL_MATCHES)
     PARAMETER(TIE_BRAKER)
+
+    // classify || refine-report 
     PARAMETER(MIN_AVG_SCORE)
     PARAMETER(MIN_CLADE_COUNT)
     PARAMETER(MIN_CLADE_PROPORTION)
+    PARAMETER(PRINT_FILTERED_RESULTS)
 
     // extract
     PARAMETER(TARGET_TAX_ID)
@@ -212,6 +215,7 @@ public:
     float minAvgScore;
     int minCladeCount;
     float minCladeProportion;
+    std::string outFilteredResults;
 
     // Extract
     int targetTaxId;
