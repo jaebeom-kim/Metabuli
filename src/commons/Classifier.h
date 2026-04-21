@@ -114,6 +114,11 @@ public:
         const vector<double> & sp2lengthFactor,
         size_t totalQueryCnt);
 
+    static void rollUpScore(
+        std::unordered_map<TaxID, double> & sp2score_global,
+        const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
+        TaxID currentTaxID);
+
 };
 
 

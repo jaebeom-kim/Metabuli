@@ -52,6 +52,7 @@ public:
     std::vector<MMseqsParameter*> createCommonKmerList;
     std::vector<MMseqsParameter*> mergeAssemblyFiles;
     std::vector<MMseqsParameter*> createTaxDb;
+    std::vector<MMseqsParameter*> refineReport;
 
     // UniRef
     PARAMETER(UNIREF_NUMBERS)
@@ -96,6 +97,9 @@ public:
     PARAMETER(MAX_E_VALUE)
     PARAMETER(USE_ALL_MATCHES)
     PARAMETER(TIE_BRAKER)
+    PARAMETER(MIN_AVG_SCORE)
+    PARAMETER(MIN_CLADE_COUNT)
+    PARAMETER(MIN_CLADE_PROPORTION)
 
     // extract
     PARAMETER(TARGET_TAX_ID)
@@ -205,7 +209,9 @@ public:
     int minAaMatch;
     int minAaMatchEuk;
     std::string priorityTaxa;
-    
+    float minAvgScore;
+    int minCladeCount;
+    float minCladeProportion;
 
     // Extract
     int targetTaxId;

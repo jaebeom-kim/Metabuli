@@ -256,6 +256,27 @@ LocalParameters::LocalParameters() :
                  typeid(std::string),
                  (void *) &priorityTaxa,
                  "^.*$"),
+        MIN_AVG_SCORE(MIN_AVG_SCORE_ID,
+                "--min-avg-score",
+                "Min. average score for classification",
+                "Min. average score for classification (0.0-1.0)",
+                typeid(float),
+                (void *) &minAvgScore,
+                "^0(\\.[0-9]+)?|1(\\.0+)?$"),
+        MIN_CLADE_COUNT(MIN_CLADE_COUNT_ID,
+                "--min-clade-count",
+                "Min. read count for a clade",
+                "Min. read count for a clade",
+                typeid(int),
+                (void *) &minCladeCount,
+                "^[0-9]+$"),
+        MIN_CLADE_PROPORTION(MIN_CLADE_PROPORTION_ID,
+                "--min-clade-proportion",
+                "Min. read proportion for a clade (0.0-1.0)",
+                "Min. read proportion for a clade (0.0-1.0)",
+                typeid(float),
+                (void *) &minCladeProportion,
+                "^0(\\.[0-9]+)?|1(\\.0+)?$"),
         TARGET_TAX_ID(TARGET_TAX_ID_ID,
                "--tax-id",
                "Tax. ID of clade. -1 for unclassified reads",
@@ -818,6 +839,10 @@ LocalParameters::LocalParameters() :
     classifiedRefiner.push_back(&MAX_E_VALUE);
     classifiedRefiner.push_back(&PRINT_LINEAGE);
     classifiedRefiner.push_back(&TAXONOMY_PATH);
+
+    refineReport.push_back(&MIN_AVG_SCORE);
+    refineReport.push_back(&MIN_CLADE_COUNT);
+    refineReport.push_back(&MIN_CLADE_PROPORTION);
 
     makeBenchmarkSet.push_back(&RANDOM_SEED);
     makeBenchmarkSet.push_back(&ASSACC2TAXID);

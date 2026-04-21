@@ -430,7 +430,10 @@ int classifiedRefiner(const string &classifiedFile, const LocalParameters &par) 
         cout << reportFileName << endl;
 
         std::string kronaFileName = classifiedFile.substr(0, classifiedFile.find_last_of('.')) + "_refined_krona.html";
-        reporter->writeReportFile(totalSeqCnt+1, taxcntSum, ReportType::Default, kronaFileName);
+
+        std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+        unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxcntSum, parentToChildren);
+        reporter->writeReportFile(totalSeqCnt+1, cladeCounts, ReportType::Default, kronaFileName);
     }
     delete taxonomy;
     delete reporter;

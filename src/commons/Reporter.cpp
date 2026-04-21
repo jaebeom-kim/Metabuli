@@ -120,6 +120,7 @@ void Reporter::kronaReport(FILE *FP, const TaxonomyWrapper &taxDB, const std::un
 void Reporter::writeReportFile(
     int numOfQuery, 
     unordered_map<TaxID, TaxonCounts> cladeCounts,
+    unordered_map<TaxID, double> &taxon2avgScore,
     ReportType reportType,
     string kronaFileName) 
 {
@@ -134,6 +135,53 @@ void Reporter::writeReportFile(
         fp = fopen(reportFileName_em_reclassify.c_str(), "w");
     }
     fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\tavg_score\trank\ttaxID\tname\n");
+    writeReport(fp, cladeCounts, taxon2avgScore, numOfQuery);
+    fclose(fp);
+
+    // Write Krona chart
+    if (jobId.empty()) { return; }
+    
+    FILE *kronaFile = nullptr;
+
+    if (reportType == ReportType::Default) {
+        if (!kronaFileName.empty()) {
+            kronaFile = fopen(kronaFileName.c_str(), "w");
+        } else {
+            kronaFile = fopen((outDir + "/" + jobId + "_krona.html").c_str(), "w");
+        }
+    } else if (reportType == ReportType::EM) {
+        kronaFile = fopen((outDir + "/" + jobId + "_EM_krona.html").c_str(), "w");
+    } else if (reportType == ReportType::EM_RECLASSIFY) {
+        kronaFile = fopen((outDir + "/" + jobId + "_EM+reclassify_krona.html").c_str(), "w");
+    }
+    if (kronaFile == nullptr) {
+        Debug(Debug::ERROR) << "Could not open Krona file for writing: " << kronaFileName << "\n";
+        EXIT(EXIT_FAILURE);
+    }
+    fwrite(krona_prelude_html, krona_prelude_html_len, sizeof(char), kronaFile);
+    fprintf(kronaFile, "<node name=\"all\"><magnitude><val>%zu</val></magnitude>", (size_t) numOfQuery);
+    kronaReport(kronaFile, *taxonomy, cladeCounts, numOfQuery);
+    fprintf(kronaFile, "</node></krona></div></body></html>");
+    fclose(kronaFile);
+}
+
+void Reporter::writeReportFile(
+    int numOfQuery, 
+    unordered_map<TaxID, TaxonCounts> cladeCounts,
+    ReportType reportType,
+    string kronaFileName) 
+{
+    // std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    // unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCnt, parentToChildren);
+    FILE *fp = nullptr;
+    if (reportType == ReportType::Default) {
+        fp = fopen(reportFileName.c_str(), "w");
+    } else if (reportType == ReportType::EM) {
+        fp = fopen(reportFileName_em.c_str(), "w");
+    } else if (reportType == ReportType::EM_RECLASSIFY) {
+        fp = fopen(reportFileName_em_reclassify.c_str(), "w");
+    }
+    fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\trank\ttaxID\tname\n");
     writeReport(fp, cladeCounts, numOfQuery);
     fclose(fp);
 
@@ -164,8 +212,72 @@ void Reporter::writeReportFile(
     fclose(kronaFile);
 }
 
-void Reporter::writeReport(FILE *FP, const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
-                             unsigned long totalReads, TaxID taxID, int depth) {
+void Reporter::writeReport(
+    FILE *FP, 
+    const std::unordered_map<TaxID, TaxonCounts> &cladeCounts, 
+    const unordered_map<TaxID, double> &taxon2avgScore,
+    unsigned long totalReads, 
+    TaxID taxID, 
+    int depth) 
+{
+    std::unordered_map<TaxID, TaxonCounts>::const_iterator it = cladeCounts.find(taxID);
+    unsigned int cladeCount = it == cladeCounts.end() ? 0 : it->second.cladeCount;
+    unsigned int taxCount = it == cladeCounts.end() ? 0 : it->second.taxCount;
+    if (taxID == 0) {
+        if (cladeCount > 0) {
+            fprintf(FP, "%.4f\t%i\t%i\tno rank\t0\tunclassified\n",
+                    100 * cladeCount / double(totalReads),
+                    cladeCount, taxCount);
+        }
+        writeReport(FP, cladeCounts, taxon2avgScore, totalReads, 1);
+    } else {
+        if (cladeCount == 0) {
+            return;
+        }
+        const TaxonNode *taxon = taxonomy->taxonNode(taxID);
+
+        auto scoreIt = taxon2avgScore.find(taxID);
+        if (scoreIt != taxon2avgScore.end()) {
+            fprintf(FP, "%.4f\t%i\t%i\t%.4f\t%s\t%i\t%s%s\n",
+                100 * cladeCount / double(totalReads),
+                cladeCount, 
+                taxCount,
+                scoreIt->second,
+                taxonomy->getString(taxon->rankIdx), 
+                taxonomy->getOriginalTaxID(taxID), 
+                std::string(2 * depth, ' ').c_str(), 
+                taxonomy->getString(taxon->nameIdx));
+        } else {
+            fprintf(FP, "%.4f\t%i\t%i\t-\t%s\t%i\t%s%s\n",
+                100 * cladeCount / double(totalReads),
+                cladeCount, 
+                taxCount,
+                taxonomy->getString(taxon->rankIdx), 
+                taxonomy->getOriginalTaxID(taxID), 
+                std::string(2 * depth, ' ').c_str(), 
+                taxonomy->getString(taxon->nameIdx));
+        }
+        
+        std::vector<TaxID> children = it->second.children;
+        SORT_SERIAL(children.begin(), children.end(), [&](int a, int b) { return cladeCountVal(cladeCounts, a) > cladeCountVal(cladeCounts, b); });
+        for (size_t i = 0; i < children.size(); ++i) {
+            TaxID childTaxId = children[i];
+            if (cladeCounts.count(childTaxId)) {
+                writeReport(FP, cladeCounts, taxon2avgScore, totalReads, childTaxId, depth + 1);
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+void Reporter::writeReport(
+    FILE *FP, 
+    const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+    unsigned long totalReads,
+    TaxID taxID,
+    int depth)
+{
     std::unordered_map<TaxID, TaxonCounts>::const_iterator it = cladeCounts.find(taxID);
     unsigned int cladeCount = it == cladeCounts.end() ? 0 : it->second.cladeCount;
     unsigned int taxCount = it == cladeCounts.end() ? 0 : it->second.taxCount;
@@ -195,6 +307,7 @@ void Reporter::writeReport(FILE *FP, const std::unordered_map<TaxID, TaxonCounts
             }
         }
     }
+
 }
 
 // void Reporter::writeEMreportFile(

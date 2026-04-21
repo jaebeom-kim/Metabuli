@@ -33,7 +33,7 @@ void setClassifyDefaults(LocalParameters & par){
     par.minAaMatch = 11;
     par.minAaMatchEuk = 16;
     par.priorityTaxa = "";
-
+    par.minAvgScore = 0;
     // unexposed experimental parameters
     par.spaceMask = "";
     par.useAllMatches = 0;

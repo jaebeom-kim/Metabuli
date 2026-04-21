@@ -37,5 +37,6 @@ extern int assign_uniref(int argc, const char **argv, const Command &command);
 extern int inspect_db(int argc, const char **argv, const Command &command);
 extern int mergeAssemblyFiles(int argc, const char **argv, const Command &command);
 extern int createTaxDb(int argc, const char **argv, const Command &command);
+extern int refine_report(int argc, const char **argv, const Command &command);
 
 #endif //ADCLASSIFIER2_LOCALCOMMANDDECLARATIONS_H

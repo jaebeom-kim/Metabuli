@@ -58,10 +58,34 @@ public:
     //     int depth = 0
     // );
 
-    void writeReportFile(int numOfQuery, unordered_map<TaxID, TaxonCounts> cladeCounts, ReportType reportType, string kronaFileName = "");
+    void writeReportFile(
+        int numOfQuery, 
+        unordered_map<TaxID, TaxonCounts> cladeCounts,
+        ReportType reportType, 
+        string kronaFileName = "");
+
+    void writeReportFile(
+        int numOfQuery, 
+        unordered_map<TaxID, TaxonCounts> cladeCounts, 
+        unordered_map<TaxID, double> &taxon2avgScore,
+        ReportType reportType,
+        string kronaFileName = "");
     
-    void writeReport(FILE *FP, const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
-                     unsigned long totalReads, TaxID taxID = 0, int depth = 0);
+    void writeReport(
+        FILE *FP, 
+        const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+        const unordered_map<TaxID, double> &taxon2avgScore,
+        unsigned long totalReads,
+        TaxID taxID = 0,
+        int depth = 0);
+    
+    void writeReport(
+        FILE *FP, 
+        const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+        unsigned long totalReads,
+        TaxID taxID = 0,
+        int depth = 0);
+    
     void kronaReport(FILE *FP, const TaxonomyWrapper &taxDB, const std::unordered_map<TaxID, TaxonCounts> &cladeCounts, unsigned long totalReads, TaxID taxID = 0, int depth = 0);
 
     // Read by read classification results

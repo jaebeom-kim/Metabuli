@@ -26,7 +26,6 @@ private:
     size_t valueCnt;
     uint64_t lastValue;
 
-    size_t readBufferSize;
     ReadBuffer<uint16_t> deltaIdxBuffer;
     bool fileCompleted = false;
     bool valueBufferCompleted = false;
@@ -66,7 +65,6 @@ public:
         size_t readBufferSize = 8192)
         : fileName(fileName),
         valueBufferSize(valueBufferSize), 
-        readBufferSize(readBufferSize),
         deltaIdxBuffer(fileName, readBufferSize)
     {
         lastValue = 0;
@@ -137,7 +135,6 @@ private:
     uint64_t lastValue;
     
     // To manage delta indices    
-    size_t readBufferSize;
     ReadBuffer<uint16_t> deltaIdxBuffer;
     ReadBuffer<TaxID> infoBuffer;
     bool fileCompleted = false;
@@ -188,8 +185,7 @@ public:
         size_t readBufferSize = 8192)
         : deltaIdxFileName(deltaIdxFileName),
         infoFileName(infoFileName),
-        valueBufferSize(valueBufferSize), 
-        readBufferSize(readBufferSize),
+        valueBufferSize(valueBufferSize),
         deltaIdxBuffer(deltaIdxFileName, readBufferSize),
         infoBuffer(infoFileName, readBufferSize)
     {
