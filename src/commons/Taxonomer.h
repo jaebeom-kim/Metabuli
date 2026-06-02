@@ -44,6 +44,7 @@ private:
     int kmerLen;
     int windowSize;
     uint32_t windowMask;
+    int strobemerSpan;
 
     // Parameters from user
     int accessionLevel;
@@ -135,7 +136,33 @@ private:
         vector<MatchPath<MatchType>> & matchPaths,
         TaxID speciesId); 
 
+    void getStrobeMatchPaths(
+        const MatchType * matchList,
+        size_t matchNum,
+        vector<MatchPath<MatchType>> & matchPaths,
+        TaxID speciesId);
+
+    std::vector<int> getStrobeRelativeStarts(
+        const MatchType * match
+    ) const;
+
+    uint32_t makeStrobeSpaceMask(
+        const MatchType * match
+    ) const;
+
+    uint64_t disperseStrobeBits(
+        uint64_t value,
+        const MatchType * match,
+        int chunkBits,
+        bool aaPart
+    ) const;
+
     void makeSpacedMatchPath(
+        const MatchType * match,
+        size_t index
+    );
+
+    void makeStrobeMatchPath(
         const MatchType * match,
         size_t index
     );

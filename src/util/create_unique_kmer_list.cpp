@@ -8,6 +8,11 @@
 void setDefaults_uniqKmers(LocalParameters & par){
     par.syncmer = 0;
     par.smerLen = 5;
+    par.strobemer = 0;
+    par.strobeNum = 3;
+    par.strobeLen = 3;
+    par.strobeWindowStart = 2;
+    par.strobeWindowEnd = 4;
     par.ramUsage = 128;
     par.validateInput = 0;
     par.taxonomyPath = "" ;

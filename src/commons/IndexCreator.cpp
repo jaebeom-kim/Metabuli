@@ -30,6 +30,11 @@ IndexCreator::IndexCreator(
 
     this->totalLength = par.dbTotalLength;
 
+    if (par.strobemer && !par.spaceMask.empty()) {
+        std::cerr << "Error: Spaced k-mer and strobemer are mutually exclusive." << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
     if (kmerFormat == 1) { // Use the legacy metamer pattern
         metamerPattern = new LegacyPattern(std::make_unique<RegularGeneticCode>(), 8);
     } else if (!par.customMetamer.empty()) {
@@ -2050,6 +2055,13 @@ void IndexCreator::writeDbParameters() {
     fprintf(handle, "Syncmer\t%d\n", par.syncmer);
     if (par.syncmer == 1) {
         fprintf(handle, "Syncmer_len\t%d\n", par.smerLen);
+    }
+    fprintf(handle, "Strobemer\t%d\n", par.strobemer);
+    if (par.strobemer == 1) {
+        fprintf(handle, "Strobe_num\t%d\n", par.strobeNum);
+        fprintf(handle, "Strobe_len\t%d\n", par.strobeLen);
+        fprintf(handle, "Strobe_window_start\t%d\n", par.strobeWindowStart);
+        fprintf(handle, "Strobe_window_end\t%d\n", par.strobeWindowEnd);
     }
     fprintf(handle, "Kmer_format\t%d\n", kmerFormat);
     fprintf(handle, "Total_seq_length\t%lu\n", totalLength);

@@ -9,6 +9,11 @@ void setGroupGenerationDefaults(LocalParameters & par){
     par.minEdgeWeight = 10;
     par.syncmer = 1;
     par.smerLen = 5;
+    par.strobemer = 0;
+    par.strobeNum = 3;
+    par.strobeLen = 3;
+    par.strobeWindowStart = 2;
+    par.strobeWindowEnd = 4;
     par.seqMode = 2;    
     par.verbosity = 3;
     par.ramUsage = 128;

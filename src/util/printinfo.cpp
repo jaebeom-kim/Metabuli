@@ -7,6 +7,14 @@
 #include "common.h"
 #include "SeqIterator.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#else
+static inline int omp_get_thread_num() {
+    return 0;
+}
+#endif
+
 using namespace std;
 
 void setPrintInfoDefault(LocalParameters &par) {

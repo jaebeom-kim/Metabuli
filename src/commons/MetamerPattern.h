@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include "SyncmerScanner.h"
+#include "StrobemerScanner.h"
 #include "GeneticCode.h"
 #include "SubstitutionMatrix.h"
 #include "TranslateNucl.h"
@@ -127,7 +128,15 @@ public:
     std::vector<std::unique_ptr<KmerScanner>> createScanners(const LocalParameters & par) const override {
         std::vector<std::unique_ptr<KmerScanner>> scanners;
         for (int i = 0; i < par.threads; ++i) {
-            if (par.syncmer) {
+            if (par.strobemer) {
+                scanners.push_back(std::make_unique<StrobemerScanner>(
+                    *geneticCode,
+                    par.strobeNum,
+                    par.strobeLen,
+                    par.strobeWindowStart,
+                    par.strobeWindowEnd,
+                    par.syncmer ? par.smerLen : 0));
+            } else if (par.syncmer) {
                 scanners.push_back(std::make_unique<SyncmerScanner>(kmerLen, par.smerLen, *geneticCode));
             } else {
                 scanners.push_back(std::make_unique<MetamerScanner>(*geneticCode, kmerLen));

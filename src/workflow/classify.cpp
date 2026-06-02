@@ -12,6 +12,11 @@ void setClassifyDefaults(LocalParameters & par){
     par.maxEValue = 1;
     par.syncmer = 0;
     par.smerLen = 5;
+    par.strobemer = 0;
+    par.strobeNum = 3;
+    par.strobeLen = 3;
+    par.strobeWindowStart = 2;
+    par.strobeWindowEnd = 4;
     par.kmerFormat = 1;
 
     par.maxShift = 1;

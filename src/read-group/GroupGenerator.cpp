@@ -4,6 +4,14 @@
 #include "common.h"
 #include "Kmer.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#else
+static inline int omp_get_thread_num() {
+    return 0;
+}
+#endif
+
 GroupGenerator::GroupGenerator(LocalParameters & par) : par(par) {
     commonKmerDB = par.filenames[1 + (par.seqMode == 2)];
     taxDbDir     = par.filenames[2 + (par.seqMode == 2)];

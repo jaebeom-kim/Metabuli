@@ -148,6 +148,23 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
         } else if (tokens[0] == "Syncmer_len") {
           cout << "s-mer length is set to " << tokens[1] << " according to the DB." << endl;
           par.smerLen = stoi(tokens[1]);
+        } else if (tokens[0] == "Strobemer") {
+          if (tokens[1] == "1" && par.strobemer == 0) {
+            cout << "Strobemer is enabled because the DB was created with strobemer." << endl;
+            par.strobemer = 1;
+          }
+        } else if (tokens[0] == "Strobe_num") {
+          cout << "Number of strobes is set to " << tokens[1] << " according to the DB." << endl;
+          par.strobeNum = stoi(tokens[1]);
+        } else if (tokens[0] == "Strobe_len") {
+          cout << "Strobe length is set to " << tokens[1] << " according to the DB." << endl;
+          par.strobeLen = stoi(tokens[1]);
+        } else if (tokens[0] == "Strobe_window_start") {
+          cout << "Strobe window start is set to " << tokens[1] << " according to the DB." << endl;
+          par.strobeWindowStart = stoi(tokens[1]);
+        } else if (tokens[0] == "Strobe_window_end") {
+          cout << "Strobe window end is set to " << tokens[1] << " according to the DB." << endl;
+          par.strobeWindowEnd = stoi(tokens[1]);
         } else if (tokens[0] == "Kmer_format") {
           par.kmerFormat = stoi(tokens[1]);
         } else if (tokens[0] == "Total_seq_length") {
@@ -157,6 +174,10 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
         } else if (eachLine == "===BEGIN_CUSTOM_METAMER===") {
           par.customMetamer = dbDir + "/db.parameters";
         }
+      }
+      if (par.strobemer && !par.spaceMask.empty()) {
+        std::cerr << "Error: Spaced k-mer and strobemer are mutually exclusive." << std::endl;
+        exit(EXIT_FAILURE);
       }
       return 1;
     }

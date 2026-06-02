@@ -67,6 +67,11 @@ public:
     PARAMETER(VALIDATE_DB)
     PARAMETER(SYNCMER)
     PARAMETER(SMER_LEN)
+    PARAMETER(STROBEMER)
+    PARAMETER(STROBE_NUM)
+    PARAMETER(STROBE_LEN)
+    PARAMETER(STROBE_WINDOW_START)
+    PARAMETER(STROBE_WINDOW_END)
     PARAMETER(KMER_FORMAT)
     PARAMETER(UNIREF_XML)
     PARAMETER(PARAM_CUSTOM_METAMER)
@@ -176,6 +181,11 @@ public:
     int validateDb;
     int syncmer;
     int smerLen;
+    int strobemer;
+    int strobeNum;
+    int strobeLen;
+    int strobeWindowStart;
+    int strobeWindowEnd;
     int kmerFormat;
     std::string unirefXml;
     std::string customMetamer;

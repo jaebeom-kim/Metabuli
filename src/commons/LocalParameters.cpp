@@ -67,6 +67,41 @@ LocalParameters::LocalParameters() :
                  typeid(int),
                  (void *) &smerLen,
                  "^[0-9]+$"),
+        STROBEMER(STROBEMER_ID,
+                  "--strobemer",
+                  "Using randstrobe strobemers",
+                  "Using randstrobe strobemers",
+                  typeid(int),
+                  (void *) &strobemer,
+                  "[0-1]"),
+        STROBE_NUM(STROBE_NUM_ID,
+                   "--strobe-num",
+                   "Number of strobes",
+                   "Number of strobes in one randstrobe strobemer",
+                   typeid(int),
+                   (void *) &strobeNum,
+                   "^[0-9]+$"),
+        STROBE_LEN(STROBE_LEN_ID,
+                   "--strobe-len",
+                   "Strobe length",
+                   "Amino-acid length of each strobe",
+                   typeid(int),
+                   (void *) &strobeLen,
+                   "^[0-9]+$"),
+        STROBE_WINDOW_START(STROBE_WINDOW_START_ID,
+                            "--strobe-window-start",
+                            "Start of strobe extraction window",
+                            "Start offset from the previous strobe's last amino-acid position",
+                            typeid(int),
+                            (void *) &strobeWindowStart,
+                            "^[0-9]+$"),
+        STROBE_WINDOW_END(STROBE_WINDOW_END_ID,
+                          "--strobe-window-end",
+                          "End of strobe extraction window",
+                          "End offset from the previous strobe's last amino-acid position",
+                          typeid(int),
+                          (void *) &strobeWindowEnd,
+                          "^[0-9]+$"),
         KMER_FORMAT(KMER_FORMAT_ID,
                     "--kmer-format",
                     "K-mer format",
@@ -662,6 +697,11 @@ LocalParameters::LocalParameters() :
     build.push_back(&VALIDATE_DB);
     build.push_back(&SYNCMER);
     build.push_back(&SMER_LEN);
+    build.push_back(&STROBEMER);
+    build.push_back(&STROBE_NUM);
+    build.push_back(&STROBE_LEN);
+    build.push_back(&STROBE_WINDOW_START);
+    build.push_back(&STROBE_WINDOW_END);
     build.push_back(&PARAM_CUSTOM_METAMER);
     build.push_back(&SPACE_MASK);
     build.push_back(&READING_FRAME);
@@ -675,6 +715,11 @@ LocalParameters::LocalParameters() :
     createCommonKmerList.push_back(&RAM_USAGE);
     createCommonKmerList.push_back(&SYNCMER);
     createCommonKmerList.push_back(&SMER_LEN);
+    createCommonKmerList.push_back(&STROBEMER);
+    createCommonKmerList.push_back(&STROBE_NUM);
+    createCommonKmerList.push_back(&STROBE_LEN);
+    createCommonKmerList.push_back(&STROBE_WINDOW_START);
+    createCommonKmerList.push_back(&STROBE_WINDOW_END);
     createCommonKmerList.push_back(&GTDB);
     createCommonKmerList.push_back(&CDS_INFO);
     createCommonKmerList.push_back(&KMER_FORMAT);
@@ -717,6 +762,11 @@ LocalParameters::LocalParameters() :
     classify.push_back(&VALIDATE_DB);
     classify.push_back(&SYNCMER);
     classify.push_back(&SMER_LEN);
+    classify.push_back(&STROBEMER);
+    classify.push_back(&STROBE_NUM);
+    classify.push_back(&STROBE_LEN);
+    classify.push_back(&STROBE_WINDOW_START);
+    classify.push_back(&STROBE_WINDOW_END);
     classify.push_back(&PARAM_SUB_MAT);
     // classify.push_back(&KMER_FORMAT);
     classify.push_back(&PRINT_LOG);
@@ -754,6 +804,11 @@ LocalParameters::LocalParameters() :
     groupGeneration.push_back(&VALIDATE_INPUT);
     groupGeneration.push_back(&SYNCMER);
     groupGeneration.push_back(&SMER_LEN);
+    groupGeneration.push_back(&STROBEMER);
+    groupGeneration.push_back(&STROBE_NUM);
+    groupGeneration.push_back(&STROBE_LEN);
+    groupGeneration.push_back(&STROBE_WINDOW_START);
+    groupGeneration.push_back(&STROBE_WINDOW_END);
     groupGeneration.push_back(&MIN_EDGE_WEIGHT);
     groupGeneration.push_back(&NEIGHBOR_KMERS);
     groupGeneration.push_back(&PRINT_LOG);

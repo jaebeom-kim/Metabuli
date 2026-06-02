@@ -10,6 +10,10 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
     matchPerKmer = par.matchPerKmer;
     loadDbParameters(par, par.filenames[1 + (par.seqMode == 2)]);
     kmerFormat = par.kmerFormat;
+    if (par.strobemer && !par.spaceMask.empty()) {
+        std::cerr << "Error: Spaced k-mer and strobemer are mutually exclusive." << std::endl;
+        exit(EXIT_FAILURE);
+    }
     if (par.dbTotalLength == 0) {
         par.dbTotalLength = readDbSize(par.filenames[1 + (par.seqMode == 2)]);
     }

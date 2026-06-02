@@ -10,6 +10,11 @@ void setDefaults(LocalParameters & par){
     par.kmerFormat = 3;
     par.syncmer = 0;
     par.smerLen = 5;
+    par.strobemer = 0;
+    par.strobeNum = 3;
+    par.strobeLen = 3;
+    par.strobeWindowStart = 2;
+    par.strobeWindowEnd = 4;
     par.gtdb = 0;
     par.makeLibrary = 0;
     par.ramUsage = 128;

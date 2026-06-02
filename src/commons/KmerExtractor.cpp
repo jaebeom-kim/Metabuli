@@ -1,6 +1,14 @@
 #include "KmerExtractor.h"
 #include <unordered_map>
 
+#ifdef _OPENMP
+#include <omp.h>
+#else
+static inline int omp_get_thread_num() {
+    return 0;
+}
+#endif
+
 KmerExtractor::KmerExtractor(
     const LocalParameters &par,
     const GeneticCode * geneticCode,
@@ -48,6 +56,9 @@ KmerExtractor::KmerExtractor(
     // Initialize k-mer scanners for each thread
     kmerLen = metamerPattern->kmerLen;
     windowSize = metamerPattern->windowSize;
+    if (par.strobemer) {
+        windowSize = par.strobeLen + (par.strobeNum - 1) * (par.strobeLen - 1 + par.strobeWindowEnd);
+    }
     kmerScanners = metamerPattern->createScanners(par);
     spaceNum = 0;
     maskMode = par.maskMode;
@@ -702,7 +713,12 @@ void KmerExtractor::fillQueryKmerBuffer(
             kmerScanners[threadID]->initScanner(seq, begin, begin + usedLen - 1, isForward);
             Kmer kmer;
             while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
-                kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
+                kmerBuffer.buffer[posToWrite++] = {
+                    kmer.value,
+                    seqID,
+                    kmer.pos + offset,
+                    (uint8_t) frame,
+                    (uint8_t) kmer.qInfo.strobeOffsets};
             }
         } else {
             int begin, end;
@@ -716,7 +732,12 @@ void KmerExtractor::fillQueryKmerBuffer(
             kmerScanners[threadID]->initScanner(seq, begin, end, isForward);
             Kmer kmer;
             while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
-                kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset, (uint8_t) frame};
+                kmerBuffer.buffer[posToWrite++] = {
+                    kmer.value,
+                    seqID,
+                    kmer.pos + offset,
+                    (uint8_t) frame,
+                    (uint8_t) kmer.qInfo.strobeOffsets};
             }
 
             // Extract neighbor k-mers considering post-mortem DNA damage 
@@ -806,7 +827,12 @@ void KmerExtractor::generatePDMNeighborKmers(
                 kmerScanners[threadID]->initScanner(mutatedKmer, 0, dnaKmerLen - 1, true);
                 Kmer kmer = kmerScanners[threadID]->next();
                 if (kmer.value != UINT64_MAX) {
-                    kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset + start, (uint8_t) frame};
+                    kmerBuffer.buffer[posToWrite++] = {
+                        kmer.value,
+                        seqID,
+                        kmer.pos + offset + start,
+                        (uint8_t) frame,
+                        (uint8_t) kmer.qInfo.strobeOffsets};
                     // cout << (int) frame << "\t" << kmer.pos + offset + start << "\t" << flush;
                     // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
                 }
@@ -814,7 +840,12 @@ void KmerExtractor::generatePDMNeighborKmers(
                 kmerScanners[threadID]->initScanner(mutatedKmer, 0, dnaKmerLen - 1, false);
                 kmer = kmerScanners[threadID]->next();
                 if (kmer.value != UINT64_MAX) {
-                    kmerBuffer.buffer[posToWrite++] = {kmer.value, seqID, kmer.pos + offset + start, (uint8_t)frameCoversion[seqLen % 3][frame]}; 
+                    kmerBuffer.buffer[posToWrite++] = {
+                        kmer.value,
+                        seqID,
+                        kmer.pos + offset + start,
+                        (uint8_t)frameCoversion[seqLen % 3][frame],
+                        (uint8_t) kmer.qInfo.strobeOffsets};
                     // cout << (int) frameCoversion[seqLen % 3][frame] << "\t" << kmer.pos + offset + start << "\t" << flush;
                     // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << endl;
                 }
@@ -1426,6 +1457,3 @@ void KmerExtractor::processSequenceChunk(
         
     }
 }
-
-
-

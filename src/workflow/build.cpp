@@ -14,6 +14,11 @@ void setDefaults_build(LocalParameters & par) {
     par.spaceMask = "";
     par.syncmer = 0;
     par.smerLen = 5;
+    par.strobemer = 0;
+    par.strobeNum = 3;
+    par.strobeLen = 3;
+    par.strobeWindowStart = 2;
+    par.strobeWindowEnd = 3;
     par.gtdb = 0;
     par.makeLibrary = 0;
     par.ramUsage = 128;

@@ -15,7 +15,8 @@ Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *tax
     metamerPattern(metamerPattern), 
     kmerLen(metamerPattern->kmerLen), 
     windowSize(metamerPattern->windowSize),
-    windowMask((1U << windowSize) - 1)
+    windowMask(metamerPattern->windowSize >= 32 ? UINT32_MAX : ((1U << metamerPattern->windowSize) - 1)),
+    strobemerSpan(metamerPattern->windowSize)
 {
     if (par.substitutionMatrices.empty()) {
         substitutionMatrix = nullptr;
@@ -29,7 +30,15 @@ Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *tax
 
     dnaShift = 3;
     maxCodonShift = 1; // 1 by default when NO sycmer AND NO spacing
-    if (par.syncmer && (kmerLen != windowSize)) {
+    if (par.strobemer) {
+        strobemerSpan = par.strobeLen + (par.strobeNum - 1) * (par.strobeLen - 1 + par.strobeWindowEnd);
+        windowSize = strobemerSpan;
+        windowMask = windowSize >= 32 ? UINT32_MAX : ((1U << windowSize) - 1);
+        maxCodonShift = par.strobeLen - 1 + par.strobeWindowEnd;
+        dnaShift = par.strobeLen * 3;
+        bitPerCodon = (static_cast<const SingleCodePattern*>(metamerPattern))->bitPerCodon;
+        bitPerAA = (static_cast<const SingleCodePattern*>(metamerPattern))->bitPerAA;
+    } else if (par.syncmer && (kmerLen != windowSize)) {
         // Both syncmer AND spacing
         maxCodonShift = getFirstOneAfterFirstZero(metamerPattern->spaceMask) * 2;
         dnaShift = (kmerLen - par.smerLen) * 3;
@@ -386,7 +395,9 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
                 i ++;
             }
             if (i - frameStart > 1) {
-                if (windowSize == kmerLen) {
+                if (par.strobemer) {
+                    getStrobeMatchPaths(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
+                } else if (windowSize == kmerLen) {
                     getMatchPaths(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
                 } else {
                     getSpacedMatchPaths(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
@@ -569,7 +580,7 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
                         break;
                     }
 
-                    if (windowSize == kmerLen) {
+                    if (windowSize == kmerLen || par.strobemer) {
                         bool trimmed = trimMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
                         if (!trimmed) {
                             isOverlapped = true;
@@ -679,6 +690,9 @@ bool Taxonomer<MatchType>::trimMatchPath(
         overlapAaNum = windowSize;
     } else {
         overlapAaNum = overlapLength / 3;
+    }
+    if (par.strobemer) {
+        overlapAaNum = min(overlapAaNum, kmerLen);
     }
     int extraPanelty = overlapLength - overlapAaNum * 3;
 
@@ -912,6 +926,302 @@ void Taxonomer<MatchType>::getMatchPaths(
                 prevIdx = localMatchPaths[prevIdx].prevMatchIdx;
             }
             
+            filteredMatchPaths.push_back(localMatchPaths[curIdx]);
+        }
+    }
+}
+
+
+template <typename MatchType>
+std::vector<int> Taxonomer<MatchType>::getStrobeRelativeStarts(
+    const MatchType * match
+) const
+{
+    std::vector<int> starts(par.strobeNum, 0);
+    if (par.strobeNum == 3 && par.strobeWindowStart == 2 && par.strobeWindowEnd == 4) {
+        const uint8_t code = static_cast<uint8_t>(match->qKmer.qInfo.strobeOffsets);
+        const int baseDelta = par.strobeLen - 1 + par.strobeWindowStart;
+        starts[1] = starts[0] + baseDelta + (code & 0x3);
+        starts[2] = starts[1] + baseDelta + ((code >> 2) & 0x3);
+    } else {
+        for (int i = 1; i < par.strobeNum; ++i) {
+            starts[i] = starts[i - 1] + par.strobeLen - 1 + par.strobeWindowEnd;
+        }
+    }
+
+    if (match->qKmer.qInfo.frame >= 3) {
+        const int lastStart = starts.back();
+        for (int & start : starts) {
+            start = lastStart - start;
+        }
+    }
+
+    return starts;
+}
+
+template <typename MatchType>
+uint32_t Taxonomer<MatchType>::makeStrobeSpaceMask(
+    const MatchType * match
+) const
+{
+    const std::vector<int> starts = getStrobeRelativeStarts(match);
+    uint32_t mask = 0;
+    for (int start : starts) {
+        for (int i = 0; i < par.strobeLen; ++i) {
+            const int pos = start + i;
+            if (pos >= 0 && pos < 32) {
+                mask |= (1U << pos);
+            }
+        }
+    }
+    return mask;
+}
+
+template <typename MatchType>
+uint64_t Taxonomer<MatchType>::disperseStrobeBits(
+    uint64_t value,
+    const MatchType * match,
+    int chunkBits,
+    bool aaPart
+) const
+{
+    const std::vector<int> starts = getStrobeRelativeStarts(match);
+    const bool isForward = match->qKmer.qInfo.frame < 3;
+    const uint64_t source = aaPart ? (value >> metamerPattern->totalDNABits)
+                                   : (value & metamerPattern->dnaMask);
+    const uint64_t chunkMask = (1ULL << chunkBits) - 1;
+    uint64_t result = 0;
+
+    for (int strobeIdx = 0; strobeIdx < par.strobeNum; ++strobeIdx) {
+        for (int physicalOffset = 0; physicalOffset < par.strobeLen; ++physicalOffset) {
+            const int packedOffset = isForward
+                ? physicalOffset
+                : par.strobeLen - physicalOffset - 1;
+            const int packedPos = (par.strobeNum - 1 - strobeIdx) * par.strobeLen
+                                  + (par.strobeLen - packedOffset - 1);
+            const int physicalPos = starts[strobeIdx] + physicalOffset;
+            const uint64_t chunk = (source >> (packedPos * chunkBits)) & chunkMask;
+            result |= chunk << (physicalPos * chunkBits);
+        }
+    }
+
+    return result;
+}
+
+template <typename MatchType>
+void Taxonomer<MatchType>::makeStrobeMatchPath(
+    const MatchType * match,
+    size_t index)
+{
+    localMatchPaths[index] = MatchPath<MatchType>(
+        match,
+        metamerPattern->calMatchScore(match->qKmer.value, match->tKmer.value),
+        kmerLen,
+        strobemerSpan * 3);
+
+    const uint32_t strobeMask = makeStrobeSpaceMask(match);
+    localMatchPaths[index].lastHistoryMask = strobeMask;
+    localMatchPaths[index].lastAAs = disperseStrobeBits(
+        match->tKmer.value,
+        match,
+        bitPerAA,
+        true);
+    localMatchPaths[index].lastCodons_t = disperseStrobeBits(
+        match->tKmer.value,
+        match,
+        bitPerCodon,
+        false);
+    localMatchPaths[index].lastCodons_q = disperseStrobeBits(
+        match->qKmer.value,
+        match,
+        bitPerCodon,
+        false);
+
+    localMatchPaths[index].firstHistoryMask = localMatchPaths[index].lastHistoryMask;
+    localMatchPaths[index].firstAAs         = localMatchPaths[index].lastAAs;
+    localMatchPaths[index].firstCodons_t    = localMatchPaths[index].lastCodons_t;
+    localMatchPaths[index].firstCodons_q    = localMatchPaths[index].lastCodons_q;
+}
+
+template <typename MatchType>
+void Taxonomer<MatchType>::getStrobeMatchPaths(
+    const MatchType * matchList,
+    size_t matchNum,
+    vector<MatchPath<MatchType>> & filteredMatchPaths,
+    TaxID speciesId)
+{
+    if (matchNum == 0) return;
+
+    size_t i = 0;
+    size_t currPos = matchList[0].qKmer.qInfo.pos;
+
+    int MIN_COVERED_POS = taxonomy->IsAncestor(eukaryotaTaxId, speciesId)
+                          ? static_cast<int>(par.minAaMatchEuk)
+                          : static_cast<int>(par.minAaMatch);
+
+    connectedToNext.assign(matchNum, false);
+    localMatchPaths.clear();
+    localMatchPaths.resize(matchNum);
+
+    size_t curPosMatchStart = i;
+    while (i < matchNum && matchList[i].qKmer.qInfo.pos == currPos) {
+        makeStrobeMatchPath(matchList + i, i);
+        ++i;
+    }
+    size_t curPosMatchEnd = i;
+
+    while (i < matchNum) {
+        const uint32_t nextPos = matchList[i].qKmer.qInfo.pos;
+        const size_t nextPosMatchStart = i;
+        while (i < matchNum && nextPos == matchList[i].qKmer.qInfo.pos) {
+            makeStrobeMatchPath(matchList + i, i);
+            ++i;
+        }
+        const size_t nextPosMatchEnd = i;
+
+        const int shift = (nextPos - currPos) / 3;
+        if (shift > 0 && shift <= maxCodonShift) {
+            for (size_t nextIdx = nextPosMatchStart; nextIdx < nextPosMatchEnd; ++nextIdx) {
+                const MatchPath<MatchType> * bestPath = nullptr;
+                uint64_t bestParentIdx = UINT64_MAX;
+                int bestNewCoveredPosCnt = kmerLen;
+                uint32_t bestHistoryMask = 0;
+                uint64_t bestLastAAs = 0;
+                uint64_t bestLastCodons_t = 0;
+                uint64_t bestLastCodons_q = 0;
+                MatchScore bestScore;
+
+                for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
+                    const bool isForward = matchList[curIdx].qKmer.qInfo.frame < 3;
+                    const uint32_t shiftedHistoryMask = isForward
+                        ? ((localMatchPaths[curIdx].lastHistoryMask << shift) & windowMask)
+                        : (localMatchPaths[curIdx].lastHistoryMask >> shift);
+                    const uint32_t nextStrobeMask = localMatchPaths[nextIdx].lastHistoryMask;
+                    const uint32_t checkPos = shiftedHistoryMask & nextStrobeMask;
+                    const uint64_t checkCodonMask = stretchBits(checkPos, bitPerCodon);
+                    const uint64_t checkAAMask = stretchBits(checkPos, bitPerAA);
+
+                    const uint64_t shiftedLastCodons_t = isForward
+                        ? (localMatchPaths[curIdx].lastCodons_t << (shift * bitPerCodon))
+                        : (localMatchPaths[curIdx].lastCodons_t >> (shift * bitPerCodon));
+                    const uint64_t shiftedLastAAs = isForward
+                        ? (localMatchPaths[curIdx].lastAAs << (shift * bitPerAA))
+                        : (localMatchPaths[curIdx].lastAAs >> (shift * bitPerAA));
+
+                    if ((shiftedLastCodons_t & checkCodonMask) !=
+                            (localMatchPaths[nextIdx].lastCodons_t & checkCodonMask) ||
+                        (shiftedLastAAs & checkAAMask) !=
+                            (localMatchPaths[nextIdx].lastAAs & checkAAMask)) {
+                        continue;
+                    }
+
+                    connectedToNext[curIdx] = true;
+
+                    const uint32_t validPosMask = nextStrobeMask & (~shiftedHistoryMask);
+                    MatchScore nextScore = metamerPattern->calMatchScore(
+                        localMatchPaths[nextIdx].lastAAs,
+                        localMatchPaths[nextIdx].lastCodons_t,
+                        localMatchPaths[nextIdx].lastCodons_q,
+                        validPosMask);
+                    const MatchScore totalScore = localMatchPaths[curIdx].score + nextScore;
+
+                    if (totalScore.isLargerThan(bestScore, par.scoreMode)) {
+                        const uint64_t shiftedLastCodons_q = isForward
+                            ? (localMatchPaths[curIdx].lastCodons_q << (shift * bitPerCodon))
+                            : (localMatchPaths[curIdx].lastCodons_q >> (shift * bitPerCodon));
+                        bestPath = &localMatchPaths[curIdx];
+                        bestParentIdx = curIdx;
+                        bestNewCoveredPosCnt = __builtin_popcount(static_cast<unsigned int>(validPosMask));
+                        bestHistoryMask = shiftedHistoryMask | nextStrobeMask;
+                        bestLastAAs = shiftedLastAAs | localMatchPaths[nextIdx].lastAAs;
+                        bestLastCodons_t = shiftedLastCodons_t | localMatchPaths[nextIdx].lastCodons_t;
+                        bestLastCodons_q = shiftedLastCodons_q | localMatchPaths[nextIdx].lastCodons_q;
+                        bestScore = totalScore;
+                    }
+                }
+
+                if (bestPath != nullptr) {
+                    connectedToNext[bestParentIdx] = true;
+                    const bool isForward = matchList[nextIdx].qKmer.qInfo.frame < 3;
+                    const int depth = (localMatchPaths[nextIdx].start - bestPath->start) / 3;
+                    if (depth < windowSize) {
+                        const uint32_t shiftedFirstHistoryMask = isForward
+                            ? (localMatchPaths[nextIdx].firstHistoryMask >> depth)
+                            : ((localMatchPaths[nextIdx].firstHistoryMask << depth) & windowMask);
+                        localMatchPaths[nextIdx].firstHistoryMask =
+                            shiftedFirstHistoryMask | bestPath->firstHistoryMask;
+
+                        const uint64_t shiftedFirstCodons_t = isForward
+                            ? (localMatchPaths[nextIdx].firstCodons_t >> (depth * bitPerCodon))
+                            : (localMatchPaths[nextIdx].firstCodons_t << (depth * bitPerCodon));
+                        localMatchPaths[nextIdx].firstCodons_t =
+                            shiftedFirstCodons_t | bestPath->firstCodons_t;
+
+                        const uint64_t shiftedFirstCodons_q = isForward
+                            ? (localMatchPaths[nextIdx].firstCodons_q >> (depth * bitPerCodon))
+                            : (localMatchPaths[nextIdx].firstCodons_q << (depth * bitPerCodon));
+                        localMatchPaths[nextIdx].firstCodons_q =
+                            shiftedFirstCodons_q | bestPath->firstCodons_q;
+
+                        const uint64_t shiftedFirstAAs = isForward
+                            ? (localMatchPaths[nextIdx].firstAAs >> (depth * bitPerAA))
+                            : (localMatchPaths[nextIdx].firstAAs << (depth * bitPerAA));
+                        localMatchPaths[nextIdx].firstAAs =
+                            shiftedFirstAAs | bestPath->firstAAs;
+                    }
+
+                    localMatchPaths[nextIdx].start = bestPath->start;
+                    localMatchPaths[nextIdx].score = bestScore;
+                    localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + bestNewCoveredPosCnt;
+                    localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
+                    localMatchPaths[nextIdx].lastHistoryMask = bestHistoryMask;
+                    localMatchPaths[nextIdx].lastAAs = bestLastAAs;
+                    localMatchPaths[nextIdx].lastCodons_t = bestLastCodons_t;
+                    localMatchPaths[nextIdx].lastCodons_q = bestLastCodons_q;
+                    localMatchPaths[nextIdx].prevMatchIdx = bestParentIdx;
+                }
+            }
+        }
+
+        for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
+            if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
+                const float gapPenalty =
+                    max(0, (localMatchPaths[curIdx].end - localMatchPaths[curIdx].start + 1)
+                           - localMatchPaths[curIdx].coveredPosCnt * 3);
+                localMatchPaths[curIdx].score.idScore =
+                    max(0.0f, localMatchPaths[curIdx].score.idScore - gapPenalty);
+
+                uint64_t prevIdx = curIdx;
+                while (prevIdx != UINT64_MAX) {
+                    localMatchPaths[curIdx].chain.push_back(matchList + prevIdx);
+                    prevIdx = localMatchPaths[prevIdx].prevMatchIdx;
+                }
+                std::reverse(localMatchPaths[curIdx].chain.begin(), localMatchPaths[curIdx].chain.end());
+
+                filteredMatchPaths.push_back(localMatchPaths[curIdx]);
+            }
+        }
+
+        curPosMatchStart = nextPosMatchStart;
+        curPosMatchEnd = nextPosMatchEnd;
+        currPos = nextPos;
+    }
+
+    for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
+        if (localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
+            const float gapPenalty =
+                max(0, (localMatchPaths[curIdx].end - localMatchPaths[curIdx].start + 1)
+                       - localMatchPaths[curIdx].coveredPosCnt * 3);
+            localMatchPaths[curIdx].score.idScore =
+                max(0.0f, localMatchPaths[curIdx].score.idScore - gapPenalty);
+
+            uint64_t prevIdx = curIdx;
+            while (prevIdx != UINT64_MAX) {
+                localMatchPaths[curIdx].chain.push_back(matchList + prevIdx);
+                prevIdx = localMatchPaths[prevIdx].prevMatchIdx;
+            }
+            std::reverse(localMatchPaths[curIdx].chain.begin(), localMatchPaths[curIdx].chain.end());
+
             filteredMatchPaths.push_back(localMatchPaths[curIdx]);
         }
     }
@@ -1248,4 +1558,3 @@ void Taxonomer<MatchType>::ensureArraySize(size_t newSize) {
 
 template class Taxonomer<Match>;
 template class Taxonomer<MatchWithPos>;
-

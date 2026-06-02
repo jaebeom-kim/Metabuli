@@ -8,13 +8,14 @@
 #include "GeneticCode.h"
 
 struct QueryKmerInfo {
-    QueryKmerInfo(uint32_t sequenceID, uint32_t pos, uint8_t frame)
-        : pos(pos), sequenceID(sequenceID), frame(frame) {}
+    QueryKmerInfo(uint32_t sequenceID, uint32_t pos, uint8_t frame, uint8_t strobeOffsets = 0)
+        : pos(pos), sequenceID(sequenceID), frame(frame), strobeOffsets(strobeOffsets) {}
     QueryKmerInfo() = default;
     struct {
-        uint64_t pos        : 32; // 32 bits
-        uint64_t sequenceID : 29; // 29 bits
-        uint64_t frame      : 3;  // 3 bits
+        uint64_t pos           : 32; // 32 bits
+        uint64_t sequenceID    : 25; // 25 bits
+        uint64_t frame         : 3;  // 3 bits
+        uint64_t strobeOffsets : 4;  // 4 bits, two 2-bit deltas for default randstrobes
     };
 }; // 8 byte
 
@@ -52,8 +53,8 @@ struct Kmer {
 
     Kmer(uint64_t value, TaxID taxId, uint32_t pos) : value(value), tInfo(taxId, pos) {}
 
-    Kmer(uint64_t value, uint32_t seqId, uint32_t pos, uint8_t frame) 
-        : value(value), qInfo(seqId, pos, frame) {}
+    Kmer(uint64_t value, uint32_t seqId, uint32_t pos, uint8_t frame, uint8_t strobeOffsets = 0) 
+        : value(value), qInfo(seqId, pos, frame, strobeOffsets) {}
 
     bool isEmpty() const {
         return value == 0 && id == 0;
