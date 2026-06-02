@@ -146,6 +146,14 @@ private:
         const MatchType * match
     ) const;
 
+    int getStrobeSpan(
+        const MatchType * match
+    ) const;
+
+    uint32_t makeWindowMask(
+        int span
+    ) const;
+
     uint32_t makeStrobeSpaceMask(
         const MatchType * match
     ) const;
