@@ -28,6 +28,7 @@ protected:
 
     std::vector<int> strobeStarts;
     std::vector<StrobeValue> strobes;
+    std::vector<StrobeValue> strobeCache;
 
     static int checkedKmerSize(const GeneticCode &geneticCode, int strobeNum, int strobeLen) {
         if (strobeNum < 2) {
@@ -55,68 +56,95 @@ protected:
         return x ^ (x >> 31);
     }
 
-    StrobeValue extractStrobe(int aaStart) const {
-        StrobeValue result;
-        if (aaStart < 0 || aaStart + strobeLen > aaLen) {
-            return result;
+    bool decodePosition(int aaIndex, int &aa, int &codon) const {
+        int ci;
+        if (isForward) {
+            ci = seqStart + aaIndex * 3;
+            const int c0 = atcg[seq[ci]];
+            const int c1 = atcg[seq[ci + 1]];
+            const int c2 = atcg[seq[ci + 2]];
+            aa = geneticCode.getAA(c0, c1, c2);
+            codon = geneticCode.getCodon(c0, c1, c2);
+        } else {
+            ci = seqEnd - aaIndex * 3;
+            const int c0 = iRCT[atcg[seq[ci]]];
+            const int c1 = iRCT[atcg[seq[ci - 1]]];
+            const int c2 = iRCT[atcg[seq[ci - 2]]];
+            aa = geneticCode.getAA(c0, c1, c2);
+            codon = geneticCode.getCodon(c0, c1, c2);
         }
 
-        for (int i = 0; i < strobeLen; ++i) {
-            int ci;
-            int aa;
-            int codon;
-            if (isForward) {
-                ci = seqStart + (aaStart + i) * 3;
-                aa = geneticCode.getAA(
-                    atcg[seq[ci]],
-                    atcg[seq[ci + 1]],
-                    atcg[seq[ci + 2]]);
-                codon = geneticCode.getCodon(
-                    atcg[seq[ci]],
-                    atcg[seq[ci + 1]],
-                    atcg[seq[ci + 2]]);
-            } else {
-                ci = seqEnd - (aaStart + i) * 3;
-                aa = geneticCode.getAA(
-                    iRCT[atcg[seq[ci]]],
-                    iRCT[atcg[seq[ci - 1]]],
-                    iRCT[atcg[seq[ci - 2]]]);
-                codon = geneticCode.getCodon(
-                    iRCT[atcg[seq[ci]]],
-                    iRCT[atcg[seq[ci - 1]]],
-                    iRCT[atcg[seq[ci - 2]]]);
-            }
-
-            if (aa < 0) {
-                return result;
-            }
-
-            result.aa = (result.aa << bitsPerAA) | static_cast<uint64_t>(aa);
-            result.dna = (result.dna << bitsPerCodon) | static_cast<uint64_t>(codon);
-        }
-
-        result.hash = mix64(result.aa);
-        result.valid = true;
-        return result;
+        return aa >= 0;
     }
 
-    int chooseNextStrobeStart(uint64_t chainHash, int previousStart) const {
+    void buildStrobeCache() {
+        const size_t cacheSize = aaLen >= strobeLen
+            ? static_cast<size_t>(aaLen - strobeLen + 1)
+            : 0;
+        strobeCache.assign(cacheSize, StrobeValue());
+        if (cacheSize == 0) {
+            return;
+        }
+
+        const uint64_t strobeAAMask = (1ULL << (bitsPerAA * strobeLen)) - 1;
+        const uint64_t strobeDNAMask = (1ULL << (bitsPerCodon * strobeLen)) - 1;
+        std::vector<uint8_t> validAA(static_cast<size_t>(aaLen), 0);
+        uint64_t aaWindow = 0;
+        uint64_t dnaWindow = 0;
+        int invalidCount = 0;
+
+        for (int aaIndex = 0; aaIndex < aaLen; ++aaIndex) {
+            int aa = 0;
+            int codon = 0;
+            const bool valid = decodePosition(aaIndex, aa, codon);
+            validAA[aaIndex] = valid;
+            invalidCount += !valid;
+            aaWindow = ((aaWindow << bitsPerAA) | static_cast<uint64_t>(valid ? aa : 0)) & strobeAAMask;
+            dnaWindow = ((dnaWindow << bitsPerCodon) | static_cast<uint64_t>(valid ? codon : 0)) & strobeDNAMask;
+
+            if (aaIndex >= strobeLen) {
+                invalidCount -= !validAA[aaIndex - strobeLen];
+            }
+            if (aaIndex + 1 < strobeLen || invalidCount > 0) {
+                continue;
+            }
+
+            const int strobeStart = aaIndex - strobeLen + 1;
+            StrobeValue &strobe = strobeCache[strobeStart];
+            strobe.aa = aaWindow;
+            strobe.dna = dnaWindow;
+            strobe.hash = mix64(strobe.aa);
+            strobe.valid = true;
+        }
+    }
+
+    StrobeValue extractStrobe(int aaStart) const {
+        if (aaStart < 0 || aaStart >= static_cast<int>(strobeCache.size())) {
+            return StrobeValue();
+        }
+
+        return strobeCache[aaStart];
+    }
+
+    int chooseNextStrobeStart(uint64_t chainHash, int previousStart, StrobeValue &bestStrobe) const {
         uint64_t bestHash = std::numeric_limits<uint64_t>::max();
         int bestStart = -1;
 
         const int previousLast = previousStart + strobeLen - 1;
-        const int begin = previousLast + windowStart;
-        const int end = previousLast + windowEnd;
+        const int begin = std::max(0, previousLast + windowStart);
+        const int end = std::min(static_cast<int>(strobeCache.size()) - 1, previousLast + windowEnd);
         for (int candidateStart = begin; candidateStart <= end; ++candidateStart) {
             StrobeValue candidate = extractStrobe(candidateStart);
             if (!candidate.valid) {
                 continue;
             }
 
-            uint64_t randstrobeHash = mix64(chainHash ^ candidate.hash ^ static_cast<uint64_t>(candidateStart));
+            const int candidateOffset = candidateStart - previousLast;
+            uint64_t randstrobeHash = mix64(chainHash ^ candidate.hash ^ static_cast<uint64_t>(candidateOffset));
             if (randstrobeHash < bestHash) {
                 bestHash = randstrobeHash;
                 bestStart = candidateStart;
+                bestStrobe = candidate;
             }
         }
 
@@ -132,14 +160,17 @@ protected:
 
         uint64_t chainHash = strobes[0].hash;
         for (int i = 1; i < strobeNum; ++i) {
-            int nextStart = chooseNextStrobeStart(chainHash, strobeStarts[i - 1]);
+            StrobeValue nextStrobe;
+            int nextStart = chooseNextStrobeStart(chainHash, strobeStarts[i - 1], nextStrobe);
             if (nextStart < 0) {
                 return false;
             }
 
             strobeStarts[i] = nextStart;
-            strobes[i] = extractStrobe(nextStart);
-            chainHash = mix64(chainHash ^ strobes[i].hash ^ static_cast<uint64_t>(nextStart));
+            strobes[i] = nextStrobe;
+            const int previousLast = strobeStarts[i - 1] + strobeLen - 1;
+            const int nextOffset = nextStart - previousLast;
+            chainHash = mix64(chainHash ^ strobes[i].hash ^ static_cast<uint64_t>(nextOffset));
         }
 
         return true;
@@ -174,7 +205,7 @@ protected:
     }
 
     uint8_t packDefaultOffsets() const {
-        if (strobeNum != 3 || windowStart != 2 || windowEnd != 4) {
+        if (strobeNum != 3 || windowEnd - windowStart > 3) {
             return 0;
         }
 
@@ -256,6 +287,7 @@ public:
         MetamerScanner::initScanner(seq, seqStart, seqEnd, isForward);
         std::fill(strobeStarts.begin(), strobeStarts.end(), 0);
         std::fill(strobes.begin(), strobes.end(), StrobeValue());
+        buildStrobeCache();
     }
 
     Kmer next() override {

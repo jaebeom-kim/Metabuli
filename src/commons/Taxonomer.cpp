@@ -938,7 +938,7 @@ std::vector<int> Taxonomer<MatchType>::getStrobeRelativeStarts(
 ) const
 {
     std::vector<int> starts(par.strobeNum, 0);
-    if (par.strobeNum == 3 && par.strobeWindowStart == 2 && par.strobeWindowEnd == 4) {
+    if (par.strobeNum == 3 && par.strobeWindowEnd - par.strobeWindowStart <= 3) {
         const uint8_t code = static_cast<uint8_t>(match->qKmer.qInfo.strobeOffsets);
         const int baseDelta = par.strobeLen - 1 + par.strobeWindowStart;
         starts[1] = starts[0] + baseDelta + (code & 0x3);
