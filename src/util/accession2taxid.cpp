@@ -72,7 +72,7 @@ int accession2taxid(const std::string & assemblyList, const std::string & assacc
     vector<string> unmapped;
     regex regex1;
     if (mode == 1) {
-        regex1 = regex("(GCA_[0-9]+\\.[0-9]+)");
+        regex1 = regex("(GC[AF]_[0-9]+\\.[0-9]+)");
     } else {
         regex1 = regex("HROM_Genome_\\d{4}");
     }
