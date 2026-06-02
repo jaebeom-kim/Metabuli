@@ -34,7 +34,7 @@ Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *tax
         strobemerSpan = par.strobeLen + (par.strobeNum - 1) * (par.strobeLen - 1 + par.strobeWindowEnd);
         windowSize = strobemerSpan;
         windowMask = windowSize >= 32 ? UINT32_MAX : ((1U << windowSize) - 1);
-        maxCodonShift = par.strobeLen - 1 + par.strobeWindowEnd;
+        maxCodonShift = strobemerSpan - par.strobeLen;
         dnaShift = par.strobeLen * 3;
         bitPerCodon = (static_cast<const SingleCodePattern*>(metamerPattern))->bitPerCodon;
         bitPerAA = (static_cast<const SingleCodePattern*>(metamerPattern))->bitPerAA;
