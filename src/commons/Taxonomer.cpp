@@ -580,7 +580,13 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
                         break;
                     }
 
-                    if (windowSize == kmerLen || par.strobemer) {
+                    if (par.strobemer) {
+                        bool trimmed = trimStrobeMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
+                        if (!trimmed) {
+                            isOverlapped = true;
+                            break;
+                        }
+                    } else if (windowSize == kmerLen) {
                         bool trimmed = trimMatchPath(matchPaths[i], combinedMatchPaths[j], overlappedLength);
                         if (!trimmed) {
                             isOverlapped = true;
@@ -676,6 +682,56 @@ bool Taxonomer<MatchType>::trimSpacedMatchPath(
 
     newPath.score.idScore = max(0.0f, newPath.score.idScore);
     
+    return true;
+}
+
+template <typename MatchType>
+bool Taxonomer<MatchType>::trimStrobeMatchPath(
+    MatchPath<MatchType> & newPath,
+    const MatchPath<MatchType> & existingPath,
+    int overlapLength)
+{
+    if (newPath.start < existingPath.start) {
+        if (newPath.rightEndTrimmed) return false;
+        newPath.rightEndTrimmed = true;
+
+        const int strobeSpan = getStrobeSpan(newPath.endMatch);
+        const int overlapAaNum = std::min(overlapLength / 3, strobeSpan);
+        const int extraPanelty = overlapLength - overlapAaNum * 3;
+        const uint32_t baseMask = makeWindowMask(overlapAaNum);
+        const uint32_t validPosMask = newPath.endMatch->qKmer.qInfo.frame < 3
+            ? (newPath.lastHistoryMask & baseMask)
+            : (newPath.lastHistoryMask & (baseMask << (strobeSpan - overlapAaNum)));
+
+        newPath.end = existingPath.start - 1;
+        newPath.score -= metamerPattern->calMatchScore(
+            newPath.lastAAs,
+            newPath.lastCodons_t,
+            newPath.lastCodons_q,
+            validPosMask);
+        newPath.score.idScore -= extraPanelty;
+    } else {
+        if (newPath.leftEndTrimmed) return false;
+        newPath.leftEndTrimmed = true;
+
+        const int strobeSpan = getStrobeSpan(newPath.startMatch);
+        const int overlapAaNum = std::min(overlapLength / 3, strobeSpan);
+        const int extraPanelty = overlapLength - overlapAaNum * 3;
+        const uint32_t baseMask = makeWindowMask(overlapAaNum);
+        const uint32_t validPosMask = newPath.startMatch->qKmer.qInfo.frame < 3
+            ? (newPath.firstHistoryMask & (baseMask << (strobeSpan - overlapAaNum)))
+            : (newPath.firstHistoryMask & baseMask);
+
+        newPath.start = existingPath.end + 1;
+        newPath.score -= metamerPattern->calMatchScore(
+            newPath.firstAAs,
+            newPath.firstCodons_t,
+            newPath.firstCodons_q,
+            validPosMask);
+        newPath.score.idScore -= extraPanelty;
+    }
+
+    newPath.score.idScore = max(0.0f, newPath.score.idScore);
     return true;
 }
 
@@ -1119,30 +1175,31 @@ void Taxonomer<MatchType>::getStrobeMatchPaths(
                 uint64_t bestLastCodons_t = 0;
                 uint64_t bestLastCodons_q = 0;
                 int bestEnd = 0;
+                const MatchType *bestEndMatch = nullptr;
                 MatchScore bestScore;
+
+                const auto shiftMask = [](uint32_t value, int shiftCount) -> uint32_t {
+                    if (shiftCount >= 32 || shiftCount <= -32) {
+                        return 0;
+                    }
+                    return shiftCount >= 0
+                        ? (value << shiftCount)
+                        : (value >> -shiftCount);
+                };
+                const auto shiftValue = [](uint64_t value, int shiftCount) -> uint64_t {
+                    if (shiftCount >= 64 || shiftCount <= -64) {
+                        return 0;
+                    }
+                    return shiftCount >= 0
+                        ? (value << shiftCount)
+                        : (value >> -shiftCount);
+                };
 
                 for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
                     const int curStrobeSpan = getStrobeSpan(localMatchPaths[curIdx].endMatch);
                     const int nextStrobeSpan = getStrobeSpan(localMatchPaths[nextIdx].endMatch);
                     const uint32_t nextWindowMask = makeWindowMask(nextStrobeSpan);
                     const int basisShift = shift + nextStrobeSpan - curStrobeSpan;
-
-                    const auto shiftMask = [](uint32_t value, int shiftCount) -> uint32_t {
-                        if (shiftCount >= 32 || shiftCount <= -32) {
-                            return 0;
-                        }
-                        return shiftCount >= 0
-                            ? (value << shiftCount)
-                            : (value >> -shiftCount);
-                    };
-                    const auto shiftValue = [](uint64_t value, int shiftCount) -> uint64_t {
-                        if (shiftCount >= 64 || shiftCount <= -64) {
-                            return 0;
-                        }
-                        return shiftCount >= 0
-                            ? (value << shiftCount)
-                            : (value >> -shiftCount);
-                    };
 
                     const uint32_t shiftedHistoryMask =
                         shiftMask(localMatchPaths[curIdx].lastHistoryMask, basisShift) & nextWindowMask;
@@ -1182,11 +1239,31 @@ void Taxonomer<MatchType>::getStrobeMatchPaths(
                         bestPath = &localMatchPaths[curIdx];
                         bestParentIdx = curIdx;
                         bestNewCoveredPosCnt = __builtin_popcount(static_cast<unsigned int>(validPosMask));
-                        bestHistoryMask = shiftedHistoryMask | nextStrobeMask;
-                        bestLastAAs = shiftedLastAAs | nextLastAAs;
-                        bestLastCodons_t = shiftedLastCodons_t | nextLastCodons_t;
-                        bestLastCodons_q = shiftedLastCodons_q | nextLastCodons_q;
-                        bestEnd = std::max(localMatchPaths[curIdx].end, localMatchPaths[nextIdx].end);
+                        if (localMatchPaths[curIdx].end >= localMatchPaths[nextIdx].end) {
+                            const int nextToCurShift = curStrobeSpan - nextStrobeSpan - shift;
+                            const uint32_t curWindowMask = makeWindowMask(curStrobeSpan);
+                            const uint32_t shiftedNextMask =
+                                shiftMask(nextStrobeMask, nextToCurShift) & curWindowMask;
+                            bestHistoryMask = localMatchPaths[curIdx].lastHistoryMask | shiftedNextMask;
+                            bestLastAAs = localMatchPaths[curIdx].lastAAs |
+                                shiftValue(nextLastAAs, nextToCurShift * bitPerAA);
+                            bestLastCodons_t = localMatchPaths[curIdx].lastCodons_t |
+                                shiftValue(nextLastCodons_t, nextToCurShift * bitPerCodon);
+                            bestLastCodons_q = localMatchPaths[curIdx].lastCodons_q |
+                                shiftValue(nextLastCodons_q, nextToCurShift * bitPerCodon);
+                            bestEnd = localMatchPaths[curIdx].end;
+                            bestEndMatch = localMatchPaths[curIdx].endMatch;
+                        } else {
+                            bestHistoryMask = shiftedHistoryMask | nextStrobeMask;
+                            bestLastAAs = shiftedLastAAs | nextLastAAs;
+                            bestLastCodons_t = shiftedLastCodons_t | nextLastCodons_t;
+                            bestLastCodons_q = shiftedLastCodons_q | nextLastCodons_q;
+                            bestEnd = localMatchPaths[nextIdx].end;
+                            bestEndMatch = matchList + nextIdx;
+                        }
+                        bestLastAAs &= stretchBits(bestHistoryMask, bitPerAA);
+                        bestLastCodons_t &= stretchBits(bestHistoryMask, bitPerCodon);
+                        bestLastCodons_q &= stretchBits(bestHistoryMask, bitPerCodon);
                         bestScore = totalScore;
                     }
                 }
@@ -1198,15 +1275,35 @@ void Taxonomer<MatchType>::getStrobeMatchPaths(
                     localMatchPaths[nextIdx].score = bestScore;
                     localMatchPaths[nextIdx].coveredPosCnt = bestPath->coveredPosCnt + bestNewCoveredPosCnt;
                     localMatchPaths[nextIdx].startMatch = bestPath->startMatch;
-                    localMatchPaths[nextIdx].endMatch = matchList + nextIdx;
+                    localMatchPaths[nextIdx].endMatch = bestEndMatch;
                     localMatchPaths[nextIdx].lastHistoryMask = bestHistoryMask;
                     localMatchPaths[nextIdx].lastAAs = bestLastAAs;
                     localMatchPaths[nextIdx].lastCodons_t = bestLastCodons_t;
                     localMatchPaths[nextIdx].lastCodons_q = bestLastCodons_q;
-                    localMatchPaths[nextIdx].firstHistoryMask = bestHistoryMask;
-                    localMatchPaths[nextIdx].firstAAs = bestLastAAs;
-                    localMatchPaths[nextIdx].firstCodons_t = bestLastCodons_t;
-                    localMatchPaths[nextIdx].firstCodons_q = bestLastCodons_q;
+
+                    const int startStrobeSpan = getStrobeSpan(bestPath->startMatch);
+                    const int nextStrobeSpan = getStrobeSpan(matchList + nextIdx);
+                    const int depth = (matchList[nextIdx].qKmer.qInfo.pos - bestPath->start) / 3;
+                    const int firstBasisShift = startStrobeSpan - nextStrobeSpan - depth;
+                    const uint32_t startWindowMask = makeWindowMask(startStrobeSpan);
+                    localMatchPaths[nextIdx].firstHistoryMask =
+                        bestPath->firstHistoryMask |
+                        (shiftMask(localMatchPaths[nextIdx].firstHistoryMask, firstBasisShift) & startWindowMask);
+                    localMatchPaths[nextIdx].firstAAs =
+                        bestPath->firstAAs |
+                        shiftValue(localMatchPaths[nextIdx].firstAAs, firstBasisShift * bitPerAA);
+                    localMatchPaths[nextIdx].firstCodons_t =
+                        bestPath->firstCodons_t |
+                        shiftValue(localMatchPaths[nextIdx].firstCodons_t, firstBasisShift * bitPerCodon);
+                    localMatchPaths[nextIdx].firstCodons_q =
+                        bestPath->firstCodons_q |
+                        shiftValue(localMatchPaths[nextIdx].firstCodons_q, firstBasisShift * bitPerCodon);
+                    localMatchPaths[nextIdx].firstAAs &=
+                        stretchBits(localMatchPaths[nextIdx].firstHistoryMask, bitPerAA);
+                    localMatchPaths[nextIdx].firstCodons_t &=
+                        stretchBits(localMatchPaths[nextIdx].firstHistoryMask, bitPerCodon);
+                    localMatchPaths[nextIdx].firstCodons_q &=
+                        stretchBits(localMatchPaths[nextIdx].firstHistoryMask, bitPerCodon);
                     localMatchPaths[nextIdx].prevMatchIdx = bestParentIdx;
                 }
             }
