@@ -15,7 +15,7 @@ protected:
     int strobeLen;
     int windowStart;
     int windowEnd;
-    int maxSpan;
+    int minSpan;
     int syncmerSmerLen;
     uint64_t syncmerSmerMask;
 
@@ -140,7 +140,7 @@ protected:
             }
 
             const int candidateOffset = candidateStart - previousLast;
-            uint64_t randstrobeHash = mix64(chainHash ^ candidate.hash ^ static_cast<uint64_t>(candidateOffset));
+            uint64_t randstrobeHash = mix64(chainHash ^ static_cast<uint64_t>(candidateOffset));
             if (randstrobeHash < bestHash) {
                 bestHash = randstrobeHash;
                 bestStart = candidateStart;
@@ -236,7 +236,7 @@ public:
           strobeLen(strobeLen),
           windowStart(windowStart),
           windowEnd(windowEnd),
-          maxSpan(strobeLen + (strobeNum - 1) * (strobeLen - 1 + windowEnd)),
+          minSpan(strobeLen + (strobeNum - 1) * (strobeLen - 1 + windowStart)),
           syncmerSmerLen(syncmerSmerLen),
           syncmerSmerMask(0)
     {
@@ -291,7 +291,7 @@ public:
     }
 
     Kmer next() override {
-        while (posStart <= aaLen - maxSpan) {
+        while (posStart <= aaLen - minSpan) {
             if (!buildRandstrobe(posStart)) {
                 ++posStart;
                 continue;

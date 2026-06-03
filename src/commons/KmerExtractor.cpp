@@ -57,7 +57,7 @@ KmerExtractor::KmerExtractor(
     kmerLen = metamerPattern->kmerLen;
     windowSize = metamerPattern->windowSize;
     if (par.strobemer) {
-        windowSize = par.strobeLen + (par.strobeNum - 1) * (par.strobeLen - 1 + par.strobeWindowEnd);
+        windowSize = par.strobeLen + (par.strobeNum - 1) * (par.strobeLen - 1 + par.strobeWindowStart);
     }
     kmerScanners = metamerPattern->createScanners(par);
     spaceNum = 0;
