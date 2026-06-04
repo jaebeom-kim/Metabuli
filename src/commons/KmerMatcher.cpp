@@ -3,6 +3,7 @@
 #include "IndexCreator.h"
 #include "Kmer.h"
 #include "Mmap.h"
+#include <chrono>
 #include <ostream>
 #include <vector>
 
@@ -406,6 +407,13 @@ std::vector<QueryKmerSplit> KmerMatcher::makeQueryKmerSplits(
     const Buffer<Kmer> * qKmers,
     const string & dbDir) 
 {
+    auto beforeSplit = std::chrono::steady_clock::now();
+    auto printSplitTime = [&beforeSplit]() {
+        auto afterSplit = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed = afterSplit - beforeSplit;
+        std::cout << "Query k-mer splitting  : " << elapsed.count() << " s" << std::endl;
+    };
+
     size_t blankCnt = std::find_if(qKmers->buffer,
                                    qKmers->buffer + qKmers->startIndexOfReserve, 
                                    [](const auto& kmer) { return kmer.id != 0;}
@@ -417,39 +425,110 @@ std::vector<QueryKmerSplit> KmerMatcher::makeQueryKmerSplits(
     string diffIdxSplitFileName = dbDir + "/split";
     MmapedData<DiffIdxSplit> diffIdxSplits = mmapData<DiffIdxSplit>(diffIdxSplitFileName.c_str(), 3);
     size_t numOfDiffIdxSplits = diffIdxSplits.fileSize / sizeof(DiffIdxSplit);
-    size_t numOfDiffIdxSplits_use = numOfDiffIdxSplits;
-    for (size_t i = 1; i < numOfDiffIdxSplits; i++) {
-        if (diffIdxSplits.data[i].ADkmer == 0 || diffIdxSplits.data[i].ADkmer == UINT64_MAX) {
-            numOfDiffIdxSplits_use--;
+
+    std::vector<DiffIdxSplit> targetSplits;
+    targetSplits.reserve(numOfDiffIdxSplits);
+    for (size_t i = 0; i < numOfDiffIdxSplits; i++) {
+        if (i == 0 || (diffIdxSplits.data[i].ADkmer != 0 && diffIdxSplits.data[i].ADkmer != UINT64_MAX)) {
+            targetSplits.push_back(diffIdxSplits.data[i]);
         }
     }
 
-    // Divide query k-mer list into blocks for multi threading.
     std::vector<QueryKmerSplit> querySplits;
-    size_t quotient = queryKmerNum / par.threads;
-    size_t remainder = queryKmerNum % par.threads;
-    size_t startIdx = blankCnt;
-    size_t endIdx = 0; // endIdx is inclusive
-    for (int i = 0; i < par.threads; i++) {
-        endIdx = startIdx + quotient - 1;
-        if (remainder > 0) {
-            endIdx++;
-            remainder--;
-        }
-        bool needLastTargetBlock = true;
-        uint64_t queryAA = AminoAcidPart(qKmers->buffer[startIdx].value);
-        for (size_t j = 0; j < numOfDiffIdxSplits_use; j ++) {
-            if (queryAA <= AminoAcidPart(diffIdxSplits.data[j].ADkmer)) {
-                querySplits.emplace_back(startIdx, endIdx, diffIdxSplits.data[j - (j != 0)]);
-                needLastTargetBlock = false;
-                break;
+    if (queryKmerNum == 0 || targetSplits.empty()) {
+        munmap(diffIdxSplits.data, diffIdxSplits.fileSize);
+        printSplitTime();
+        return querySplits;
+    }
+
+    auto targetStartInfo = [](const DiffIdxSplit & split) {
+        return split.infoIdxOffset - (split.ADkmer != 0);
+    };
+
+    struct QueryTargetBin {
+        size_t start;
+        size_t end;
+        size_t targetIdx;
+        size_t startInfo;
+        size_t endInfo;
+    };
+
+    const size_t totalTargetKmerNum = FileUtil::getFileSize((dbDir + "/info").c_str()) / sizeof(TaxID);
+    std::vector<QueryTargetBin> queryBins;
+    queryBins.reserve(targetSplits.size());
+
+    auto firstQueryAfterAA = [&](uint64_t aa) {
+        size_t left = blankCnt;
+        size_t right = qKmers->startIndexOfReserve;
+        while (left < right) {
+            const size_t mid = left + (right - left) / 2;
+            if (AminoAcidPart(qKmers->buffer[mid].value) <= aa) {
+                left = mid + 1;
+            } else {
+                right = mid;
             }
         }
-        if (needLastTargetBlock) {
-            querySplits.emplace_back(startIdx, endIdx, diffIdxSplits.data[numOfDiffIdxSplits_use - 1]);
+        return left;
+    };
+
+    for (size_t splitIdx = 0; splitIdx < targetSplits.size(); splitIdx++) {
+        const size_t queryStart = (splitIdx == 0)
+                                ? blankCnt
+                                : firstQueryAfterAA(AminoAcidPart(targetSplits[splitIdx].ADkmer));
+        const size_t queryEnd = (splitIdx + 1 < targetSplits.size())
+                              ? firstQueryAfterAA(AminoAcidPart(targetSplits[splitIdx + 1].ADkmer))
+                              : qKmers->startIndexOfReserve;
+        if (queryStart >= queryEnd) {
+            continue;
         }
-        startIdx = endIdx + 1;
+
+        const size_t startInfo = targetStartInfo(targetSplits[splitIdx]);
+        const size_t endInfo = (splitIdx + 1 < targetSplits.size())
+                             ? targetStartInfo(targetSplits[splitIdx + 1])
+                             : totalTargetKmerNum;
+        queryBins.push_back({queryStart, queryEnd - 1, splitIdx, startInfo, endInfo});
     }
+
+    // Divide query k-mer list into blocks with similar estimated DB scan work.
+    if (queryBins.empty()) {
+        munmap(diffIdxSplits.data, diffIdxSplits.fileSize);
+        printSplitTime();
+        return querySplits;
+    }
+
+    size_t totalEstimatedWork = 0;
+    for (const auto & bin : queryBins) {
+        totalEstimatedWork += std::max<size_t>(bin.endInfo - bin.startInfo, 1);
+    }
+
+    const size_t targetTaskCnt = std::max<size_t>(
+        1, std::min(queryBins.size(), static_cast<size_t>(std::max(par.threads, 1)) * 8));
+    const size_t workPerTask = std::max<size_t>(
+        1, (totalEstimatedWork + targetTaskCnt - 1) / targetTaskCnt);
+
+    size_t binStart = 0;
+    size_t chunkStartInfo = queryBins.front().startInfo;
+    size_t chunkEndInfo = queryBins.front().endInfo;
+    for (size_t i = 0; i < queryBins.size(); i++) {
+        const size_t newChunkEndInfo = std::max(chunkEndInfo, queryBins[i].endInfo);
+        const size_t newChunkWork = std::max<size_t>(newChunkEndInfo - chunkStartInfo, 1);
+
+        if (i > binStart && querySplits.size() + 1 < targetTaskCnt && newChunkWork > workPerTask) {
+            const auto & firstBin = queryBins[binStart];
+            const auto & lastBin = queryBins[i - 1];
+            querySplits.emplace_back(firstBin.start, lastBin.end, targetSplits[firstBin.targetIdx]);
+
+            binStart = i;
+            chunkStartInfo = queryBins[i].startInfo;
+            chunkEndInfo = queryBins[i].endInfo;
+        } else {
+            chunkEndInfo = newChunkEndInfo;
+        }
+    }
+
+    const auto & firstBin = queryBins[binStart];
+    const auto & lastBin = queryBins.back();
+    querySplits.emplace_back(firstBin.start, lastBin.end, targetSplits[firstBin.targetIdx]);
 
     // for (size_t i = 0; i < querySplits.size(); i++) {
     //     std::cout << "Split " << i << ": Query k-mer index " << querySplits[i].start << " - " << querySplits[i].end
@@ -459,6 +538,7 @@ std::vector<QueryKmerSplit> KmerMatcher::makeQueryKmerSplits(
     // }
 
     munmap(diffIdxSplits.data, diffIdxSplits.fileSize);
+    printSplitTime();
     return querySplits;
 }
 

@@ -146,6 +146,12 @@ private:
     bool fileCompleted = false;
     bool valueBufferCompleted = false;
 
+    void ensureValueBuffer() {
+        if (valueCnt == 0 && !fileCompleted && !valueBufferCompleted) {
+            fillValueBuffer();
+        }
+    }
+
     void fillValueBuffer() {
         for (; valueCnt < valueBufferSize; ++valueCnt) {
             if (unlikely(infoBuffer.p == infoBuffer.end)) {
@@ -210,7 +216,6 @@ public:
         lastValue = 0;
         valueCnt = 0;
         valueBuffer = new Kmer[valueBufferSize];
-        fillValueBuffer();
         // Get the size of infoFile
         totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
     }
@@ -234,7 +239,6 @@ public:
         valueCnt = 0;
         valueBuffer = new Kmer[valueBufferSize];
         hasPos = true;
-        fillValueBuffer();
         // Get the size of infoFile
         totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
     }
@@ -250,12 +254,14 @@ public:
     // }
 
 
-    uint64_t getLastValue() const {
+    uint64_t getLastValue() {
+        ensureValueBuffer();
         return lastValue;
     }
 
     // Copy values <= maxValue to the provided buffer
     size_t getValues(Kmer * largeBuffer, uint64_t maxValue) {
+        ensureValueBuffer();
         size_t n = 0;
         while (n < valueCnt && valueBuffer[n].value <= maxValue) {
             ++n;
@@ -281,6 +287,7 @@ public:
     }
 
     Kmer next() {
+        ensureValueBuffer();
         if (unlikely(valueBufferIdx >= valueCnt)) {
             valueCnt = 0;
             valueBufferIdx = 0;
@@ -294,6 +301,7 @@ public:
     }
 
     Kmer current() {
+        ensureValueBuffer();
         if (unlikely(valueBufferIdx >= valueCnt)) {
             valueCnt = 0;
             valueBufferIdx = 0;
@@ -307,6 +315,8 @@ public:
     }
 
     void setReadPosition(DiffIdxSplit offset) {
+        fileCompleted = false;
+        valueBufferCompleted = false;
         deltaIdxBuffer.loadBufferAt(offset.diffIdxOffset);
         infoBuffer.loadBufferAt(offset.infoIdxOffset - (offset.ADkmer != 0));
         if (hasPos) {
