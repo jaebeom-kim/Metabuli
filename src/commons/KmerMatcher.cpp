@@ -56,6 +56,41 @@ KmerMatcher::~KmerMatcher() {
     delete geneticCode;
 }
 
+void KmerMatcher::buildTaxIdLookup() {
+    taxId2speciesIdLookup.clear();
+
+    TaxID maxTaxId = 0;
+    for (const auto & entry : taxId2speciesId) {
+        if (entry.first > maxTaxId) {
+            maxTaxId = entry.first;
+        }
+    }
+
+    constexpr size_t MAX_DENSE_TAX_ID = 20'000'000;
+    if (maxTaxId < 0 || static_cast<size_t>(maxTaxId) > MAX_DENSE_TAX_ID) {
+        return;
+    }
+
+    taxId2speciesIdLookup.assign(static_cast<size_t>(maxTaxId) + 1, 0);
+    for (const auto & entry : taxId2speciesId) {
+        if (entry.first >= 0) {
+            taxId2speciesIdLookup[static_cast<size_t>(entry.first)] = entry.second;
+        }
+    }
+}
+
+TaxID KmerMatcher::speciesIdForTaxId(TaxID taxId) const {
+    if (taxId >= 0) {
+        const size_t idx = static_cast<size_t>(taxId);
+        if (idx < taxId2speciesIdLookup.size()) {
+            return taxId2speciesIdLookup[idx];
+        }
+    }
+
+    const auto it = taxId2speciesId.find(taxId);
+    return (it != taxId2speciesId.end()) ? it->second : 0;
+}
+
 void KmerMatcher::loadTaxIdList(const LocalParameters & par) {
     // cout << "Loading the list for taxonomy IDs ... " << std::flush;
     if (par.contamList != "") {
@@ -119,6 +154,7 @@ void KmerMatcher::loadTaxIdList(const LocalParameters & par) {
         }
         in.close();
     }
+    buildTaxIdLookup();
     // cout << "Done" << endl;
 }
 
@@ -133,14 +169,13 @@ bool KmerMatcher::matchKmers(
     std::vector<QueryKmerSplit> querySplits = makeQueryKmerSplits(queryKmerBuffer, db);
     const Kmer * qKmers = queryKmerBuffer->buffer;
 
-    std::vector<std::atomic<bool>> splitCheckList(querySplits.size());
     std::atomic<int> hasOverflow{0};
 
     unsigned int mask = ~((static_cast<unsigned int>(par.skipRedundancy == 0) << 31)); 
 
     std::cout << "Reference k-mer search : " << flush;
     time_t beforeSearch = time(nullptr);
-    #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
+    #pragma omp parallel default(none), shared(hasOverflow, db, \
     querySplits, qKmers, totalMatches, cout, mask)
     {
         Buffer<Match> localMatches(1024 * 1024);
@@ -148,14 +183,10 @@ bool KmerMatcher::matchKmers(
         std::vector<Kmer> candidates;
         std::vector<Match> filteredMatches;
         std::vector<uint8_t> hammings;
-        bool localHasOverflow = false;
     #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < querySplits.size(); i++) {
             if (hasOverflow.load(std::memory_order_acquire))
                 continue;
-            
-            if (splitCheckList[i].exchange(true, std::memory_order_acq_rel))
-                continue; 
 
             deltaIdxReaders->setReadPosition(querySplits[i].diffIdxSplit);
             Kmer tKmer = deltaIdxReaders->next();
@@ -168,7 +199,6 @@ bool KmerMatcher::matchKmers(
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
                         if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
                             hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                            localHasOverflow = true;
                             break;
                         }
                     }
@@ -189,7 +219,6 @@ bool KmerMatcher::matchKmers(
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
                         if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
                             hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                            localHasOverflow = true;
                             break;
                         }
                     }
@@ -228,7 +257,6 @@ bool KmerMatcher::matchKmers(
                 if (unlikely(!localMatches.afford(filteredMatches.size()))) {
                     if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
                         hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                        localHasOverflow = true;
                         break;
                     }
                 }
@@ -241,12 +269,6 @@ bool KmerMatcher::matchKmers(
             // Move matches in the local buffer to the shared buffer
             if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
                 hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                localHasOverflow = true;
-            }
-
-            // Check whether current split is completed or not
-            if (!localHasOverflow) {
-                splitCheckList[i] = true;
             }
         } // End of omp for (Iterating for splits)
         delete deltaIdxReaders;
@@ -272,12 +294,11 @@ bool KmerMatcher::matchKmersWithPos(
     std::vector<QueryKmerSplit> querySplits = makeQueryKmerSplits(queryKmerBuffer, db);
     const Kmer * qKmers = queryKmerBuffer->buffer;
 
-    std::vector<std::atomic<bool>> splitCheckList(querySplits.size());
     std::atomic<int> hasOverflow{0};
 
     std::cout << "Reference k-mer search : " << flush;
     time_t beforeSearch = time(nullptr);
-    #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
+    #pragma omp parallel default(none), shared(hasOverflow, db, \
     querySplits, qKmers, totalMatches, cout, \
     targetDiffIdxFileName, targetInfoFileName, targetKmerPosFileName)
     {
@@ -291,14 +312,10 @@ bool KmerMatcher::matchKmersWithPos(
         std::vector<Kmer> candidates;
         std::vector<MatchWithPos> filteredMatches;
         std::vector<uint8_t> hammings;
-        bool localHasOverflow = false;
     #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < querySplits.size(); i++) {
             if (hasOverflow.load(std::memory_order_acquire))
                 continue;
-            
-            if (splitCheckList[i].exchange(true, std::memory_order_acq_rel))
-                continue; 
 
             deltaIdxReaders->setReadPosition(querySplits[i].diffIdxSplit);
             Kmer tKmer = deltaIdxReaders->next();
@@ -311,7 +328,6 @@ bool KmerMatcher::matchKmersWithPos(
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
                         if (!Buffer<MatchWithPos>::moveSmallToLarge(&localMatches, totalMatches)) {
                             hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                            localHasOverflow = true;
                             break;
                         }
                     }
@@ -332,7 +348,6 @@ bool KmerMatcher::matchKmersWithPos(
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
                         if (!Buffer<MatchWithPos>::moveSmallToLarge(&localMatches, totalMatches)) {
                             hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                            localHasOverflow = true;
                             break;
                         }
                     }
@@ -371,7 +386,6 @@ bool KmerMatcher::matchKmersWithPos(
                 if (unlikely(!localMatches.afford(filteredMatches.size()))) {
                     if (!Buffer<MatchWithPos>::moveSmallToLarge(&localMatches, totalMatches)) {
                         hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                        localHasOverflow = true;
                         break;
                     }
                 }
@@ -384,12 +398,6 @@ bool KmerMatcher::matchKmersWithPos(
             // Move matches in the local buffer to the shared buffer
             if (!Buffer<MatchWithPos>::moveSmallToLarge(&localMatches, totalMatches)) {
                 hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                localHasOverflow = true;
-            }
-
-            // Check whether current split is completed or not
-            if (!localHasOverflow) {
-                splitCheckList[i] = true;
             }
         } // End of omp for (Iterating for splits)
         delete deltaIdxReaders;
@@ -666,7 +674,7 @@ void KmerMatcher::filterCandidates(
     if (par.useAllMatches) {
         for (size_t i = 0; i < numCandidates; i++) {
             filteredMatches.emplace_back(qKmer, candPtr[i]);
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            filteredMatches.back().tKmer.tInfo.speciesId = speciesIdForTaxId(candPtr[i].id);
         }
         return;
     }
@@ -676,7 +684,7 @@ void KmerMatcher::filterCandidates(
     for (size_t i = 0; i < numCandidates; i++) {
         if (qVal == candPtr[i].value) {
             filteredMatches.emplace_back(qKmer, candPtr[i]);
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            filteredMatches.back().tKmer.tInfo.speciesId = speciesIdForTaxId(candPtr[i].id);
             hasExactMatch = true;
         } else if (hasExactMatch) {
             break;
@@ -701,7 +709,7 @@ void KmerMatcher::filterCandidates(
     for (size_t h = 0; h < numCandidates; h++) {
         if (hamPtr[h] <= hDistCutoff) {
             filteredMatches.emplace_back(qKmer, candPtr[h]);
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[h].id];
+            filteredMatches.back().tKmer.tInfo.speciesId = speciesIdForTaxId(candPtr[h].id);
         }
     }
 }
@@ -727,7 +735,7 @@ void KmerMatcher::filterCandidates(
     if (par.useAllMatches) {
         for (size_t i = 0; i < numCandidates; i++) {
             filteredMatches.emplace_back(qKmer, candPtr[i], static_cast<uint16_t>(candPtr[i].tInfo.pos));
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            filteredMatches.back().tKmer.tInfo.speciesId = speciesIdForTaxId(candPtr[i].id);
         }
         return;
     }
@@ -737,7 +745,7 @@ void KmerMatcher::filterCandidates(
     for (size_t i = 0; i < numCandidates; i++) {
         if (qVal == candPtr[i].value) {
             filteredMatches.emplace_back(qKmer, candPtr[i], static_cast<uint16_t>(candPtr[i].tInfo.pos));
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            filteredMatches.back().tKmer.tInfo.speciesId = speciesIdForTaxId(candPtr[i].id);
             hasExactMatch = true;
         } else if (hasExactMatch) {
             break;
@@ -762,7 +770,7 @@ void KmerMatcher::filterCandidates(
     for (size_t h = 0; h < numCandidates; h++) {
         if (hamPtr[h] <= hDistCutoff) {
             filteredMatches.emplace_back(qKmer, candPtr[h], static_cast<uint16_t>(candPtr[h].tInfo.pos));
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[h].id];
+            filteredMatches.back().tKmer.tInfo.speciesId = speciesIdForTaxId(candPtr[h].id);
         }
     }
 }

@@ -161,6 +161,7 @@ protected:
 
   unordered_map<TaxID, TaxID> taxId2speciesId;
   unordered_map<TaxID, TaxID> taxId2genusId;
+  std::vector<TaxID> taxId2speciesIdLookup;
 
   // string targetDiffIdxFileName;
   // string targetInfoFileName;
@@ -217,6 +218,10 @@ protected:
   virtual uint16_t getHammings_reverse(uint64_t kmer1, uint64_t kmer2);
 
   void loadTaxIdList(const LocalParameters & par);
+
+  void buildTaxIdLookup();
+
+  TaxID speciesIdForTaxId(TaxID taxId) const;
 
   std::vector<QueryKmerSplit> makeQueryKmerSplits(
     const Buffer<Kmer> * queryKmerBuffer,
