@@ -178,7 +178,8 @@ public:
         size_t &posToWrite,
         int seqID,
         int taxIdAtRank,
-        SequenceBlock block);
+        SequenceBlock block,
+        uint64_t *aaCounts = nullptr);
     
     int extractTargetKmers(
         const char *seq,
@@ -187,7 +188,8 @@ public:
         uint64_t posOffset,
         int seqID,
         SequenceBlock block,
-        uint64_t scaleFactor);
+        uint64_t scaleFactor,
+        uint64_t *aaCounts = nullptr);
 
     bool extractKmers(
         KSeqWrapper *kseq,

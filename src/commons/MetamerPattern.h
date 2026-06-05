@@ -4,6 +4,8 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <array>
+#include <cstdint>
 #include "SyncmerScanner.h"
 #include "GeneticCode.h"
 #include "SubstitutionMatrix.h"
@@ -81,6 +83,32 @@ public:
         }
     }
 
+    void initializeLnFreq(const std::array<uint64_t, 26> & aaCounts) {
+        uint64_t observedCount = 0;
+        int validAaCount = 0;
+        for (int i = 0; i < 26; ++i) {
+            if (aaFreq[i] > 0) {
+                observedCount += aaCounts[i];
+                validAaCount++;
+            }
+        }
+        if (observedCount == 0 || validAaCount == 0) {
+            initializeLnFreq();
+            return;
+        }
+
+        const double denominator = static_cast<double>(observedCount + validAaCount);
+        for (int i = 0; i < 26; ++i) {
+            if (aaFreq[i] > 0) {
+                aaFreq[i] = static_cast<double>(aaCounts[i] + 1) / denominator;
+                lnFreq[i] = std::log(aaFreq[i]);
+            } else {
+                aaFreq[i] = 0.0;
+                lnFreq[i] = 0.0;
+            }
+        }
+    }
+
     virtual std::vector<std::unique_ptr<KmerScanner>> createScanners(const LocalParameters & par) const = 0;    
 
 
@@ -98,6 +126,7 @@ public:
     virtual void printAA(uint64_t value) const = 0;
     virtual void printDNA(uint64_t value) const = 0;
     virtual std::string toDnaString(uint64_t value) const = 0;
+    virtual void countAAsInSequence(const char *seq, SequenceBlock block, uint64_t aaCounts[26]) const = 0;
 };
 
 class SingleCodePattern : public MetamerPattern {
@@ -179,6 +208,33 @@ public:
             dnaStr += geneticCode->aa2codon[aa][codon];
         }
         return dnaStr;
+    }
+
+    void countAAsInSequence(const char *seq, SequenceBlock block, uint64_t aaCounts[26]) const override {
+        const bool isForward = block.strand > -1;
+        const int seqLen = block.end - block.start + 1;
+        const int aaLen = seqLen / 3;
+        for (int pos = 0; pos < aaLen; ++pos) {
+            int aa;
+            if (isForward) {
+                const int ci = block.start + pos * 3;
+                aa = geneticCode->getAA(geneticCode->atcg[seq[ci]],
+                                        geneticCode->atcg[seq[ci + 1]],
+                                        geneticCode->atcg[seq[ci + 2]]);
+            } else {
+                const int ci = block.end - pos * 3;
+                aa = geneticCode->getAA(geneticCode->iRCT[geneticCode->atcg[seq[ci]]],
+                                        geneticCode->iRCT[geneticCode->atcg[seq[ci - 1]]],
+                                        geneticCode->iRCT[geneticCode->atcg[seq[ci - 2]]]);
+            }
+            if (aa < 0) {
+                continue;
+            }
+            const char aaChar = geneticCode->aminoacids[aa];
+            if (aaChar >= 'A' && aaChar <= 'Z' && aaFreq[aaChar - 'A'] > 0) {
+                aaCounts[aaChar - 'A']++;
+            }
+        }
     }
 };
 
@@ -342,6 +398,12 @@ public:
     void printDNA(uint64_t value) const override {
         return;
     }
+
+    void countAAsInSequence(const char *seq, SequenceBlock block, uint64_t aaCounts[26]) const override {
+        (void)seq;
+        (void)block;
+        (void)aaCounts;
+    }
 };
 
 class MultiCodePattern : public MetamerPattern {
@@ -456,6 +518,37 @@ public:
             dnaStr += geneticCodes[codePattern[i]]->aa2codon[aa][codon];
         }
         return dnaStr;
+    }
+
+    void countAAsInSequence(const char *seq, SequenceBlock block, uint64_t aaCounts[26]) const override {
+        const bool isForward = block.strand > -1;
+        const int seqLen = block.end - block.start + 1;
+        const int aaLen = seqLen / 3;
+        for (int pos = 0; pos < aaLen; ++pos) {
+            for (size_t patternPos = 0; patternPos < codePattern.size(); ++patternPos) {
+                const int codeIdx = codePattern[patternPos];
+                const auto &code = geneticCodes[codeIdx];
+                int aa;
+                if (isForward) {
+                    const int ci = block.start + pos * 3;
+                    aa = code->getAA(code->atcg[seq[ci]],
+                                     code->atcg[seq[ci + 1]],
+                                     code->atcg[seq[ci + 2]]);
+                } else {
+                    const int ci = block.end - pos * 3;
+                    aa = code->getAA(code->iRCT[code->atcg[seq[ci]]],
+                                     code->iRCT[code->atcg[seq[ci - 1]]],
+                                     code->iRCT[code->atcg[seq[ci - 2]]]);
+                }
+                if (aa < 0) {
+                    continue;
+                }
+                const char aaChar = code->aminoacids[aa];
+                if (aaChar >= 'A' && aaChar <= 'Z' && aaFreq[aaChar - 'A'] > 0) {
+                    aaCounts[aaChar - 'A']++;
+                }
+            }
+        }
     }
 
     // It checks if rear part of kmer1 and front part of kmer2 overlap given a shift

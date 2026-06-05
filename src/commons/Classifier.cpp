@@ -52,6 +52,9 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
             metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
         }
     }
+    if (metamerPattern != nullptr && par.useDbAaFreq && par.hasDbAaCounts) {
+        metamerPattern->initializeLnFreq(par.dbAaCounts);
+    }
 
     if (par.storeKmerPos) {
         C_LOG2_C.resize(256);

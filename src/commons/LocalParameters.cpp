@@ -242,6 +242,13 @@ LocalParameters::LocalParameters() :
                         typeid(double),
                         (void *) &maxEValue,
                         "^([-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?)|[0-9]*(\\.[0-9]+)?$"),
+        USE_DB_AA_FREQ(USE_DB_AA_FREQ_ID,
+                        "--use-db-aa-freq",
+                        "Use database-specific amino acid frequencies for E-value calculation",
+                        "0: use built-in regular amino acid frequencies, 1: use database-specific amino acid frequencies when available",
+                        typeid(int),
+                        (void *) &useDbAaFreq,
+                        "[0-1]"),
         USE_ALL_MATCHES(USE_ALL_MATCHES_ID,
                         "--use-all-matches",
                         "Use all k-mer matches instead of filtering",
@@ -596,6 +603,9 @@ LocalParameters::LocalParameters() :
     matchPerKmer = 0;
     minSSMatch = 0;
     tieRatio = 0;
+    dbAaCounts.fill(0);
+    hasDbAaCounts = false;
+    useDbAaFreq = 1;
 
     // Database creation
     tinfoPath = "";
@@ -723,6 +733,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&PDM_KMER);
     classify.push_back(&SCORE_MODE);
     classify.push_back(&MAX_E_VALUE);
+    classify.push_back(&USE_DB_AA_FREQ);
     classify.push_back(&TIE_BRAKER);
     // classify.push_back(&PDM_KMER);
     // classify.push_back(&SCORE_MODE);

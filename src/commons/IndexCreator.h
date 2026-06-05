@@ -167,6 +167,7 @@ protected:
     std::vector<std::string> unusedFastaPaths;
     size_t numOfFlush=0;
     size_t totalLength=0;
+    uint64_t aaCounts[26] = {};
 
     // Database splits
     std::vector<std::string> deltaIdxFileNames;

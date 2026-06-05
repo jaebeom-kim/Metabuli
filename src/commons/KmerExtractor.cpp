@@ -881,13 +881,17 @@ int KmerExtractor::extractTargetKmers(
     size_t &posToWrite,
     int taxId,
     int spTaxId,
-    SequenceBlock block) 
+    SequenceBlock block,
+    uint64_t *aaCounts) 
 {
 #ifdef OPENMP
     size_t threadID = omp_get_thread_num();
 #else
     size_t threadID = 0; // Single-threaded mode
 #endif
+    if (aaCounts != nullptr && metamerPattern != nullptr) {
+        metamerPattern->countAAsInSequence(seq, block, aaCounts);
+    }
     kmerScanners[threadID]->initScanner(seq, block.start, block.end, (block.strand > -1));
     Kmer kmer;
     while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
@@ -903,13 +907,17 @@ int KmerExtractor::extractTargetKmers(
     uint64_t posOffset,
     int taxId,
     SequenceBlock block,
-    uint64_t scaleFactor) 
+    uint64_t scaleFactor,
+    uint64_t *aaCounts) 
 {
 #ifdef OPENMP
     size_t threadID = omp_get_thread_num();
 #else
     size_t threadID = 0; // Single-threaded mode
 #endif
+    if (aaCounts != nullptr && metamerPattern != nullptr) {
+        metamerPattern->countAAsInSequence(seq, block, aaCounts);
+    }
     kmerScanners[threadID]->initScanner(seq, block.start, block.end, (block.strand > -1));
     Kmer kmer;
     while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
@@ -1426,6 +1434,3 @@ void KmerExtractor::processSequenceChunk(
         
     }
 }
-
-
-

@@ -1473,6 +1473,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
             maskedSeq = new char[maxSeqLen + 1];
         }
         int tempCheck = 1;
+        uint64_t localAaCounts[26] = {};
 
 #pragma omp for schedule(dynamic, 1)
         for (size_t spIdx = 0; spIdx < spBatches.size(); spIdx ++) {
@@ -1567,7 +1568,8 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                                                 genomicPos,
                                                 taxId,
                                                 fragments[f],
-                                                scaleFactor);
+                                                scaleFactor,
+                                                localAaCounts);
                                 if (tempCheck == -1) {
                                     cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
                                 }
@@ -1590,7 +1592,8 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                                                 genomicPos,
                                                 taxId,
                                                 fragments[orfCnt],
-                                                scaleFactor);
+                                                scaleFactor,
+                                                localAaCounts);
                                 if (tempCheck == -1) {
                                     cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
                                 }
@@ -1694,6 +1697,12 @@ size_t IndexCreator::fillTargetKmerBuffer2(
         if (par.maskMode) {
             delete[] maskedSeq;
         }
+        #pragma omp critical
+        {
+            for (int aaIdx = 0; aaIdx < 26; ++aaIdx) {
+                aaCounts[aaIdx] += localAaCounts[aaIdx];
+            }
+        }
     } // End of parallel region
 
     return 0;
@@ -1789,6 +1798,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
         vector<string> nonCds;
         bool trained = false;
         size_t estimatedKmerCnt = 0;
+        uint64_t localAaCounts[26] = {};
 #pragma omp for schedule(dynamic, 1)
         for (size_t batchIdx = 0; batchIdx < accessionBatches.size(); batchIdx ++) {
             if (hasOverflow.load(std::memory_order_acquire))
@@ -1868,7 +1878,8 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                             posToWrite,
                                             accessionBatches[batchIdx].taxIDs[idx],
                                             accessionBatches[batchIdx].speciesID,
-                                            {par.readingFrame-1, (int) e.sequence.l - 1, par.readingFrame < 3 ? 1 : -1});
+                                            {par.readingFrame-1, (int) e.sequence.l - 1, par.readingFrame < 3 ? 1 : -1},
+                                            localAaCounts);
                             if (tempCheck == -1) {
                                 cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
                             }   
@@ -1891,7 +1902,8 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                 posToWrite,
                                                 accessionBatches[batchIdx].taxIDs[idx],
                                                 accessionBatches[batchIdx].speciesID,
-                                                {0, (int) cds[cdsCnt].length() - 1, 1});
+                                                {0, (int) cds[cdsCnt].length() - 1, 1},
+                                                localAaCounts);
                                 if (tempCheck == -1) {
                                     cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
                                 }
@@ -1903,7 +1915,8 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                 posToWrite,
                                                 accessionBatches[batchIdx].taxIDs[idx],
                                                 accessionBatches[batchIdx].speciesID,
-                                                {0, (int) cds[nonCdsCnt].length() - 1, 1});
+                                                {0, (int) cds[nonCdsCnt].length() - 1, 1},
+                                                localAaCounts);
                                 if (tempCheck == -1) {
                                     cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
                                 }
@@ -1962,7 +1975,8 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                     posToWrite,
                                                     accessionBatches[batchIdx].taxIDs[idx],
                                                     accessionBatches[batchIdx].speciesID,
-                                                    extendedORFs[orfCnt]);
+                                                    extendedORFs[orfCnt],
+                                                    localAaCounts);
                                     if (tempCheck == -1) {
                                         cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
                                     }
@@ -1994,7 +2008,8 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                     posToWrite,
                                                     accessionBatches[batchIdx].taxIDs[idx],
                                                     accessionBatches[batchIdx].speciesID,
-                                                    extendedORFs[orfCnt]);
+                                                    extendedORFs[orfCnt],
+                                                    localAaCounts);
                                     if (tempCheck == -1) {
                                         cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
                                     }
@@ -2026,6 +2041,12 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
             }
             delete prodigal;   
         }
+        #pragma omp critical
+        {
+            for (int aaIdx = 0; aaIdx < 26; ++aaIdx) {
+                aaCounts[aaIdx] += localAaCounts[aaIdx];
+            }
+        }
     }
 
     // cout << "Before return: " << kmerBuffer.startIndexOfReserve << endl;
@@ -2053,6 +2074,19 @@ void IndexCreator::writeDbParameters() {
     }
     fprintf(handle, "Kmer_format\t%d\n", kmerFormat);
     fprintf(handle, "Total_seq_length\t%lu\n", totalLength);
+    uint64_t totalAaCount = 0;
+    for (int i = 0; i < 26; ++i) {
+        totalAaCount += aaCounts[i];
+    }
+    if (totalAaCount > 0) {
+        fprintf(handle, "AA_counts");
+        for (int i = 0; i < 26; ++i) {
+            if (aaCounts[i] > 0) {
+                fprintf(handle, "\t%c:%llu", static_cast<char>('A' + i), static_cast<unsigned long long>(aaCounts[i]));
+            }
+        }
+        fprintf(handle, "\n");
+    }
     fprintf(handle, "Kmer_position\t%d\n", par.storeKmerPos);
 
     if (!par.customMetamer.empty()) {

@@ -152,6 +152,20 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
           par.kmerFormat = stoi(tokens[1]);
         } else if (tokens[0] == "Total_seq_length") {
           par.dbTotalLength = std::stoul(tokens[1]);
+        } else if (tokens[0] == "AA_counts") {
+          par.dbAaCounts.fill(0);
+          par.hasDbAaCounts = false;
+          for (size_t i = 1; i < tokens.size(); ++i) {
+            if (tokens[i].size() < 3 || tokens[i][1] != ':') {
+              continue;
+            }
+            const char aa = tokens[i][0];
+            if (aa < 'A' || aa > 'Z') {
+              continue;
+            }
+            par.dbAaCounts[aa - 'A'] = std::stoull(tokens[i].substr(2));
+            par.hasDbAaCounts = true;
+          }
         } else if (tokens[0] == "Kmer_position") {
           par.storeKmerPos = stoi(tokens[1]);
         } else if (eachLine == "===BEGIN_CUSTOM_METAMER===") {

@@ -2,6 +2,7 @@
 #define ADCLASSIFIER2_LOCALPARAMETERS_H
 
 #include "Parameters.h"
+#include <array>
 
 const int CITATION_SPACEPHARER = CITATION_END;
 
@@ -94,6 +95,7 @@ public:
     PARAMETER(SCORE_MODE)
     PARAMETER(DB_TOTAL_LENGTH)
     PARAMETER(MAX_E_VALUE)
+    PARAMETER(USE_DB_AA_FREQ)
     PARAMETER(USE_ALL_MATCHES)
     PARAMETER(TIE_BRAKER)
 
@@ -202,7 +204,10 @@ public:
     int pdmKmer;
     int scoreMode;
     size_t dbTotalLength;
+    std::array<uint64_t, 26> dbAaCounts;
+    bool hasDbAaCounts;
     double maxEValue;
+    int useDbAaFreq;
     int useAllMatches;
     int minAaMatch;
     int minAaMatchEuk;
