@@ -183,36 +183,6 @@ int searchAccession2TaxID(const std::string &name,
   if (acc2taxid.find(name) != acc2taxid.end()) {
     return acc2taxid.at(name);
   } 
-
-  // Cannot fine with version --> Remove the version number
-  size_t pos = name.find('.');
-  if (pos != std::string::npos) {
-    std::string nameWithoutVersion = name.substr(0, pos);
-    if (acc2taxid.find(nameWithoutVersion) != acc2taxid.end()) {
-      return acc2taxid.at(nameWithoutVersion);
-    }
-  }
-
-  // With prefix? Ex) NZ_CP083375.1
-  pos = name.find('_');
-  std::string nameWithoutPrefix;
-  if (pos != std::string::npos) {
-    // Try without prefix
-    nameWithoutPrefix = name.substr(pos + 1); // CP083375.1
-    if (acc2taxid.find(nameWithoutPrefix) != acc2taxid.end()) {
-      return acc2taxid.at(nameWithoutPrefix);
-    }
-
-    // Remove version
-    pos = nameWithoutPrefix.find('.');
-    if (pos != std::string::npos) {
-      nameWithoutPrefix = nameWithoutPrefix.substr(0, pos); // CP083375
-      if (acc2taxid.find(nameWithoutPrefix) != acc2taxid.end()) {
-        return acc2taxid.at(nameWithoutPrefix);
-      }
-    }
-  }
-
   return 0;
 }
 
@@ -248,14 +218,7 @@ void getObservedAccessionList(
             if (e.name.l == 0) {
               cout << "Empty name in " << fastaList[i] << endl;
             }
-            // Get the accession ID without version
-            char* pos = strchr(e.name.s, '.'); 
-            if (pos != nullptr) {
-                *pos = '\0';
-                localAcc2taxid[e.name.s] = 0;
-            } else {
-                localAcc2taxid[e.name.s] = 0;
-            }
+            localAcc2taxid[e.name.s] = 0;
         }
         delete kseq;
     } 
@@ -318,6 +281,7 @@ void fillAcc2TaxIdMap(unordered_map<string, TaxID> & acc2taxid,
   ++current;  // Move past the newline
 
   char accession[16384];
+  char accessionVersion[16384];
   int taxID;
 
   while (current < end) {
@@ -328,15 +292,13 @@ void fillAcc2TaxIdMap(unordered_map<string, TaxID> & acc2taxid,
       }
       std::string line(lineStart, current - lineStart);
       // Parse the line
-      if (sscanf(line.c_str(), "%s\t%*s\t%d\t%*d", accession, &taxID) == 2) {
-        // Get the accession ID without version
-        char* pos = strchr(accession, '.');
-        if (pos != nullptr) {
-          *pos = '\0';
+      if (sscanf(line.c_str(), "%s\t%s\t%d\t%*d", accession, accessionVersion, &taxID) == 3) {
+        auto it = acc2taxid.find(accessionVersion);
+        if (it == acc2taxid.end()) {
+          it = acc2taxid.find(accession);
         }
-        auto it = acc2taxid.find(accession);
         if (it != acc2taxid.end()) {
-          acc2taxid[accession] = taxID;
+          it->second = taxID;
         }
       }
       ++current;  // Move to the next line

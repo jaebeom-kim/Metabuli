@@ -534,10 +534,6 @@ string IndexCreator::addToLibrary(
       while (kseq->ReadEntry()) {
         const KSeqWrapper::KSeqEntry & e = kseq->entry;
         accession = string(e.name.s);
-        size_t pos = accession.find('.');
-        if (pos != std::string::npos) {
-          accession = accession.substr(0, pos);
-        }
         TaxID taxId = accession2taxid[accession];
         if (taxId == 0) {
           std::cout << "During processing " << fileNames[i] << ", accession " << e.name.s <<
@@ -658,11 +654,6 @@ void IndexCreator::getObservedAccessions(
             uint32_t order = 0;
             while (kseq->ReadEntry()) {
                 const KSeqWrapper::KSeqEntry & e = kseq->entry;
-                // Get the accession ID without version
-                char* pos = strchr(e.name.s, '.'); 
-                if (pos != nullptr) {
-                    *pos = '\0';
-                }
                 if (duplicateCheck.find(e.name.s) != duplicateCheck.end()) {
                     order++; 
                     continue;
@@ -740,6 +731,7 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
     ++current;  // Move past the newline
 
     char accession[16384];
+    char accessionVersion[16384];
     TaxID taxID;
     std::unordered_set<TaxID> usedExternalTaxIDs;
     std::vector<NewTaxon> newTaxons;
@@ -757,25 +749,23 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
         std::string line(lineStart, current - lineStart);
 
         // Parse the line
-        if (sscanf(line.c_str(), "%s\t%*s\t%d\t%*d", accession, &taxID) == 2) {
-            // Get the accession ID without version
-            // char* pos = strchr(accession, '.');
-            // if (pos != nullptr) {
-            //     *pos = '\0';
-            // }
-            auto it = accession2index.find(accession);
+        if (sscanf(line.c_str(), "%s\t%s\t%d\t%*d", accession, accessionVersion, &taxID) == 3) {
+            auto it = accession2index.find(accessionVersion);
+            if (it == accession2index.end()) {
+                it = accession2index.find(accession);
+            }
             if (it != accession2index.end()) {
                 if (old2merged.count(taxID) > 0) {
                     taxID = old2merged[taxID];
                 }
                 if (par.accessionLevel == 1) {
                     TaxID accTaxId = taxonomy->getSmallestUnusedExternalTaxID(usedExternalTaxIDs);
-                    acc2accId.emplace_back(accession, make_pair(taxID, accTaxId));
+                    acc2accId.emplace_back(observedAccessionsVec[it->second].accession, make_pair(taxID, accTaxId));
                     if (accTaxId == 0) {
-                        cout << "accTaxId is 0 for accession " << accession << " " << taxID << endl;
+                        cout << "accTaxId is 0 for accession " << observedAccessionsVec[it->second].accession << " " << taxID << endl;
                     }
                     observedAccessionsVec[it->second].taxID = accTaxId;
-                    newTaxons.emplace_back(accTaxId, taxID, "accession", accession);
+                    newTaxons.emplace_back(accTaxId, taxID, "accession", observedAccessionsVec[it->second].accession);
                 } else {
                     observedAccessionsVec[it->second].taxID = taxID;
                 }

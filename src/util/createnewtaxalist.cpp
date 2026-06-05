@@ -35,10 +35,6 @@ void getObservedAccessions(const std::string & fnaListFileName,
             KSeqWrapper* kseq = KSeqFactory(fastaPaths[i].c_str());
             while (kseq->ReadEntry()) {
                 const KSeqWrapper::KSeqEntry & e = kseq->entry;
-                char* pos = strchr(e.name.s, '.'); 
-                if (pos != nullptr) {
-                    *pos = '\0';
-                }
                 localObservedAccessions.push_back(string(e.name.s));
             }
             delete kseq;
@@ -153,12 +149,13 @@ int getTaxonomyOfAccessions(
         size_t nl = len < sizeof(buf)-1 ? len : sizeof(buf)-1;
         memcpy(buf, lineStart, nl);
         buf[nl] = '\0';
-        if (sscanf(buf, "%s\t%*s\t%u\t%*d", accession, &taxID) == 2) {
-            // strip version
-            if (char* p = strchr(accession, '.')) *p = '\0';
-
+        char accessionVersion[1024];
+        if (sscanf(buf, "%s\t%s\t%u\t%*d", accession, accessionVersion, &taxID) == 3) {
             // only record if in observedAccessions
-            auto it = observedAccessions.find(accession);
+            auto it = observedAccessions.find(accessionVersion);
+            if (it == observedAccessions.end()) {
+                it = observedAccessions.find(accession);
+            }
             if (it != observedAccessions.end()) {
                 if (old2merged.count(taxID) > 0) {
                     taxID = old2merged[taxID];

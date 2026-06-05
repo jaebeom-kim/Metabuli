@@ -45,11 +45,6 @@ int addToLibrary(int argc, const char **argv, const Command &command){
             KSeqWrapper* kseq = KSeqFactory(fileNames[i].c_str());
             while (kseq->ReadEntry()) {
                 const KSeqWrapper::KSeqEntry & e = kseq->entry;
-                char* pos = strchr(e.name.s, '.'); 
-                if (pos != nullptr) {
-                    *pos = '\0';
-                }
-
                 TaxID taxId = accession2taxid[e.name.s];
                 if (taxId == 0) {
                     cout << "During processing " << fileNames[i] << ", accession " << e.name.s <<
@@ -92,10 +87,7 @@ int addToLibrary(int argc, const char **argv, const Command &command){
             char buffer[512];
             int taxID;
             while (fscanf(mappingFile, "%s\t%d", buffer, &taxID) == 2) {
-                // Remove the version number
                 string accession = string(buffer);
-                size_t pos = accession.find('.');
-                if (pos != string::npos) { accession = accession.substr(0, pos); }
                 assembly2taxid[accession] = taxID;
             }
         } else {
@@ -158,11 +150,7 @@ int addToLibrary(int argc, const char **argv, const Command &command){
         file = fopen((dbDir + "/my.accession2taxid").c_str(), "w");
         fprintf(file, "accession\taccession.version\ttaxid\tgi");
         for (auto & it : acc2taxid) {
-            // Get accession without a version number
-            string accession = it.first;
-            size_t pos = accession.find('.');
-            if (pos != string::npos) { accession = accession.substr(0, pos);}
-            fprintf(file, "\n%s\t%s\t%d\t0", accession.c_str(), it.first.c_str(), it.second);
+            fprintf(file, "\n%s\t%s\t%d\t0", it.first.c_str(), it.first.c_str(), it.second);
         }
         fclose(file);
     }
