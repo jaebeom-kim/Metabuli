@@ -185,10 +185,12 @@ par, cout, printColumnsIdx, cerr, names, nodes, merged)
             if (map.is_open()) {
                 while (getline(map, key, '\t')) {
                     getline(map, value, '\n');
-                    // remove version number
-                    size_t pos = key.find('.');
-                    if (pos != string::npos) {
-                        key = key.substr(0, pos);
+                    if (par.testType != "kapk") {
+                        // remove version number
+                        size_t pos = key.find('.');
+                        if (pos != string::npos) {
+                            key = key.substr(0, pos);
+                        }
                     }
                     assacc2taxid[key] = stoi(value);
                 }
@@ -245,6 +247,19 @@ par, cout, printColumnsIdx, cerr, names, nodes, merged)
                 } else if (par.testType == "over") {
                     regex_search(id, assacc, regex1);
                     id = assacc[0];
+                } else if (par.testType == "kapk") {
+                    const size_t start = id.find("----");
+                    if (start == string::npos) {
+                        cerr << "Cannot parse KapK read ID: " << id << endl;
+                        continue;
+                    }
+                    const size_t accessionStart = start + 4;
+                    const size_t end = id.find("__", accessionStart);
+                    if (end == string::npos) {
+                        cerr << "Cannot parse KapK read ID: " << id << endl;
+                        continue;
+                    }
+                    id = id.substr(accessionStart, end - accessionStart);
                 }
 
                 classInt = stoi(fields[par.taxidCol]);
