@@ -88,11 +88,12 @@ int KmerExtractor::getKmerCount(
     const char *seq,
     int seqLen) 
 {
-    if (!par.pdmKmer) {
-        return LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, true) * syncmerRatio;
-    } else {
-        return getPDMKmerCount(seq, seqLen) + LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, false) * syncmerRatio;
-    } 
+    const bool trimming = (par.pdmKmer == 0 && par.disableTrimming == 0);
+    int kmerCount = LocalUtil::getQueryKmerNumber<int>(seqLen, this->windowSize, trimming) * syncmerRatio;
+    if (par.pdmKmer > 0) {
+        kmerCount += getPDMKmerCount(seq, seqLen);
+    }
+    return kmerCount;
 }
 
 int KmerExtractor::getPDMKmerCount( 
@@ -146,7 +147,7 @@ bool KmerExtractor::extractQueryKmers(
     uint32_t queryIdx = 0;
     if (!savedSeq_1->name.empty()) {
         // Forward
-        int queryLength = par.pdmKmer > 0 ?
+        int queryLength = (par.pdmKmer > 0 || par.disableTrimming) ?
             static_cast<int>(savedSeq_1->s.length()) :
             LocalUtil::getMaxCoveredLength(static_cast<int>(savedSeq_1->s.length()));
         int kmerCnt = getKmerCount(savedSeq_1->s.c_str(), static_cast<int>(savedSeq_1->s.length()));
@@ -171,7 +172,7 @@ bool KmerExtractor::extractQueryKmers(
 
         // Reverse
         if (kseq_2 != nullptr) {
-            queryList.back().queryLength2 = par.pdmKmer > 0 ?
+            queryList.back().queryLength2 = (par.pdmKmer > 0 || par.disableTrimming) ?
                 static_cast<int>(savedSeq_2->s.length()) :
                 LocalUtil::getMaxCoveredLength(static_cast<int>(savedSeq_2->s.length()));
             queryList.back().kmerCnt2 = getKmerCount(savedSeq_2->s.c_str(), static_cast<int>(savedSeq_2->s.length()));
@@ -279,7 +280,7 @@ bool KmerExtractor::extractQueryKmers(
 
                     kmerCnt += currentKmerCnt_1 + currentKmerCnt_2;
 
-                    int queryLength = par.pdmKmer > 0 ?
+                    int queryLength = (par.pdmKmer > 0 || par.disableTrimming) ?
                         static_cast<int>(kseq_1->entry.sequence.l) :
                         LocalUtil::getMaxCoveredLength(static_cast<int>(kseq_1->entry.sequence.l));
    
@@ -292,7 +293,7 @@ bool KmerExtractor::extractQueryKmers(
                     (*seqChunk_1)[seqCnt] = (currentKmerCnt_1 > 0) ? kseq_1->entry.sequence.s : ""; 
 
                     if (kseq_2 != nullptr) {
-                        queryList.back().queryLength2 = par.pdmKmer > 0 ?
+                        queryList.back().queryLength2 = (par.pdmKmer > 0 || par.disableTrimming) ?
                             static_cast<int>(kseq_2->entry.sequence.l) :
                             LocalUtil::getMaxCoveredLength(static_cast<int>(kseq_2->entry.sequence.l));
                         queryList.back().kmerCnt2 = currentKmerCnt_2;
@@ -686,9 +687,10 @@ void KmerExtractor::fillQueryKmerBuffer(
 #else
     size_t threadID = 0; // Single-threaded mode
 #endif
+    const bool trimming = (par.pdmKmer == 0 && par.disableTrimming == 0);
     for (int frame = 0; frame < 6; frame++) {
         bool isForward = frame < 3;
-        if (par.pdmKmer == 0) {
+        if (trimming) {
             int begin = 0;
             if (isForward) {
                 begin = frame;
@@ -720,7 +722,7 @@ void KmerExtractor::fillQueryKmerBuffer(
             }
 
             // Extract neighbor k-mers considering post-mortem DNA damage 
-            if (frame < 3) {
+            if (par.pdmKmer > 0 && frame < 3) {
                 generatePDMNeighborKmers(
                     seq,
                     begin,
@@ -942,7 +944,7 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
         for (size_t i = 0; i < chunkSize && processedQueryNum < chunkEnd; ++i, ++processedQueryNum) {
             kseq->ReadEntry();
             // queryList[processedQueryNum].queryLength2 = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);   
-            queryList[processedQueryNum].queryLength2 = par.pdmKmer > 0 ?
+            queryList[processedQueryNum].queryLength2 = (par.pdmKmer > 0 || par.disableTrimming) ?
                 (int) kseq->entry.sequence.l : LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
             
             if (emptyReads[i]) { 
@@ -951,7 +953,7 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
             }
 
             // Check if the read is too short
-            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, this->windowSize, true);
+            int kmerCnt = getKmerCount(kseq->entry.sequence.s, (int) kseq->entry.sequence.l);
             if (kmerCnt < 1) {
                 reads[i] = "";
                 emptyReads[i] = true;
@@ -967,14 +969,14 @@ void KmerExtractor::loadChunkOfReads(KSeqWrapper *kseq,
         for (size_t i = 0; i < chunkSize && processedQueryNum < chunkEnd; ++i, ++processedQueryNum) {
             kseq->ReadEntry();
             queryList[processedQueryNum].name = string(kseq->entry.name.s);
-            queryList[processedQueryNum].queryLength = par.pdmKmer > 0 ?
+            queryList[processedQueryNum].queryLength = (par.pdmKmer > 0 || par.disableTrimming) ?
                 (int) kseq->entry.sequence.l :
                 LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
             // queryList[processedQueryNum].queryLength = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
             // queryList[processedQueryNum].queryLength = LocalUtil::getMaxCoveredLength((int) kseq->entry.sequence.l);
 
             // Check if the read is too short
-            int kmerCnt = LocalUtil::getQueryKmerNumber<int>((int) kseq->entry.sequence.l, this->windowSize, true);
+            int kmerCnt = getKmerCount(kseq->entry.sequence.s, (int) kseq->entry.sequence.l);
             if (kmerCnt < 1) {
                 reads[i] = "";
                 emptyReads[i] = true;
@@ -1426,6 +1428,3 @@ void KmerExtractor::processSequenceChunk(
         
     }
 }
-
-
-

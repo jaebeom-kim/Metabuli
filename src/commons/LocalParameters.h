@@ -91,6 +91,7 @@ public:
     PARAMETER(EM)
     PARAMETER(NEIGHBOR_KMERS)
     PARAMETER(PDM_KMER)
+    PARAMETER(DISABLE_TRIMMING)
     PARAMETER(SCORE_MODE)
     PARAMETER(DB_TOTAL_LENGTH)
     PARAMETER(MAX_E_VALUE)
@@ -200,6 +201,7 @@ public:
     int maxShift;
     bool em;
     int pdmKmer;
+    int disableTrimming;
     int scoreMode;
     size_t dbTotalLength;
     double maxEValue;

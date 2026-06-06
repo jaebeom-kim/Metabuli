@@ -221,6 +221,13 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &pdmKmer,
                 "^[0-9]+$"),
+        DISABLE_TRIMMING(DISABLE_TRIMMING_ID,
+                "--disable-trimming",
+                "Disable query-end trimming",
+                "Disable query-end trimming before translated k-mer extraction",
+                typeid(int),
+                (void *) &disableTrimming,
+                "[0-1]"),
         SCORE_MODE(SCORE_MODE_ID,
                    "--score-mode",
                    "Scoring mode for classification",
@@ -700,7 +707,6 @@ LocalParameters::LocalParameters() :
     classify.push_back(&PARAM_THREADS);
     classify.push_back(&SEQ_MODE);
     classify.push_back(&PRECISION_MODE);
-    classify.push_back(&MAX_E_VALUE);
     classify.push_back(&MIN_SCORE);
     classify.push_back(&MIN_SP_SCORE);
     classify.push_back(&MIN_AA_MATCH);
@@ -721,6 +727,7 @@ LocalParameters::LocalParameters() :
     // classify.push_back(&KMER_FORMAT);
     classify.push_back(&PRINT_LOG);
     classify.push_back(&PDM_KMER);
+    classify.push_back(&DISABLE_TRIMMING);
     classify.push_back(&SCORE_MODE);
     classify.push_back(&MAX_E_VALUE);
     classify.push_back(&TIE_BRAKER);

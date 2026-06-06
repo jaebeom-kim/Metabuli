@@ -38,6 +38,7 @@ private:
     size_t maxRam;
     size_t threads;
     int spaceNum;
+    int disableTrimming;
 
     // Internal
     size_t availableRam;

@@ -40,6 +40,7 @@ void setClassifyDefaults(LocalParameters & par){
     par.useAllMatches = 0;
     par.em = false;
     par.pdmKmer = 0;
+    par.disableTrimming = 0;
 }
 
 int classify(int argc, const char **argv, const Command& command) {
