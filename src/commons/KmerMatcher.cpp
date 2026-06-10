@@ -625,10 +625,10 @@ void KmerMatcher::filterCandidates(
     // Calculate hamming distances
     hammings.resize(numCandidates);
     uint8_t* hamPtr = hammings.data();
+    metamerPattern->hammingDistSumBatch(qVal, candPtr, numCandidates, hamPtr);
     uint8_t minDist = UINT8_MAX;
     for (size_t i = 0; i < numCandidates; i++) {
-        const uint8_t dist = metamerPattern->hammingDistSum(qVal, candPtr[i].value);
-        hamPtr[i] = dist;
+        const uint8_t dist = hamPtr[i];
         if (dist < minDist) {
             minDist = dist;
         }
@@ -690,10 +690,10 @@ void KmerMatcher::filterCandidates(
     // Calculate hamming distances
     hammings.resize(numCandidates);
     uint8_t* hamPtr = hammings.data();
+    metamerPattern->hammingDistSumBatch(qVal, candPtr, numCandidates, hamPtr);
     uint8_t minDist = UINT8_MAX;
     for (size_t i = 0; i < numCandidates; i++) {
-        const uint8_t dist = metamerPattern->hammingDistSum(qVal, candPtr[i].value);
-        hamPtr[i] = dist;
+        const uint8_t dist = hamPtr[i];
         if (dist < minDist) {
             minDist = dist;
         }
