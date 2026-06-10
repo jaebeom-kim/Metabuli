@@ -37,8 +37,14 @@ private:
     };
 
     static constexpr int MAX_N = 32;
+    static constexpr size_t QUERY_CHUNK_SIZE = 1000;
+    static constexpr size_t QUERY_READ_RESERVE = 1000;
     size_t binom[MAX_N + 1][MAX_N + 1];
-    
+
+    std::vector<std::vector<std::string>> queryReadsPerThread1;
+    std::vector<std::vector<std::string>> queryReadsPerThread2;
+
+    void ensureQueryReadBuffers(bool paired);
 
 
 

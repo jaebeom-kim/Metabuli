@@ -84,6 +84,32 @@ KmerExtractor::~KmerExtractor() {
     delete subMat;
 }
 
+void KmerExtractor::ensureQueryReadBuffers(bool paired) {
+    auto ensureBuffers = [](std::vector<std::vector<std::string>> &buffers,
+                            int threadCount) {
+        if (buffers.size() != static_cast<size_t>(threadCount)) {
+            buffers.resize(threadCount);
+        }
+
+        for (int i = 0; i < threadCount; ++i) {
+            const size_t oldSize = buffers[i].size();
+            if (oldSize < QUERY_CHUNK_SIZE) {
+                buffers[i].resize(QUERY_CHUNK_SIZE);
+                for (size_t j = oldSize; j < QUERY_CHUNK_SIZE; ++j) {
+                    buffers[i][j].reserve(QUERY_READ_RESERVE);
+                }
+            } else if (oldSize > QUERY_CHUNK_SIZE) {
+                buffers[i].resize(QUERY_CHUNK_SIZE);
+            }
+        }
+    };
+
+    ensureBuffers(queryReadsPerThread1, par.threads);
+    if (paired) {
+        ensureBuffers(queryReadsPerThread2, par.threads);
+    }
+}
+
 int KmerExtractor::getKmerCount(
     const char *seq,
     int seqLen) 
@@ -194,22 +220,10 @@ bool KmerExtractor::extractQueryKmers(
         processedSeqCnt++;
     }
 
-    size_t readLength = 1000;
-    size_t chunkSize = 1000;
-    std::vector<std::vector<string>> readsPerThread_1(par.threads);
-    std::vector<std::vector<string>> readsPerThread_2(par.threads);
-    for (int i = 0; i < par.threads; ++i) {
-        readsPerThread_1[i].resize(chunkSize);
-        for (size_t j = 0; j < chunkSize; ++j) {
-            readsPerThread_1[i][j].reserve(readLength);
-        }
-
-        if (kseq_2 == nullptr) { continue; }
-        readsPerThread_2[i].resize(chunkSize);
-        for (size_t j = 0; j < chunkSize; ++j) {
-            readsPerThread_2[i][j].reserve(readLength);
-        }
-    }
+    size_t chunkSize = QUERY_CHUNK_SIZE;
+    ensureQueryReadBuffers(kseq_2 != nullptr);
+    auto &readsPerThread_1 = queryReadsPerThread1;
+    auto &readsPerThread_2 = queryReadsPerThread2;
 
     BlockingQueue<int> freeBufferQueue;
     BlockingQueue<WorkItem> filledBufferQueue;
