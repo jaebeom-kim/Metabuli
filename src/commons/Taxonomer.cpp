@@ -17,11 +17,6 @@ Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *tax
     windowSize(metamerPattern->windowSize),
     windowMask((1U << windowSize) - 1)
 {
-    if (par.substitutionMatrices.empty()) {
-        substitutionMatrix = nullptr;
-    } else {
-        substitutionMatrix = new SubstitutionMatrix(par.scoringMatrixFile.values.aminoacid().c_str(), 2.0, par.scoreBias);
-    }
     // Parameters
     accessionLevel = par.accessionLevel;
     eukaryotaTaxId = taxonomy->getEukaryotaTaxID();
@@ -63,6 +58,9 @@ Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *tax
     matchPaths.reserve(4096);
     combinedMatchPaths.reserve(4096);
     maxSpecies.reserve(4096);
+    sp2score.reserve(4096);
+    tiedIndices.reserve(4096);
+    tempPrioritySpecies.reserve(4096);
 
     // lowerRankClassification
     cladeCnt.reserve(4096);
@@ -72,6 +70,7 @@ Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *tax
     bestMatchForQuotient = new const MatchType*[arraySize_filterRedundantMatches]();
     bestMatchTaxIdForQuotient = new TaxID[arraySize_filterRedundantMatches]();
     minHammingForQuotient = new uint8_t[arraySize_filterRedundantMatches]();
+    touchedQuotients.reserve(4096);
 
     // Output
     taxCounts.reserve(4096);
@@ -96,7 +95,6 @@ Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *tax
 
 template <typename MatchType>
 Taxonomer<MatchType>::~Taxonomer() {
-    delete substitutionMatrix;
     delete[] bestMatchForQuotient;
     delete[] bestMatchTaxIdForQuotient;
     delete[] minHammingForQuotient;
@@ -233,12 +231,14 @@ void Taxonomer<MatchType>::filterRedundantMatches(
     size_t maxQuotient = (queryLength + 3) / dnaShift;
     
     ensureArraySize(maxQuotient + 1);
+    touchedQuotients.clear();
 
     for (size_t i = bestSpeciesRange.first; i < bestSpeciesRange.second; i ++) {
         size_t currQuotient = matchList[i].qKmer.qInfo.pos / dnaShift;
         uint8_t hamming = metamerPattern->hammingDistSum(matchList[i].qKmer.value, matchList[i].tKmer.value);
 
         if (bestMatchForQuotient[currQuotient] == nullptr) {
+            touchedQuotients.push_back(currQuotient);
             bestMatchForQuotient[currQuotient] = matchList + i;
             bestMatchTaxIdForQuotient[currQuotient] = matchList[i].tKmer.tInfo.taxId;
             minHammingForQuotient[currQuotient] = hamming;
@@ -254,10 +254,13 @@ void Taxonomer<MatchType>::filterRedundantMatches(
         }
     }
 
-    for (size_t i = 0; i <= maxQuotient; ++i) {
-        if (bestMatchTaxIdForQuotient[i] != 0) {
-            taxCnt[bestMatchTaxIdForQuotient[i]]++;
+    for (size_t quotient : touchedQuotients) {
+        if (bestMatchTaxIdForQuotient[quotient] != 0) {
+            taxCnt[bestMatchTaxIdForQuotient[quotient]]++;
         }
+        bestMatchForQuotient[quotient] = nullptr;
+        bestMatchTaxIdForQuotient[quotient] = 0;
+        minHammingForQuotient[quotient] = std::numeric_limits<uint8_t>::max();
     }
 }
 
@@ -350,7 +353,7 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
     matchPaths.clear();
     combinedMatchPaths.clear();
     pair<size_t, size_t> bestMatchPathRange;
-    vector<pair<TaxID, MatchScore>> sp2score;
+    sp2score.clear();
     int queryLength = query.queryLength + query.queryLength2;
     if (par.printLog==1) {
         cout << "## " << query.name << " ##" << endl;
@@ -446,6 +449,7 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
     // }
 
     maxSpecies.clear();
+    tiedIndices.clear();
 
     const float diff = 0.09f;
     const float myTieRatio = (par.tieRatio - diff) + (bestSpScore.idScore * diff);
@@ -453,7 +457,6 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
     //                         ? par.tieRatio 
     //                         : (par.tieRatio - diff) + (bestSpScore.idScore * diff);
     
-    std::vector<size_t> tiedIndices;
     for (size_t i = 0; i < sp2score.size(); i++) {
         if (sp2score[i].second.isLargerThan(bestSpScore * myTieRatio, par.scoreMode)) {
             maxSpecies.push_back(sp2score[i].first);
@@ -463,7 +466,7 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
     }
 
     if (maxSpecies.size() > 1 && !priorityTaxa.empty()) {
-        std::vector<TaxID> tempPrioritySpecies; 
+        tempPrioritySpecies.clear();
         TaxonScore tempBestScore; 
         
         for (size_t i = 0; i < maxSpecies.size(); ++i) {
@@ -474,7 +477,7 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
         }
         
         if (!tempPrioritySpecies.empty()) {
-            maxSpecies = std::move(tempPrioritySpecies);
+            maxSpecies.assign(tempPrioritySpecies.begin(), tempPrioritySpecies.end());
             bestScore.score = tempBestScore.score;
         }
     }
@@ -550,7 +553,6 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
     int spanLength = 0;
     for (size_t i = matchPathStart; i < matchPaths.size(); i++) {  
         if (combMatchPathStart == combinedMatchPaths.size()) {
-            combinedMatchPaths.push_back(matchPaths[i]);
             score += matchPaths[i].score;
             spanLength += matchPaths[i].end - matchPaths[i].start + 1;
             score.logE = computeLEM_logE(
@@ -558,6 +560,7 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
                 matchPaths[i].end - matchPaths[i].start + 1,
                 par.dbTotalLength,
                 score.logP);
+            combinedMatchPaths.push_back(std::move(matchPaths[i]));
         } else {
             bool isOverlapped = false;
             for (size_t j = combMatchPathStart; j < combinedMatchPaths.size(); j++) {
@@ -729,6 +732,25 @@ MatchPath<MatchType> Taxonomer<MatchType>::makeMatchPath(
 }
 
 template <typename MatchType>
+void Taxonomer<MatchType>::addTerminalMatchPath(
+    size_t pathIdx,
+    const MatchType * matchList,
+    vector<MatchPath<MatchType>> & filteredMatchPaths)
+{
+    MatchPath<MatchType> &path = localMatchPaths[pathIdx];
+    if (par.storeKmerPos) {
+        path.chain.clear();
+        uint64_t currIdx = pathIdx;
+        while (currIdx != UINT64_MAX) {
+            path.chain.push_back(matchList + currIdx);
+            currIdx = localMatchPaths[currIdx].prevMatchIdx;
+        }
+        std::reverse(path.chain.begin(), path.chain.end());
+    }
+    filteredMatchPaths.push_back(std::move(path));
+}
+
+template <typename MatchType>
 void Taxonomer<MatchType>::getMatchPaths_lookbackDP(
     const MatchType * matchList,
     size_t matchNum,
@@ -796,14 +818,7 @@ void Taxonomer<MatchType>::getMatchPaths_lookbackDP(
     // 4. Harvest Terminal Paths
     for (size_t i = 0; i < matchNum; ++i) {
         if (!connectedToNext[i] && localMatchPaths[i].coveredPosCnt >= MIN_COVERED_POS) {
-            uint64_t currIdx = i;
-            while (currIdx != UINT64_MAX) {
-                localMatchPaths[i].chain.push_back(matchList + currIdx);
-                currIdx = localMatchPaths[currIdx].prevMatchIdx;
-            }
-            std::reverse(localMatchPaths[i].chain.begin(), localMatchPaths[i].chain.end());
-
-            filteredMatchPaths.push_back(std::move(localMatchPaths[i]));
+            addTerminalMatchPath(i, matchList, filteredMatchPaths);
         }
     }
 }
@@ -889,13 +904,7 @@ void Taxonomer<MatchType>::getMatchPaths(
         
         for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
             if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
-                uint64_t prevIdx = curIdx;
-                while (prevIdx != UINT64_MAX) {
-                    localMatchPaths[curIdx].chain.push_back(matchList + prevIdx);
-                    prevIdx = localMatchPaths[prevIdx].prevMatchIdx;
-                }
-                
-                filteredMatchPaths.push_back(localMatchPaths[curIdx]);
+                addTerminalMatchPath(curIdx, matchList, filteredMatchPaths);
             }
         }
 
@@ -906,13 +915,7 @@ void Taxonomer<MatchType>::getMatchPaths(
     
     for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
         if (localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
-            uint64_t prevIdx = curIdx;
-            while (prevIdx != UINT64_MAX) {
-                localMatchPaths[curIdx].chain.push_back(matchList + prevIdx);
-                prevIdx = localMatchPaths[prevIdx].prevMatchIdx;
-            }
-            
-            filteredMatchPaths.push_back(localMatchPaths[curIdx]);
+            addTerminalMatchPath(curIdx, matchList, filteredMatchPaths);
         }
     }
 }
@@ -1045,14 +1048,7 @@ void Taxonomer<MatchType>::getSpacedMatchPaths_lookbackDP(
     // 4. Harvest Terminal Paths (Safely outside the main loop)
     for (size_t i = 0; i < matchNum; ++i) {
         if (!connectedToNext[i] && localMatchPaths[i].coveredPosCnt >= MIN_COVERED_POS) {
-            uint64_t currIdx = i;
-            while (currIdx != UINT64_MAX) {
-                localMatchPaths[i].chain.push_back(matchList + currIdx);
-                currIdx = localMatchPaths[currIdx].prevMatchIdx;
-            }
-            std::reverse(localMatchPaths[i].chain.begin(), localMatchPaths[i].chain.end());
-
-            filteredMatchPaths.push_back(localMatchPaths[i]);
+            addTerminalMatchPath(i, matchList, filteredMatchPaths);
         }
     }
 }
@@ -1197,13 +1193,7 @@ void Taxonomer<MatchType>::getSpacedMatchPaths(
                     - localMatchPaths[curIdx].coveredPosCnt * 3; // AA-matched bases
                 localMatchPaths[curIdx].score.idScore = max(0.0f, localMatchPaths[curIdx].score.idScore - gapPenalty);
                 
-                uint64_t prevIdx = curIdx;
-                while (prevIdx != UINT64_MAX) {
-                    localMatchPaths[curIdx].chain.push_back(matchList + prevIdx);
-                    prevIdx = localMatchPaths[prevIdx].prevMatchIdx;
-                }
-                
-                filteredMatchPaths.push_back(localMatchPaths[curIdx]);
+                addTerminalMatchPath(curIdx, matchList, filteredMatchPaths);
             }
         }
         
@@ -1219,13 +1209,7 @@ void Taxonomer<MatchType>::getSpacedMatchPaths(
                 - localMatchPaths[curIdx].coveredPosCnt * 3; // AA-matched bases
             localMatchPaths[curIdx].score.idScore = max(0.0f, localMatchPaths[curIdx].score.idScore - gapPenalty);
             
-            uint64_t prevIdx = curIdx;
-            while (prevIdx != UINT64_MAX) {
-                localMatchPaths[curIdx].chain.push_back(matchList + prevIdx);
-                prevIdx = localMatchPaths[prevIdx].prevMatchIdx;
-            }
-
-            filteredMatchPaths.push_back(localMatchPaths[curIdx]);
+            addTerminalMatchPath(curIdx, matchList, filteredMatchPaths);
         }
     }    
 }
@@ -1241,9 +1225,6 @@ void Taxonomer<MatchType>::ensureArraySize(size_t newSize) {
         minHammingForQuotient = new uint8_t[newSize];
         arraySize_filterRedundantMatches = newSize;
     }
-    std::memset(bestMatchForQuotient, 0, newSize * sizeof(const MatchType*));
-    std::memset(minHammingForQuotient, std::numeric_limits<uint8_t>::max(), newSize * sizeof(uint8_t));
-    std::fill_n(bestMatchTaxIdForQuotient, newSize, 0);
 }
 
 template class Taxonomer<Match>;

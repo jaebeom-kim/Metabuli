@@ -5,6 +5,35 @@
 
 #include <variant>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#elif defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
+namespace {
+inline void saturatingAddBins(uint8_t *dst, const uint8_t *src, size_t count) {
+    size_t i = 0;
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    for (; i + 16 <= count; i += 16) {
+        uint8x16_t a = vld1q_u8(dst + i);
+        uint8x16_t b = vld1q_u8(src + i);
+        vst1q_u8(dst + i, vqaddq_u8(a, b));
+    }
+#elif defined(__SSE2__)
+    for (; i + 16 <= count; i += 16) {
+        __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i *>(dst + i));
+        __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + i));
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + i), _mm_adds_epu8(a, b));
+    }
+#endif
+    for (; i < count; ++i) {
+        const int sum = dst[i] + src[i];
+        dst[i] = (sum > 255) ? 255 : static_cast<uint8_t>(sum);
+    }
+}
+}
+
 Classifier::Classifier(LocalParameters & par) : par(par) {
     dbDir = par.filenames[1 + (par.seqMode == 2)];
     matchPerKmer = par.matchPerKmer;
@@ -410,9 +439,9 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
     std::cout << "K-mer match analysis   : " << std::flush;
     // Divide matches into blocks for multi threading
     size_t seqNum = queryList.size();
-    MatchBlock *matchBlocks = new MatchBlock[seqNum];
+    std::vector<MatchBlock> matchBlocks;
+    matchBlocks.reserve(std::min(seqNum, numOfMatches));
     size_t matchIdx = 0;
-    size_t blockIdx = 0;
     uint32_t currentQuery;
     if (par.printLog==1) {
 #ifdef OPENMP
@@ -421,56 +450,50 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
     }
     while (matchIdx < numOfMatches) {
         currentQuery = matchList[matchIdx].qKmer.qInfo.sequenceID;
-        matchBlocks[blockIdx].id = currentQuery;
-        matchBlocks[blockIdx].start = matchIdx;
-        while ((currentQuery == matchList[matchIdx].qKmer.qInfo.sequenceID) && (matchIdx < numOfMatches)) ++matchIdx;
-        matchBlocks[blockIdx].end = matchIdx - 1;
-        blockIdx++;
+        MatchBlock block;
+        block.id = currentQuery;
+        block.start = matchIdx;
+        while (matchIdx < numOfMatches && currentQuery == matchList[matchIdx].qKmer.qInfo.sequenceID) {
+            ++matchIdx;
+        }
+        block.end = matchIdx - 1;
+        matchBlocks.push_back(block);
     }
     // Process each block
-#pragma omp parallel default(none), shared(cout, matchBlocks, matchList, seqNum, queryList, blockIdx, par)
-    {
-        Taxonomer<MatchType> taxonomer(par, taxonomy, metamerPattern);
-        #pragma omp for schedule(dynamic, 1)
-        for (size_t i = 0; i < blockIdx; ++i) {
-            taxonomer.chooseBestTaxon(
-                            matchBlocks[i].id - 1,
-                            matchBlocks[i].start,
-                            matchBlocks[i].end,
-                            matchList,
-                            queryList);
-        }
+    if (!matchBlocks.empty()) {
+#pragma omp parallel default(none), shared(matchBlocks, matchList, queryList, par)
+        {
+            Taxonomer<MatchType> taxonomer(par, taxonomy, metamerPattern);
+            #pragma omp for schedule(guided, 8)
+            for (size_t i = 0; i < matchBlocks.size(); ++i) {
+                taxonomer.chooseBestTaxon(
+                                matchBlocks[i].id - 1,
+                                matchBlocks[i].start,
+                                matchBlocks[i].end,
+                                matchList,
+                                queryList);
+            }
 
-        if (par.storeKmerPos) {
-            #pragma omp critical
-            {
+            if (par.storeKmerPos) {
                 for (auto& [spId, localArray] : taxonomer.sp2coverage) {
-                    sp2scoreSum_global[spId] += taxonomer.sp2scoreSum[spId];
-                    sp2totalReadLength[spId] += taxonomer.sp2totalReadLength[spId];
+                    #pragma omp critical(sp2coverage_merge)
+                    {
+                        sp2scoreSum_global[spId] += taxonomer.sp2scoreSum[spId];
+                        sp2totalReadLength[spId] += taxonomer.sp2totalReadLength[spId];
 
-                    // Ensure the global map has this species
-                    if (sp2coverage_global.find(spId) == sp2coverage_global.end()) {
-                        sp2coverage_global[spId].resize(65536, 0);
-                    }
+                        // Ensure the global map has this species
+                        if (sp2coverage_global.find(spId) == sp2coverage_global.end()) {
+                            sp2coverage_global[spId].resize(65536, 0);
+                        }
 
-                    uint8_t* globalBins = sp2coverage_global[spId].data();
-                    uint8_t* threadBins = localArray.data();
-
-                    // Fast vectorized addition to merge the 64KB arrays
-                    for (int j = 0; j < 65536; ++j) {
-                        int sum = globalBins[j] + threadBins[j];
-                        globalBins[j] = (sum > 255) ? 255 : static_cast<uint8_t>(sum);
+                        uint8_t* globalBins = sp2coverage_global[spId].data();
+                        uint8_t* threadBins = localArray.data();
+                        saturatingAddBins(globalBins, threadBins, 65536);
                     }
                 }
             }
+
         }
-
-    }
-
-    if (par.printLog) {
-#ifdef OPENMP
-        omp_set_num_threads(par.threads);
-#endif
     }
 
     if (par.printLog) {
@@ -482,8 +505,6 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
     for (size_t i = 0; i < seqNum; i++) {
         ++taxCounts[queryList[i].classification];
     }
-    
-    delete[] matchBlocks;
     cout << double(time(nullptr) - beforeAnalyze) << " s" << endl;
 
 }

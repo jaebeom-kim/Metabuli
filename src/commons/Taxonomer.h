@@ -34,7 +34,6 @@ private:
     const LocalParameters & par;
     TaxonomyWrapper * taxonomy;
     const MetamerPattern *metamerPattern = nullptr;
-    SubstitutionMatrix * substitutionMatrix = nullptr;
     EvalueComputation *evaluer = nullptr;
 
     // spaced k-mer
@@ -67,6 +66,9 @@ private:
     vector<MatchPath<MatchType>> matchPaths;
     vector<MatchPath<MatchType>> combinedMatchPaths;
     vector<TaxID> maxSpecies;
+    vector<pair<TaxID, MatchScore>> sp2score;
+    vector<size_t> tiedIndices;
+    vector<TaxID> tempPrioritySpecies;
 
     // getMatchPaths
     vector<bool> connectedToNext;
@@ -80,6 +82,7 @@ private:
     TaxID *bestMatchTaxIdForQuotient;
     uint8_t *minHammingForQuotient;
     size_t arraySize_filterRedundantMatches;
+    vector<size_t> touchedQuotients;
 
 
     // Output
@@ -152,6 +155,11 @@ private:
     bool trimMatchPath(MatchPath<MatchType> & path1, const MatchPath<MatchType> & path2, int overlapLength);
     bool trimSpacedMatchPath(MatchPath<MatchType> & path1, const MatchPath<MatchType> & path2, int overlapLength);
     void sortMatchPath(std::vector<MatchPath<MatchType>> & matchPaths, size_t i);
+
+    void addTerminalMatchPath(
+        size_t pathIdx,
+        const MatchType * matchList,
+        vector<MatchPath<MatchType>> & filteredMatchPaths);
 
    
 public:
