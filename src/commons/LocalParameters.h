@@ -128,6 +128,7 @@ public:
     PARAMETER(STORE_KMER_POS)
     PARAMETER(REP_GENOME_LIST)
     PARAMETER(NO_MASK_TAXA)
+    PARAMETER(COLLAPSE_RANK)
 
     // DB updated parameters
     PARAMETER(NEW_TAXA)
@@ -234,6 +235,7 @@ public:
     int storeKmerPos;
     std::string repGenomeList;
     std::string noMaskTaxa;
+    std::string collapseRank;
 
     // DB updated parameters
     std::string newTaxa;

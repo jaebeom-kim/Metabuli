@@ -6,6 +6,8 @@
 #include "editNames.h"
 #include "fasta_validate.h"
 #include "validateDatabase.h"
+#include <algorithm>
+#include <cctype>
 
 void setDefaults_build(LocalParameters & par) {
     par.storeKmerPos = 0;
@@ -25,6 +27,7 @@ void setDefaults_build(LocalParameters & par) {
     par.maskProb = 0.9;
     par.maskMode = 1;
     par.accessionLevel = 0;
+    par.collapseRank = "species";
     time_t now = time(0);
     tm *ltm = localtime(&now);
     par.dbDate = to_string(1900 + ltm->tm_year) + "-" + to_string(1 + ltm->tm_mon) + "-" + to_string(ltm->tm_mday);
@@ -95,6 +98,14 @@ int build(int argc, const char **argv, const Command &command){
                                                       taxonomyDir + "/nodes.dmp",
                                                       taxonomyDir + "/merged.dmp",
                                                       true);
+    std::transform(par.collapseRank.begin(), par.collapseRank.end(), par.collapseRank.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    if (TaxonomyWrapper::findRankIndex(par.collapseRank) == -1) {
+        cerr << "Error: Invalid collapse rank: " << par.collapseRank << endl;
+        delete taxonomy;
+        return 1;
+    }
+    cout << "Identical k-mer collapse rank: " << par.collapseRank << endl;
 
     IndexCreator idxCre(par, taxonomy, 2);
     if (par.storeKmerPos == 0) {

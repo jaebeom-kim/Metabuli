@@ -121,6 +121,11 @@ IndexCreator::~IndexCreator() {
     delete subMat;
 }
 
+TaxID IndexCreator::getCollapseTaxId(TaxID taxId) const {
+    TaxID collapseTaxId = taxonomy->getTaxIdAtRank(taxId, par.collapseRank);
+    return collapseTaxId == 0 ? taxId : collapseTaxId;
+}
+
 void IndexCreator::createLcaKmerIndex() {
     Buffer<Kmer> kmerBuffer(Buffer<Kmer>::calculateBufferSize(par.ramUsage, par.threads, sizeof(Kmer) + sizeof(size_t)));
     Buffer<size_t> uniqKmerIdx(kmerBuffer.bufferSize);
@@ -817,13 +822,15 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
         observedAccessionsVec[i].speciesID = taxonomy->getTaxIdAtRank(curId, "species");
         spIdSet.insert(observedAccessionsVec[i].speciesID);
         taxIdSet.insert(curId);
-        taxId2speciesId[curId] = observedAccessionsVec[i].speciesID;
+        TaxID collapseTaxID = getCollapseTaxId(curId);
+        taxId2speciesId[curId] = collapseTaxID;
         if (observedAccessionsVec[i].speciesID == 0) {
             cout << "Species ID is not found for accession " << observedAccessionsVec[i].accession << " " << curId << endl;
             unmappedAccessions.push_back(observedAccessionsVec[i].accession);
             exit(1);
         }
-        taxId2speciesId[observedAccessionsVec[i].speciesID] = observedAccessionsVec[i].speciesID;
+        taxId2speciesId[observedAccessionsVec[i].speciesID] = collapseTaxID;
+        taxId2speciesId[collapseTaxID] = collapseTaxID;
     }
 
     cout << "Number of unique taxIDs: " << taxIdSet.size() << endl;
@@ -1845,6 +1852,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                             exit(1);
                             }
                         }
+                        TaxID collapseTaxID = getCollapseTaxId(accessionBatches[batchIdx].taxIDs[idx]);
                         const KSeqWrapper::KSeqEntry & e = kseq->entry;
                         // Mask low complexity regions
                         char *maskedSeq = nullptr;
@@ -1867,7 +1875,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                             kmerBuffer,
                                             posToWrite,
                                             accessionBatches[batchIdx].taxIDs[idx],
-                                            accessionBatches[batchIdx].speciesID,
+                                            collapseTaxID,
                                             {par.readingFrame-1, (int) e.sequence.l - 1, par.readingFrame < 3 ? 1 : -1});
                             if (tempCheck == -1) {
                                 cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
@@ -1890,7 +1898,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                 kmerBuffer,
                                                 posToWrite,
                                                 accessionBatches[batchIdx].taxIDs[idx],
-                                                accessionBatches[batchIdx].speciesID,
+                                                collapseTaxID,
                                                 {0, (int) cds[cdsCnt].length() - 1, 1});
                                 if (tempCheck == -1) {
                                     cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
@@ -1902,7 +1910,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                 kmerBuffer,
                                                 posToWrite,
                                                 accessionBatches[batchIdx].taxIDs[idx],
-                                                accessionBatches[batchIdx].speciesID,
+                                                collapseTaxID,
                                                 {0, (int) cds[nonCdsCnt].length() - 1, 1});
                                 if (tempCheck == -1) {
                                     cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
@@ -1961,7 +1969,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                     kmerBuffer,
                                                     posToWrite,
                                                     accessionBatches[batchIdx].taxIDs[idx],
-                                                    accessionBatches[batchIdx].speciesID,
+                                                    collapseTaxID,
                                                     extendedORFs[orfCnt]);
                                     if (tempCheck == -1) {
                                         cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
@@ -1993,7 +2001,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                     kmerBuffer,
                                                     posToWrite,
                                                     accessionBatches[batchIdx].taxIDs[idx],
-                                                    accessionBatches[batchIdx].speciesID,
+                                                    collapseTaxID,
                                                     extendedORFs[orfCnt]);
                                     if (tempCheck == -1) {
                                         cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
@@ -2054,6 +2062,7 @@ void IndexCreator::writeDbParameters() {
     fprintf(handle, "Kmer_format\t%d\n", kmerFormat);
     fprintf(handle, "Total_seq_length\t%lu\n", totalLength);
     fprintf(handle, "Kmer_position\t%d\n", par.storeKmerPos);
+    fprintf(handle, "Collapse_rank\t%s\n", par.collapseRank.c_str());
 
     if (!par.customMetamer.empty()) {
         // Read the custom metamer file and write to parameter file
@@ -2246,25 +2255,24 @@ void IndexCreator::updateTaxId2SpeciesTaxId(const string & taxIdListFileName) {
     while(fscanf(taxIdFile,"%s",taxID) == 1) {
         TaxID taxId = atol(taxID);
         TaxonNode const * taxon = taxonomy->taxonNode(taxId);
+        TaxID collapseTaxID = getCollapseTaxId(taxId);
         if (taxId == taxon->taxId){
-            TaxID speciesTaxID = taxonomy->getTaxIdAtRank(taxId, "species");
-            while (taxon->taxId != speciesTaxID) {
-                taxId2speciesId[taxon->taxId] = speciesTaxID;
+            while (taxon->taxId != collapseTaxID) {
+                taxId2speciesId[taxon->taxId] = collapseTaxID;
                 taxon = taxonomy->taxonNode(taxon->parentTaxId);
             }
-            taxId2speciesId[speciesTaxID] = speciesTaxID;
+            taxId2speciesId[collapseTaxID] = collapseTaxID;
         } else { // merged
-            TaxID speciesTaxID = taxonomy->getTaxIdAtRank(taxId, "species");
-            while (taxon->taxId != speciesTaxID) {
-                taxId2speciesId[taxon->taxId] = speciesTaxID;
+            while (taxon->taxId != collapseTaxID) {
+                taxId2speciesId[taxon->taxId] = collapseTaxID;
                 taxon = taxonomy->taxonNode(taxon->parentTaxId);
             }
-            taxId2speciesId[speciesTaxID] = speciesTaxID;
-            taxId2speciesId[taxId] = speciesTaxID;
+            taxId2speciesId[collapseTaxID] = collapseTaxID;
+            taxId2speciesId[taxId] = collapseTaxID;
         }
     }
     fclose(taxIdFile);
-    Debug(Debug::INFO) << "Species-level taxonomy IDs are prepared.\n";
+    Debug(Debug::INFO) << "Collapse-rank taxonomy IDs are prepared.\n";
 }
 
 void IndexCreator::generateIntergenicKmerList(

@@ -304,6 +304,8 @@ protected:
     }
 
     void loadMergedTaxIds(const std::string &mergedFile, unordered_map<TaxID, TaxID> & old2new);
+    
+    TaxID getCollapseTaxId(TaxID taxId) const;
 
     string addToLibrary(const std::string & dbDir,
                         const std::string & fileList,

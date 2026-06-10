@@ -424,6 +424,13 @@ LocalParameters::LocalParameters() :
                 typeid(std::string),
                 (void *) &noMaskTaxa,
                 "^.*$"),
+        COLLAPSE_RANK(COLLAPSE_RANK_ID,
+                "--collapse-rank",
+                "Taxonomic rank for build-time identical k-mer collapsing",
+                "Taxonomic rank used as the grouping boundary for build-time identical k-mer collapsing",
+                typeid(std::string),
+                (void *) &collapseRank,
+                "^.*$"),
         NEW_TAXA(NEW_TAXA_ID,
                 "--new-taxa",
                 "TSV file of new taxa to be added",
@@ -613,6 +620,7 @@ LocalParameters::LocalParameters() :
     splitNum = 0;
     bufferSize = 0;
     accessionLevel = 0;
+    collapseRank = "species";
 
     // Test parameters
     testRank = "";
@@ -675,6 +683,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&STORE_KMER_POS);
     build.push_back(&REP_GENOME_LIST);
     build.push_back(&NO_MASK_TAXA);
+    build.push_back(&COLLAPSE_RANK);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
     createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);
