@@ -56,7 +56,7 @@ cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DHAVE_TESTS=0 -DHAVE_MPI=0 -DHAVE_AVX2=1 \
     -DCMAKE_OSX_ARCHITECTURES=x86_64 \
-    -DCMAKE_C_FLAGS="-arch x86_64" -DCMAKE_CXX_FLAGS="-arch x86_64" -DCMAKE_ASM_FLAGS="-arch arm64" \
+    -DCMAKE_C_FLAGS="-arch x86_64 -mavx2 -mssse3" -DCMAKE_CXX_FLAGS="-arch x86_64 -mavx2 -mssse3" -DCMAKE_ASM_FLAGS="-arch x86_64" \
     -DBUILD_SHARED_LIBS=OFF -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
     -DOpenMP_C_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_AMD64}" -DOpenMP_C_LIB_NAMES=omp -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_AMD64}" -DOpenMP_CXX_LIB_NAMES=omp -DOpenMP_omp_LIBRARY=${LIBOMP_AMD64}/libomp.a \
     "$REPO"
@@ -95,7 +95,7 @@ cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DHAVE_TESTS=0 -DHAVE_MPI=0 -DHAVE_ARM8=1 \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
-    -DCMAKE_C_FLAGS="-arch arm64" -DCMAKE_CXX_FLAGS="-arch arm64" -DCMAKE_ASM_FLAGS="-arch arm64" \
+    -DCMAKE_C_FLAGS="-arch arm64 -march=armv8-a+simd" -DCMAKE_CXX_FLAGS="-arch arm64 -march=armv8-a+simd" -DCMAKE_ASM_FLAGS="-arch arm64" \
     -DBUILD_SHARED_LIBS=OFF -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
     -DOpenMP_C_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_AARCH64}" -DOpenMP_C_LIB_NAMES=omp -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_AARCH64}" -DOpenMP_CXX_LIB_NAMES=omp -DOpenMP_omp_LIBRARY=${LIBOMP_AARCH64}/libomp.a \
     "$REPO"
@@ -112,4 +112,3 @@ lipo \
     -arch x86_64h "$BUILD/build_avx2/src/${BINARY_NAME}" \
     -arch arm64 "$BUILD/build_arm64/src/${BINARY_NAME}" \
     -output "$BUILD/${BINARY_NAME}"
-
