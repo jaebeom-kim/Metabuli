@@ -147,6 +147,9 @@ bool KmerMatcher::matchKmers(
         std::vector<Kmer> candidates;
         std::vector<Match> filteredMatches;
         std::vector<uint8_t> hammings;
+        candidates.reserve(1024);
+        filteredMatches.reserve(1024);
+        hammings.reserve(1024);
         bool localHasOverflow = false;
     #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < querySplits.size(); i++) {
@@ -158,11 +161,14 @@ bool KmerMatcher::matchKmers(
 
             deltaIdxReaders->setReadPosition(querySplits[i].diffIdxSplit);
             Kmer tKmer = deltaIdxReaders->next();
+            uint64_t tKmerAA = AminoAcidPart(tKmer.value);
             Kmer qKmer(UINT64_MAX, 0);
             uint64_t qKmerAA = UINT64_MAX;
             for (size_t j = querySplits[i].start; j < querySplits[i].end + 1; j++) {
+                const Kmer& currentQKmer = qKmers[j];
+                const uint64_t currentQKmerAA = AminoAcidPart(currentQKmer.value);
                 // Reuse the filtered matches if queries are exactly identical
-                if ((qKmer.value == qKmers[j].value) && (qKmer.qInfo.frame/3 == qKmers[j].qInfo.frame/3)) {
+                if ((qKmer.value == currentQKmer.value) && (qKmer.qInfo.frame/3 == currentQKmer.qInfo.frame/3)) {
                     size_t filteredMatchCnt = filteredMatches.size();
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
                         if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
@@ -175,15 +181,15 @@ bool KmerMatcher::matchKmers(
                     memcpy(localMatches.buffer + posToWrite, filteredMatches.data(),
                            sizeof(Match) * filteredMatches.size());
                     for (size_t k = 0; k < filteredMatchCnt; k++) {
-                        localMatches.buffer[posToWrite + k].qKmer.qInfo = qKmers[j].qInfo;
+                        localMatches.buffer[posToWrite + k].qKmer.qInfo = currentQKmer.qInfo;
                     }
                     continue;
                 }
                 filteredMatches.clear();
 
                 // Reuse the candidate target k-mers to compare in DNA level if queries are the same at amino acid level but not at DNA level
-                if (qKmerAA == AMINO_ACID_PART(qKmers[j].value)) {
-                    filterCandidates(qKmers[j], candidates, filteredMatches, hammings);
+                if (qKmerAA == currentQKmerAA) {
+                    filterCandidates(currentQKmer, candidates, filteredMatches, hammings);
                     size_t filteredMatchCnt = filteredMatches.size();
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
                         if (!Buffer<Match>::moveSmallToLarge(&localMatches, totalMatches)) {
@@ -195,32 +201,34 @@ bool KmerMatcher::matchKmers(
                     size_t posToWrite = localMatches.reserveMemory(filteredMatchCnt);
                     memcpy(localMatches.buffer + posToWrite, filteredMatches.data(),
                            sizeof(Match) * filteredMatchCnt);
-                    qKmer = qKmers[j];
-                    qKmerAA = AMINO_ACID_PART(qKmer.value);
+                    qKmer = currentQKmer;
+                    qKmerAA = currentQKmerAA;
                     continue;
                 }
                 candidates.clear();
 
                 // Get next query, and start to find
-                qKmer = qKmers[j];
-                qKmerAA = AMINO_ACID_PART(qKmer.value);
+                qKmer = currentQKmer;
+                qKmerAA = currentQKmerAA;
 
                 // Skip target k-mers lexiocographically smaller at amino acid level
                 while (!deltaIdxReaders->isCompleted() 
-                        && qKmerAA > AMINO_ACID_PART(tKmer.value)) {
+                        && qKmerAA > tKmerAA) {
                     tKmer = deltaIdxReaders->next();
+                    tKmerAA = AminoAcidPart(tKmer.value);
                 }
 
                 // No match found - skip to the next query
-                if (qKmerAA != AMINO_ACID_PART(tKmer.value)) {
+                if (deltaIdxReaders->isCompleted() || qKmerAA != tKmerAA) {
                     continue;
                 } 
 
                 // Match found - load target k-mers matching at amino acid level
                 while (!deltaIdxReaders->isCompleted() 
-                        && qKmerAA == AMINO_ACID_PART(tKmer.value)) {
+                        && qKmerAA == tKmerAA) {
                     candidates.emplace_back(tKmer.value, tKmer.id & mask);
-                    tKmer = deltaIdxReaders->next();   
+                    tKmer = deltaIdxReaders->next();
+                    tKmerAA = AminoAcidPart(tKmer.value);
                 }
 
                 filterCandidates(qKmer, candidates, filteredMatches, hammings);
@@ -290,6 +298,9 @@ bool KmerMatcher::matchKmersWithPos(
         std::vector<Kmer> candidates;
         std::vector<MatchWithPos> filteredMatches;
         std::vector<uint8_t> hammings;
+        candidates.reserve(1024);
+        filteredMatches.reserve(1024);
+        hammings.reserve(1024);
         bool localHasOverflow = false;
     #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < querySplits.size(); i++) {
@@ -301,11 +312,14 @@ bool KmerMatcher::matchKmersWithPos(
 
             deltaIdxReaders->setReadPosition(querySplits[i].diffIdxSplit);
             Kmer tKmer = deltaIdxReaders->next();
+            uint64_t tKmerAA = AminoAcidPart(tKmer.value);
             Kmer qKmer(UINT64_MAX, 0);
             uint64_t qKmerAA = UINT64_MAX;
             for (size_t j = querySplits[i].start; j < querySplits[i].end + 1; j++) {
+                const Kmer& currentQKmer = qKmers[j];
+                const uint64_t currentQKmerAA = AminoAcidPart(currentQKmer.value);
                 // Reuse the filtered matches if queries are exactly identical
-                if ((qKmer.value == qKmers[j].value) && (qKmer.qInfo.frame/3 == qKmers[j].qInfo.frame/3)) {
+                if ((qKmer.value == currentQKmer.value) && (qKmer.qInfo.frame/3 == currentQKmer.qInfo.frame/3)) {
                     size_t filteredMatchCnt = filteredMatches.size();
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
                         if (!Buffer<MatchWithPos>::moveSmallToLarge(&localMatches, totalMatches)) {
@@ -318,15 +332,15 @@ bool KmerMatcher::matchKmersWithPos(
                     memcpy(localMatches.buffer + posToWrite, filteredMatches.data(),
                            sizeof(MatchWithPos) * filteredMatches.size());
                     for (size_t k = 0; k < filteredMatchCnt; k++) {
-                        localMatches.buffer[posToWrite + k].qKmer.qInfo = qKmers[j].qInfo;
+                        localMatches.buffer[posToWrite + k].qKmer.qInfo = currentQKmer.qInfo;
                     }
                     continue;
                 }
                 filteredMatches.clear();
 
                 // Reuse the candidate target k-mers to compare in DNA level if queries are the same at amino acid level but not at DNA level
-                if (qKmerAA == AMINO_ACID_PART(qKmers[j].value)) {
-                    filterCandidates(qKmers[j], candidates, filteredMatches, hammings);
+                if (qKmerAA == currentQKmerAA) {
+                    filterCandidates(currentQKmer, candidates, filteredMatches, hammings);
                     size_t filteredMatchCnt = filteredMatches.size();
                     if (unlikely(!localMatches.afford(filteredMatchCnt))) {
                         if (!Buffer<MatchWithPos>::moveSmallToLarge(&localMatches, totalMatches)) {
@@ -338,32 +352,34 @@ bool KmerMatcher::matchKmersWithPos(
                     size_t posToWrite = localMatches.reserveMemory(filteredMatchCnt);
                     memcpy(localMatches.buffer + posToWrite, filteredMatches.data(),
                            sizeof(MatchWithPos) * filteredMatchCnt);
-                    qKmer = qKmers[j];
-                    qKmerAA = AMINO_ACID_PART(qKmer.value);
+                    qKmer = currentQKmer;
+                    qKmerAA = currentQKmerAA;
                     continue;
                 }
                 candidates.clear();
 
                 // Get next query, and start to find
-                qKmer = qKmers[j];
-                qKmerAA = AMINO_ACID_PART(qKmer.value);
+                qKmer = currentQKmer;
+                qKmerAA = currentQKmerAA;
 
                 // Skip target k-mers lexiocographically smaller at amino acid level
                 while (!deltaIdxReaders->isCompleted() 
-                        && qKmerAA > AMINO_ACID_PART(tKmer.value)) {
+                        && qKmerAA > tKmerAA) {
                     tKmer = deltaIdxReaders->next();
+                    tKmerAA = AminoAcidPart(tKmer.value);
                 }
 
                 // No match found - skip to the next query
-                if (qKmerAA != AMINO_ACID_PART(tKmer.value)) {
+                if (deltaIdxReaders->isCompleted() || qKmerAA != tKmerAA) {
                     continue;
                 } 
 
                 // Match found - load target k-mers matching at amino acid level
                 while (!deltaIdxReaders->isCompleted() 
-                        && qKmerAA == AMINO_ACID_PART(tKmer.value)) {
+                        && qKmerAA == tKmerAA) {
                     candidates.push_back(tKmer);
-                    tKmer = deltaIdxReaders->next();   
+                    tKmer = deltaIdxReaders->next();
+                    tKmerAA = AminoAcidPart(tKmer.value);
                 }
 
                 filterCandidates(qKmer, candidates, filteredMatches, hammings);
@@ -575,18 +591,17 @@ void KmerMatcher::filterCandidates(
     const size_t numCandidates = candidates.size();
     if (numCandidates == 0) return;
 
-    hammings.clear();
-    if (hammings.capacity() < numCandidates) {
-        hammings.reserve(numCandidates);
-    }
-
     const uint64_t qVal = qKmer.value;
     const Kmer* candPtr = candidates.data();
+    if (filteredMatches.capacity() < numCandidates) {
+        filteredMatches.reserve(numCandidates);
+    }
 
     if (par.useAllMatches) {
         for (size_t i = 0; i < numCandidates; i++) {
-            filteredMatches.emplace_back(qKmer, candPtr[i]);
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            Kmer tKmer = candPtr[i];
+            tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            filteredMatches.emplace_back(qKmer, tKmer);
         }
         return;
     }
@@ -595,8 +610,9 @@ void KmerMatcher::filterCandidates(
     bool hasExactMatch = false;
     for (size_t i = 0; i < numCandidates; i++) {
         if (qVal == candPtr[i].value) {
-            filteredMatches.emplace_back(qKmer, candPtr[i]);
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            Kmer tKmer = candPtr[i];
+            tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            filteredMatches.emplace_back(qKmer, tKmer);
             hasExactMatch = true;
         } else if (hasExactMatch) {
             break;
@@ -607,21 +623,23 @@ void KmerMatcher::filterCandidates(
     }
 
     // Calculate hamming distances
-    uint8_t minDist = UINT8_MAX;    
+    hammings.resize(numCandidates);
+    uint8_t* hamPtr = hammings.data();
+    uint8_t minDist = UINT8_MAX;
     for (size_t i = 0; i < numCandidates; i++) {
-        uint8_t dist = metamerPattern->hammingDistSum(qVal, candPtr[i].value);
-        hammings.push_back(dist);
+        const uint8_t dist = metamerPattern->hammingDistSum(qVal, candPtr[i].value);
+        hamPtr[i] = dist;
         if (dist < minDist) {
             minDist = dist;
         }
     }
 
-    uint8_t hDistCutoff = static_cast<uint8_t>(min(minDist * 2, kmerLen - 1));
-    const uint8_t* hamPtr = hammings.data();
+    const uint8_t hDistCutoff = static_cast<uint8_t>(min(static_cast<int>(minDist) * 2, kmerLen - 1));
     for (size_t h = 0; h < numCandidates; h++) {
         if (hamPtr[h] <= hDistCutoff) {
-            filteredMatches.emplace_back(qKmer, candPtr[h]);
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[h].id];
+            Kmer tKmer = candPtr[h];
+            tKmer.tInfo.speciesId = taxId2speciesId[candPtr[h].id];
+            filteredMatches.emplace_back(qKmer, tKmer);
         }
     }
 }
@@ -636,18 +654,18 @@ void KmerMatcher::filterCandidates(
     const size_t numCandidates = candidates.size();
     if (numCandidates == 0) return;
 
-    hammings.clear();
-    if (hammings.capacity() < numCandidates) {
-        hammings.reserve(numCandidates);
-    }
-
     const uint64_t qVal = qKmer.value;
     const Kmer* candPtr = candidates.data();
+    if (filteredMatches.capacity() < numCandidates) {
+        filteredMatches.reserve(numCandidates);
+    }
 
     if (par.useAllMatches) {
         for (size_t i = 0; i < numCandidates; i++) {
-            filteredMatches.emplace_back(qKmer, candPtr[i], static_cast<uint16_t>(candPtr[i].tInfo.pos));
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            const uint16_t posId = static_cast<uint16_t>(candPtr[i].tInfo.pos);
+            Kmer tKmer = candPtr[i];
+            tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            filteredMatches.emplace_back(qKmer, tKmer, posId);
         }
         return;
     }
@@ -656,8 +674,10 @@ void KmerMatcher::filterCandidates(
     bool hasExactMatch = false;
     for (size_t i = 0; i < numCandidates; i++) {
         if (qVal == candPtr[i].value) {
-            filteredMatches.emplace_back(qKmer, candPtr[i], static_cast<uint16_t>(candPtr[i].tInfo.pos));
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            const uint16_t posId = static_cast<uint16_t>(candPtr[i].tInfo.pos);
+            Kmer tKmer = candPtr[i];
+            tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+            filteredMatches.emplace_back(qKmer, tKmer, posId);
             hasExactMatch = true;
         } else if (hasExactMatch) {
             break;
@@ -668,21 +688,24 @@ void KmerMatcher::filterCandidates(
     }
 
     // Calculate hamming distances
-    uint8_t minDist = UINT8_MAX;    
+    hammings.resize(numCandidates);
+    uint8_t* hamPtr = hammings.data();
+    uint8_t minDist = UINT8_MAX;
     for (size_t i = 0; i < numCandidates; i++) {
-        uint8_t dist = metamerPattern->hammingDistSum(qVal, candPtr[i].value);
-        hammings.push_back(dist);
+        const uint8_t dist = metamerPattern->hammingDistSum(qVal, candPtr[i].value);
+        hamPtr[i] = dist;
         if (dist < minDist) {
             minDist = dist;
         }
     }
 
-    uint8_t hDistCutoff = static_cast<uint8_t>(min(minDist * 2, kmerLen - 1));
-    const uint8_t* hamPtr = hammings.data();
+    const uint8_t hDistCutoff = static_cast<uint8_t>(min(static_cast<int>(minDist) * 2, kmerLen - 1));
     for (size_t h = 0; h < numCandidates; h++) {
         if (hamPtr[h] <= hDistCutoff) {
-            filteredMatches.emplace_back(qKmer, candPtr[h], static_cast<uint16_t>(candPtr[h].tInfo.pos));
-            filteredMatches.back().tKmer.tInfo.speciesId = taxId2speciesId[candPtr[h].id];
+            const uint16_t posId = static_cast<uint16_t>(candPtr[h].tInfo.pos);
+            Kmer tKmer = candPtr[h];
+            tKmer.tInfo.speciesId = taxId2speciesId[candPtr[h].id];
+            filteredMatches.emplace_back(qKmer, tKmer, posId);
         }
     }
 }

@@ -731,6 +731,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&SCORE_MODE);
     classify.push_back(&MAX_E_VALUE);
     classify.push_back(&TIE_BRAKER);
+    classify.push_back(&USE_ALL_MATCHES);
     // classify.push_back(&PDM_KMER);
     // classify.push_back(&SCORE_MODE);
     
