@@ -385,7 +385,7 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
             while ((i < end + 1) && currentSpecies == matchList[i].tKmer.tInfo.speciesId && curFrame == matchList[i].qKmer.qInfo.frame) {
                 i ++;
             }
-            if (i - frameStart > 1) {
+            if (i > frameStart) {
                 if (windowSize == kmerLen) {
                     getMatchPaths(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
                 } else {
@@ -1248,4 +1248,3 @@ void Taxonomer<MatchType>::ensureArraySize(size_t newSize) {
 
 template class Taxonomer<Match>;
 template class Taxonomer<MatchWithPos>;
-
