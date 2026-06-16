@@ -141,10 +141,10 @@ int KmerExtractor::getPDMKmerCount(
             for (int i = 0; i < dnaKmerLen; ++i) {
                 int pos = start + i;
                 char c = seq[pos];
-                if (overlapFirstN && pos < par.pdmKmer && c == 'T') {
+                if (overlapFirstN && pos < par.pdmKmer && (c == 'T' || c == 't')) {
                     nt++;
                 }
-                if (overlapLastN && pos >= seqLen - par.pdmKmer &&  c == 'A') {
+                if (overlapLastN && pos >= seqLen - par.pdmKmer && (c == 'A' || c == 'a')) {
                     na++;
                 }
             }
@@ -787,10 +787,10 @@ void KmerExtractor::generatePDMNeighborKmers(
         for (int i = 0; i < dnaKmerLen; ++i) {
             int readPos = start + i;
 
-            if (overlapFirstN && readPos < par.pdmKmer && kmer[i] == 'T')
+            if (overlapFirstN && readPos < par.pdmKmer && (kmer[i] == 'T' || kmer[i] == 't'))
                 tpos.push_back(i);
 
-            if (overlapLastN && readPos >= seqLen - par.pdmKmer && kmer[i] == 'A')
+            if (overlapLastN && readPos >= seqLen - par.pdmKmer && (kmer[i] == 'A' || kmer[i] == 'a'))
                 apos.push_back(i);
         }
 
