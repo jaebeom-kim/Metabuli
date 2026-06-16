@@ -31,6 +31,11 @@ private:
     ofstream readClassificationFile;
     WriteBuffer<MappingRes> * mappingResBuffer = nullptr;
     bool isFirstTime = true;
+    unordered_map<TaxID, TaxID> originalTaxIdCache;
+    unordered_map<TaxID, string> rankCache;
+    unordered_map<TaxID, string> lineageCache;
+    string readClassificationOutputBuffer;
+    vector<char> readClassificationFileBuffer;
 
     
 

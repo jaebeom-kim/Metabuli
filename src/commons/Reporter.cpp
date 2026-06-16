@@ -1,5 +1,47 @@
 #include "Reporter.h"
 #include "taxonomyreport.cpp"
+#include <cstdio>
+#include <type_traits>
+
+namespace {
+inline void appendUnsignedNumber(std::string &out, unsigned long long value) {
+    char buffer[32];
+    char *ptr = buffer + sizeof(buffer);
+    do {
+        *--ptr = static_cast<char>('0' + (value % 10));
+        value /= 10;
+    } while (value != 0);
+    out.append(ptr, static_cast<size_t>(buffer + sizeof(buffer) - ptr));
+}
+
+template <typename T>
+inline void appendNumber(std::string &out, T value, std::true_type) {
+    if (value < 0) {
+        out += '-';
+        appendUnsignedNumber(out, static_cast<unsigned long long>(-(value + 1)) + 1);
+    } else {
+        appendUnsignedNumber(out, static_cast<unsigned long long>(value));
+    }
+}
+
+template <typename T>
+inline void appendNumber(std::string &out, T value, std::false_type) {
+    appendUnsignedNumber(out, static_cast<unsigned long long>(value));
+}
+
+template <typename T>
+inline void appendNumber(std::string &out, T value) {
+    appendNumber(out, value, typename std::is_signed<T>::type());
+}
+
+inline void appendFloat(std::string &out, double value) {
+    char buffer[64];
+    int len = std::snprintf(buffer, sizeof(buffer), "%.6g", value);
+    if (len > 0) {
+        out.append(buffer, static_cast<size_t>(len));
+    }
+}
+}
 
 Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const std::string &customReportFileName) : par(par), taxonomy(taxonomy) {
     if (!customReportFileName.empty()){
@@ -29,18 +71,57 @@ Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const 
 }
 
 void Reporter::openReadClassificationFile() {
+    if (readClassificationFileBuffer.empty()) {
+        readClassificationFileBuffer.resize(1 << 20);
+    }
+    readClassificationFile.rdbuf()->pubsetbuf(readClassificationFileBuffer.data(), static_cast<std::streamsize>(readClassificationFileBuffer.size()));
     readClassificationFile.open(readClassificationFileName);
 }
 
 void Reporter::writeReadClassification(const vector<Query> & queryList, bool classifiedOnly) {
+    std::string &out = readClassificationOutputBuffer;
+    out.clear();
+    out.reserve(std::max<size_t>(4096, queryList.size() * 96));
+
     if (isFirstTime) {
-        readClassificationFile << "#is_classified\tname\ttaxID\tquery_length\tscore\te_value\trank";
+        out += "#is_classified\tname\ttaxID\tquery_length\tscore\te_value\trank";
         if (par.printLineage) {
-            readClassificationFile << "\tlineage";
+            out += "\tlineage";
         }
-        readClassificationFile << "\ttaxID:match_count\n";
+        out += "\ttaxID:match_count\n";
         isFirstTime = false;
     }
+
+    auto originalTaxId = [this](TaxID taxId) {
+        auto it = originalTaxIdCache.find(taxId);
+        if (it != originalTaxIdCache.end()) {
+            return it->second;
+        }
+        TaxID original = taxonomy->getOriginalTaxID(taxId);
+        originalTaxIdCache.emplace(taxId, original);
+        return original;
+    };
+
+    auto rankName = [this](TaxID taxId) -> const string& {
+        auto it = rankCache.find(taxId);
+        if (it != rankCache.end()) {
+            return it->second;
+        }
+        const TaxonNode *node = taxonomy->taxonNode(taxId);
+        auto inserted = rankCache.emplace(taxId, taxonomy->getString(node->rankIdx));
+        return inserted.first->second;
+    };
+
+    auto lineage = [this](TaxID taxId) -> const string& {
+        auto it = lineageCache.find(taxId);
+        if (it != lineageCache.end()) {
+            return it->second;
+        }
+        const TaxonNode *node = taxonomy->taxonNode(taxId);
+        auto inserted = lineageCache.emplace(taxId, taxonomy->taxLineage2(node));
+        return inserted.first->second;
+    };
+
     for (size_t i = 0; i < queryList.size(); i++) {
         if (classifiedOnly && !(queryList[i].classification == 0)) {
             continue;
@@ -48,40 +129,54 @@ void Reporter::writeReadClassification(const vector<Query> & queryList, bool cla
         if (queryList[i].name.empty()) {
             break;
         }
-        if (queryList[i].classification != 0) {
-            readClassificationFile 
-                << "1\t" 
-                << queryList[i].name << "\t"
-                << taxonomy->getOriginalTaxID(queryList[i].classification) << "\t"
-                << queryList[i].queryLength + queryList[i].queryLength2 << "\t"
-                << queryList[i].idScore << "\t"
-                << queryList[i].eValue << "\t"
-                << taxonomy->getString(taxonomy->taxonNode(queryList[i].classification)->rankIdx) << "\t";
-            
+        const Query &query = queryList[i];
+        if (query.classification != 0) {
+            out += "1\t";
+            out += query.name;
+            out += '\t';
+            appendNumber(out, originalTaxId(query.classification));
+            out += '\t';
+            appendNumber(out, query.queryLength + query.queryLength2);
+            out += '\t';
+            appendFloat(out, query.idScore);
+            out += '\t';
+            appendFloat(out, query.eValue);
+            out += '\t';
+            out += rankName(query.classification);
+            out += '\t';
+
             if (par.printLineage) {
-                readClassificationFile << taxonomy->taxLineage2(taxonomy->taxonNode(queryList[i].classification)) << "\t";
+                out += lineage(query.classification);
+                out += '\t';
             }
-            
-            for (auto it = queryList[i].taxCnt.begin(); it != queryList[i].taxCnt.end(); ++it) {
-                readClassificationFile << taxonomy->getOriginalTaxID(it->first) << ":" << it->second << " ";
+
+            for (auto it = query.taxCnt.begin(); it != query.taxCnt.end(); ++it) {
+                appendNumber(out, originalTaxId(it->first));
+                out += ':';
+                appendNumber(out, it->second);
+                out += ' ';
             }
-            readClassificationFile << "\n";
+            out += '\n';
         } else {
-            readClassificationFile 
-                << "0\t" 
-                << queryList[i].name << "\t"
-                << taxonomy->getOriginalTaxID(queryList[i].classification) << "\t"
-                << queryList[i].queryLength + queryList[i].queryLength2 << "\t"
-                << queryList[i].idScore << "\t"
-                << "-" << "\t" // eValue
-                << "-" << "\t";
-            
+            out += "0\t";
+            out += query.name;
+            out += '\t';
+            appendNumber(out, originalTaxId(query.classification));
+            out += '\t';
+            appendNumber(out, query.queryLength + query.queryLength2);
+            out += '\t';
+            appendFloat(out, query.idScore);
+            out += "\t-\t-";
+            out += '\t';
+
             if (par.printLineage) {
-                readClassificationFile << "-\t";
+                out += "-\t";
             }
-            readClassificationFile << "-\t\n";
+            out += "-\t\n";
         }
     }
+
+    readClassificationFile.write(out.data(), static_cast<std::streamsize>(out.size()));
 }
 
 void Reporter::closeReadClassificationFile() {
