@@ -41,6 +41,14 @@ inline void appendFloat(std::string &out, double value) {
         out.append(buffer, static_cast<size_t>(len));
     }
 }
+
+inline void writeMetricOrDash(FILE *fp, double value) {
+    if (value >= 0.0) {
+        fprintf(fp, "\t%.4f", value);
+    } else {
+        fprintf(fp, "\t-");
+    }
+}
 }
 
 Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const std::string &customReportFileName) : par(par), taxonomy(taxonomy) {
@@ -529,7 +537,7 @@ void Reporter::writeReportFile(
     }
     
     // UPDATED HEADER: Added coverage and adjusted_evenness columns
-    fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\trank\ttaxID\tevenness\tcoverage\tadjusted_evenness\tunified_score\tname\n");
+    fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\trank\ttaxID\tevenness\tcoverage\tmacro_coverage\tadjusted_evenness\tunified_score\tavg_score\tname\n");
     writeReport(fp, cladeCounts, species2covMetrics, numOfQuery); // PASS MAP
     fclose(fp);
 
@@ -575,8 +583,7 @@ void Reporter::writeReport(
     
     if (taxID == 0) {
         if (cladeCount > 0) {
-            // Unclassified naturally gets '-' for all three metric columns
-            fprintf(FP, "%.4f\t%i\t%i\tno rank\t0\t-\t-\t-\t-\tunclassified\n",
+            fprintf(FP, "%.4f\t%i\t%i\tno rank\t0\t-\t-\t-\t-\t-\t-\tunclassified\n",
                     100 * cladeCount / double(totalReads),
                     cladeCount, taxCount);
         }
@@ -590,14 +597,17 @@ void Reporter::writeReport(
         // NEW: Check if this specific taxID has calculated metric scores
         auto evIt = species2covMetrics.find(taxID);
         if (evIt != species2covMetrics.end()) {
-            // Found: Print the three scores formatted to 4 decimal places
-            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f\t%s%s\n",
+            fprintf(FP, "%.4f\t%i\t%i\t%s\t%i",
                     100 * cladeCount / double(totalReads), cladeCount, taxCount,
-                    taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID),
-                    evIt->second.evenness, evIt->second.coverage, evIt->second.macroCoverage,evIt->second.adjustedEvenness, evIt->second.unifiedScore, evIt->second.avgScore,
-                    std::string(2 * depth, ' ').c_str(), taxonomy->getString(taxon->nameIdx));
+                    taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID));
+            writeMetricOrDash(FP, evIt->second.evenness);
+            writeMetricOrDash(FP, evIt->second.coverage);
+            writeMetricOrDash(FP, evIt->second.macroCoverage);
+            writeMetricOrDash(FP, evIt->second.adjustedEvenness);
+            writeMetricOrDash(FP, evIt->second.unifiedScore);
+            writeMetricOrDash(FP, evIt->second.avgScore);
+            fprintf(FP, "\t%s%s\n", std::string(2 * depth, ' ').c_str(), taxonomy->getString(taxon->nameIdx));
         } else {
-            // Not Found (Higher rank/not a species): Print '-' placeholders for the three columns
             fprintf(FP, "%.4f\t%i\t%i\t%s\t%i\t-\t-\t-\t-\t-\t-\t%s%s\n",
                     100 * cladeCount / double(totalReads), cladeCount, taxCount,
                     taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID), 

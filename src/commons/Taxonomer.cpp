@@ -152,7 +152,6 @@ void Taxonomer<MatchType>::chooseBestTaxon(
 
     if (par.printLog) cout << "#" << currentQuery << " " << taxonomy->getOriginalTaxID(speciesScore.taxId) << endl;
     if constexpr (std::is_same<MatchType, MatchWithPos>::value) {
-        sp2scoreSum[speciesScore.taxId] += speciesScore.score.idScore;
         sp2totalReadLength[speciesScore.taxId] += queryList[currentQuery].queryLength + queryList[currentQuery].queryLength2;
         auto & speciesBins = sp2coverage[speciesScore.taxId];
         if (speciesBins.empty()) { speciesBins.resize(65536, 0); }

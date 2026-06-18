@@ -71,7 +71,6 @@ protected:
     unordered_map<TaxID, uint64_t> sp2genomeSize;
     unordered_map<TaxID, uint64_t> sp2totalReadLength;
     unordered_map<TaxID, vector<uint8_t>> sp2coverage_global;
-    unordered_map<TaxID, double> sp2scoreSum_global;
     unordered_map<TaxID, CovMetric> sp2covMetric;
     std::vector<double> C_LOG2_C;
 

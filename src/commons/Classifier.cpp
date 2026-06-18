@@ -32,6 +32,48 @@ inline void saturatingAddBins(uint8_t *dst, const uint8_t *src, size_t count) {
         dst[i] = (sum > 255) ? 255 : static_cast<uint8_t>(sum);
     }
 }
+
+inline CovMetric makeAverageScoreMetric(double avgScore) {
+    return {-1.0, -1.0, -1.0, -1.0, -1.0, avgScore};
+}
+
+inline void addScoreToClade(
+    TaxonomyWrapper *taxonomy,
+    TaxID taxId,
+    double score,
+    std::unordered_map<TaxID, double> &cladeScoreSums)
+{
+    if (taxId == 0 || !taxonomy->nodeExists(taxId)) {
+        return;
+    }
+
+    const TaxonNode *taxon = taxonomy->taxonNode(taxId);
+    cladeScoreSums[taxon->taxId] += score;
+    while (taxon->parentTaxId != taxon->taxId && taxonomy->nodeExists(taxon->parentTaxId)) {
+        taxon = taxonomy->taxonNode(taxon->parentTaxId);
+        cladeScoreSums[taxon->taxId] += score;
+    }
+}
+
+inline void addAverageScoresToMetrics(
+    const std::unordered_map<TaxID, double> &cladeScoreSums,
+    const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+    std::unordered_map<TaxID, CovMetric> &metrics)
+{
+    metrics.reserve(metrics.size() + cladeScoreSums.size());
+    for (const auto &taxScore : cladeScoreSums) {
+        auto countIt = cladeCounts.find(taxScore.first);
+        if (countIt == cladeCounts.end() || countIt->second.cladeCount == 0) {
+            continue;
+        }
+
+        const double avgScore = taxScore.second / static_cast<double>(countIt->second.cladeCount);
+        auto inserted = metrics.emplace(taxScore.first, makeAverageScoreMetric(avgScore));
+        if (!inserted.second) {
+            inserted.first->second.avgScore = avgScore;
+        }
+    }
+}
 }
 
 Classifier::Classifier(LocalParameters & par) : par(par) {
@@ -193,6 +235,7 @@ void Classifier::classifyReads() {
     SeqEntry * savedSeq_1 = new SeqEntry();
     SeqEntry * savedSeq_2 = new SeqEntry(); 
     uint64_t processedReadCnt = 0;
+    std::unordered_map<TaxID, double> cladeScoreSums;
 
     std::cout << "--------------------" << std::endl;
     while (!complete) {
@@ -253,6 +296,11 @@ void Classifier::classifyReads() {
 
                 // 5) Assign taxonomy
                 assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                for (const Query &query : queryList) {
+                    if (query.classification != 0) {
+                        addScoreToClade(taxonomy, query.classification, query.idScore, cladeScoreSums);
+                    }
+                }
 
                 // 6) Write classification results
                 start = time(nullptr);
@@ -285,7 +333,12 @@ void Classifier::classifyReads() {
     // Finalize original classification results
     std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
     reporter->closeReadClassificationFile();
-    reporter->writeReportFile(processedReadCnt, taxCounts, ReportType::Default);
+
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
+    sp2covMetric.clear();
+    addAverageScoresToMetrics(cladeScoreSums, cladeCounts, sp2covMetric);
+    reporter->writeReportFile(processedReadCnt, taxCounts, sp2covMetric, ReportType::Default);
     std::cout << "Taxonomic classification completed." << std::endl;
 
 }
@@ -302,6 +355,7 @@ void Classifier::classifyReadsWithPos() {
     SeqEntry * savedSeq_1 = new SeqEntry();
     SeqEntry * savedSeq_2 = new SeqEntry(); 
     uint64_t processedReadCnt = 0;
+    std::unordered_map<TaxID, double> cladeScoreSums;
 
     std::cout << "--------------------" << std::endl;
     while (!complete) {
@@ -366,6 +420,11 @@ void Classifier::classifyReadsWithPos() {
 
                 // 5) Assign taxonomy
                 assignTaxonomy<MatchWithPos>(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                for (const Query &query : queryList) {
+                    if (query.classification != 0) {
+                        addScoreToClade(taxonomy, query.classification, query.idScore, cladeScoreSums);
+                    }
+                }
 
                 // 6) Write classification results
                 start = time(nullptr);
@@ -405,17 +464,22 @@ void Classifier::classifyReadsWithPos() {
 
     std::cout << "3" << std::endl;
     for (const auto& [spId, bins] : sp2coverage_global) {
+        auto countIt = cladeCounts.find(spId);
+        if (countIt == cladeCounts.end() || countIt->second.cladeCount == 0) {
+            continue;
+        }
+
         sp2covMetric[spId] = calCovMetrics(
             bins,
-            cladeCounts[spId].cladeCount,
+            countIt->second.cladeCount,
             sp2totalReadLength[spId],
             sp2genomeSize[spId]
         );
-        sp2covMetric[spId].avgScore = sp2scoreSum_global[spId] / cladeCounts[spId].cladeCount;
     }
     std::cout << "4" << std::endl;
 
     rollUpCoverageMetrics(parentToChildren, cladeCounts, sp2covMetric, 1);
+    addAverageScoresToMetrics(cladeScoreSums, cladeCounts, sp2covMetric);
     
     reporter->filterClassificationFile(
         reporter->getClassificationFileName(), 
@@ -478,7 +542,6 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
                 for (auto& [spId, localArray] : taxonomer.sp2coverage) {
                     #pragma omp critical(sp2coverage_merge)
                     {
-                        sp2scoreSum_global[spId] += taxonomer.sp2scoreSum[spId];
                         sp2totalReadLength[spId] += taxonomer.sp2totalReadLength[spId];
 
                         // Ensure the global map has this species
@@ -816,12 +879,12 @@ CovMetric Classifier::calCovMetrics(
     }
 
     if (totalCount == 0) {
-        return {0.0, 0.0, 0.0, 0.0, 0.0}; 
+        return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     }
 
     double effective_bins = std::min(65535.0, static_cast<double>(genomeSize));
     if (effective_bins <= 1.0) {
-        return {0.0, 0.0, 0.0, 0.0, 0.0};
+        return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     }
 
     // Calculate Macro-bin Coverage
@@ -862,7 +925,7 @@ CovMetric Classifier::calCovMetrics(
     double unified_score = std::pow(2.0, H_obs) / effective_bins;
 
     // 9. Return the populated struct
-    return {evenness, coverage, adjustedEvenness, unified_score, macro_coverage};
+    return {evenness, coverage, adjustedEvenness, unified_score, macro_coverage, 0.0};
 }
 
 
