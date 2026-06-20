@@ -39,7 +39,7 @@ void setClassifyDefaults(LocalParameters & par){
     par.spaceMask = "";
     par.useAllMatches = 0;
     par.em = false;
-    par.pdmKmer = 0;
+    par.pmdKmer = 0;
     par.disableTrimming = 0;
 }
 

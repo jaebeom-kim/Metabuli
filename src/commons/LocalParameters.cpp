@@ -214,12 +214,12 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &neighborKmers,
                 "[0-4]"),
-        PDM_KMER(PDM_KMER_ID,
-                "--pdm-kmer",
-                "Number of bases from each end to extract PDM-aware neighbor k-mers",
-                "Number of bases from each end to extract PDM-aware neighbor k-mers",
+        PMD_KMER(PMD_KMER_ID,
+                "--pmd-kmer",
+                "Number of bases from each end to extract PMD-aware neighbor k-mers",
+                "Number of bases from each end to extract PMD-aware neighbor k-mers",
                 typeid(int),
-                (void *) &pdmKmer,
+                (void *) &pmdKmer,
                 "^[0-9]+$"),
         DISABLE_TRIMMING(DISABLE_TRIMMING_ID,
                 "--disable-trimming",
@@ -726,7 +726,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&PARAM_SUB_MAT);
     // classify.push_back(&KMER_FORMAT);
     classify.push_back(&PRINT_LOG);
-    classify.push_back(&PDM_KMER);
+    classify.push_back(&PMD_KMER);
     classify.push_back(&DISABLE_TRIMMING);
     classify.push_back(&SCORE_MODE);
     classify.push_back(&MAX_E_VALUE);

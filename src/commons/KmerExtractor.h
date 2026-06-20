@@ -92,7 +92,7 @@ private:
         uint32_t seqID, 
         uint32_t offset = 0);
 
-    void generatePDMNeighborKmers(
+    void generatePMDNeighborKmers(
         const char *seq,
         size_t seqStart, 
         int seqLen,
@@ -107,9 +107,9 @@ private:
         const char *seq,
         int seqLen);    
     
-        int getPDMKmerCount(
-    const char *seq,
-    int seqLen);
+    int getPMDKmerCount(
+        const char *seq,
+        int seqLen);
 
     inline size_t countMutationComb(size_t nt, size_t na, size_t maxDamage) {
         size_t count = 0;

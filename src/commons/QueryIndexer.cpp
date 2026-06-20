@@ -15,7 +15,7 @@ QueryIndexer::QueryIndexer(const LocalParameters & par) {
     threads = par.threads;
     // std::cout << "bytesPerKmer: " << bytesPerKmer << "\n";
     spaceNum = 0; // par.spaceMask.length() - kmerLength;
-    disableTrimming = par.disableTrimming || par.pdmKmer > 0;
+    disableTrimming = par.disableTrimming || par.pmdKmer > 0;
     totalReadLength = 0;
     kmerLen = 8;
 

@@ -90,7 +90,7 @@ public:
     PARAMETER(MAX_SHIFT)
     PARAMETER(EM)
     PARAMETER(NEIGHBOR_KMERS)
-    PARAMETER(PDM_KMER)
+    PARAMETER(PMD_KMER)
     PARAMETER(DISABLE_TRIMMING)
     PARAMETER(SCORE_MODE)
     PARAMETER(DB_TOTAL_LENGTH)
@@ -200,7 +200,7 @@ public:
     int printLineage;
     int maxShift;
     bool em;
-    int pdmKmer;
+    int pmdKmer;
     int disableTrimming;
     int scoreMode;
     size_t dbTotalLength;
