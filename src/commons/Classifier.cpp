@@ -328,6 +328,12 @@ void Classifier::classifyReads() {
     unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
     std::unordered_map<TaxID, double> avgScores;
     addAverageScoresToMap(cladeScoreSums, cladeCounts, avgScores);
+    reporter->filterClassificationFile(
+        reporter->getClassificationFileName(),
+        reporter->getClassificationFileName() + ".filtered",
+        avgScores,
+        0.2
+    );
     reporter->writeReportFile(processedReadCnt, cladeCounts, avgScores, ReportType::Default);
     std::cout << "Taxonomic classification completed." << std::endl;
 

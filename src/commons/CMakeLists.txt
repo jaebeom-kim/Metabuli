@@ -8,8 +8,10 @@ set(commons_source_files
         commons/Mmap.h
         commons/printBinary.cpp
         commons/printBinary.h
-        commons/Classifier.cpp
+		commons/Classifier.cpp
         commons/Classifier.h
+        commons/ClassificationResultRefiner.cpp
+        commons/ClassificationResultRefiner.h
         commons/BitManipulateMacros.h
         commons/LocalParameters.cpp
         commons/LocalParameters.h

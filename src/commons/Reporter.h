@@ -157,6 +157,12 @@ public:
     void filterClassificationFile(
         const std::string& inputFilePath,
         const std::string& outputFilePath,
+        const std::unordered_map<TaxID, double> &taxon2avgScore,
+        double cutoff);
+
+    void filterClassificationFile(
+        const std::string& inputFilePath,
+        const std::string& outputFilePath,
         const std::unordered_map<TaxID, CovMetric> &sp2covMetric,
         const std::unordered_map<TaxID, double> &taxon2avgScore,
         double cutoff);

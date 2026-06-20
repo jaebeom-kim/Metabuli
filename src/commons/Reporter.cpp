@@ -770,6 +770,16 @@ void Reporter::writeReport(
     }
 }
 
+void Reporter::filterClassificationFile(
+    const std::string& inputFilePath,
+    const std::string& outputFilePath,
+    const std::unordered_map<TaxID, double> &taxon2avgScore,
+    double cutoff)
+{
+    static const std::unordered_map<TaxID, CovMetric> noCoverageMetrics;
+    filterClassificationFile(inputFilePath, outputFilePath, noCoverageMetrics, taxon2avgScore, cutoff);
+}
+
 
 void Reporter::filterClassificationFile(
     const std::string& inputFilePath,
