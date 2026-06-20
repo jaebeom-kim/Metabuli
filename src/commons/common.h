@@ -26,6 +26,16 @@
 
 extern const std::string atcg;
 extern const std::string iRCT;
+
+struct CovMetric {
+    double evenness;
+    double coverage;
+    double adjustedEvenness;
+    double unifiedScore;
+    double macroCoverage;
+};
+
+
 struct MappingRes {
     MappingRes(uint32_t queryId, TaxID speicesId, float score) 
         : queryId(queryId), speciesId(speicesId), score(score) {}
@@ -80,9 +90,9 @@ struct SequenceBlock {
         std::cout << strand << " " << start << " " << end << std::endl;
     }
 
-    int start;
-    int end;
-    int strand; //true for forward
+    int start;  // 0-based inclusive
+    int end;    // 0-based inclusive
+    int strand; // 1: forward, -1: reverse
 };
 
 struct Classification {
@@ -223,6 +233,8 @@ struct ReadBuffer {
     T * start;
     T * end;
 
+    ReadBuffer() : fp(nullptr), p(nullptr), size(0), capacity(0), start(nullptr), end(nullptr) {}
+
     explicit ReadBuffer(std::string file, size_t sizeOfBuffer=100) {
         fp = fopen(file.c_str(), "rb");
         if (!fp) {
@@ -284,6 +296,14 @@ struct WriteBuffer {
     size_t writeCnt;
 
     explicit WriteBuffer(std::string file, size_t sizeOfBuffer=100) {
+        if (file.empty()) {
+            fp = nullptr;
+            buffer = nullptr;
+            capacity = 0;
+            size = 0;
+            writeCnt = 0;
+            return;
+        }
         fp = fopen(file.c_str(), "wb");
         if (!fp) {
             std::cerr << "Error opening file: " << file << std::endl;
@@ -495,6 +515,9 @@ uint32_t parseMask(const char* s);
 uint32_t safe_right_shift_32(uint32_t value, unsigned int shift);
 uint32_t safe_left_shift_32(uint32_t value, unsigned int shift);
 
+std::string reverseComplement(std::string &read);
+
+char *reverseComplement(char *read, size_t length);
 int getFirstOneAfterFirstZero(uint32_t mask);
 
 uint64_t disperseBits(uint64_t source, uint64_t pattern, int chunk_size);

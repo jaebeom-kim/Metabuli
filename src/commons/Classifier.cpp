@@ -5,6 +5,69 @@
 
 #include <variant>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#elif defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
+namespace {
+inline void saturatingAddBins(uint8_t *dst, const uint8_t *src, size_t count) {
+    size_t i = 0;
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    for (; i + 16 <= count; i += 16) {
+        uint8x16_t a = vld1q_u8(dst + i);
+        uint8x16_t b = vld1q_u8(src + i);
+        vst1q_u8(dst + i, vqaddq_u8(a, b));
+    }
+#elif defined(__SSE2__)
+    for (; i + 16 <= count; i += 16) {
+        __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i *>(dst + i));
+        __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + i));
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + i), _mm_adds_epu8(a, b));
+    }
+#endif
+    for (; i < count; ++i) {
+        const int sum = dst[i] + src[i];
+        dst[i] = (sum > 255) ? 255 : static_cast<uint8_t>(sum);
+    }
+}
+
+inline void addScoreToClade(
+    TaxonomyWrapper *taxonomy,
+    TaxID taxId,
+    double score,
+    std::unordered_map<TaxID, double> &cladeScoreSums)
+{
+    if (taxId == 0 || !taxonomy->nodeExists(taxId)) {
+        return;
+    }
+
+    const TaxonNode *taxon = taxonomy->taxonNode(taxId);
+    cladeScoreSums[taxon->taxId] += score;
+    while (taxon->parentTaxId != taxon->taxId && taxonomy->nodeExists(taxon->parentTaxId)) {
+        taxon = taxonomy->taxonNode(taxon->parentTaxId);
+        cladeScoreSums[taxon->taxId] += score;
+    }
+}
+
+inline void addAverageScoresToMap(
+    const std::unordered_map<TaxID, double> &cladeScoreSums,
+    const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+    std::unordered_map<TaxID, double> &avgScores)
+{
+    avgScores.reserve(avgScores.size() + cladeScoreSums.size());
+    for (const auto &taxScore : cladeScoreSums) {
+        auto countIt = cladeCounts.find(taxScore.first);
+        if (countIt == cladeCounts.end() || countIt->second.cladeCount == 0) {
+            continue;
+        }
+
+        avgScores[taxScore.first] = taxScore.second / static_cast<double>(countIt->second.cladeCount);
+    }
+}
+}
+
 Classifier::Classifier(LocalParameters & par) : par(par) {
     dbDir = par.filenames[1 + (par.seqMode == 2)];
     matchPerKmer = par.matchPerKmer;
@@ -52,6 +115,14 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
             metamerPattern = new SpacedPattern(std::make_unique<RegularGeneticCode>(), __builtin_popcount(mask), mask);
         }
     }
+
+    if (par.storeKmerPos) {
+        C_LOG2_C.resize(256);
+        for (int i = 1; i < 256; ++i) {
+            C_LOG2_C[i] = i * std::log2(static_cast<double>(i));
+        }
+    }
+
     kmerExtractor = new KmerExtractor(par, metamerPattern);
     queryIndexer = new QueryIndexer(par);
     kmerMatcher = new KmerMatcher(par, taxonomy, metamerPattern);
@@ -69,6 +140,33 @@ Classifier::~Classifier() {
     if (mappingResList) delete[] mappingResList;
 }
 
+
+uint64_t Classifier::calculateBufferSize(
+    uint64_t queryListSize,
+    uint64_t matchPerKmer,
+    int mode) 
+{
+    int matchSize = mode == 1 ? sizeof(Match) : sizeof(MatchWithPos);
+
+    size_t totalBytes = (size_t) par.ramUsage * 1024 * 1024 * 1024;
+    size_t bytesPerThread = 
+        1024 * 1024 * matchSize + // local match buffer 32 MB
+        1024 * 1024 * 4 * sizeof(Kmer) +  // DeltaIdxReader::valueBuffer 64 MB
+        1024 * 1024 * 4 * sizeof(uint16_t) +   // DeltaIdxReader::deltaBuffer 2 MB
+        1024 * 1024 * 4 * sizeof(uint32_t);    // DeltaIdxReader::infoBuffer 4 MB
+    
+    if (mode != 1) {
+        bytesPerThread += 1024 * 1024 * 4 * sizeof(uint16_t); // DeltaIdxReader::posBuffer 2 MB
+    }
+
+    size_t overhead = 128 * 1024 * 1024; // 128MB
+    size_t queryListBytes = queryListSize * (sizeof(Query) + 150); //  104,857,600
+    size_t availableBytes = totalBytes - (par.threads * bytesPerThread) - overhead - queryListBytes; 
+    size_t bytePerKmer = sizeof(Kmer) + matchPerKmer * matchSize;
+    size_t totalSize = availableBytes / bytePerKmer;
+    return totalSize;
+}
+    
 void Classifier::preciseModePreset(LocalParameters & par) {
     uint32_t mask = parseMask(par.spaceMask.c_str());
     size_t windowSize = par.spaceMask.length();
@@ -115,26 +213,7 @@ void Classifier::preciseModePreset(LocalParameters & par) {
 
 }
 
-uint64_t Classifier::calculateBufferSize(
-    uint64_t queryListSize,
-    uint64_t matchPerKmer) 
-{
-    size_t totalBytes = (size_t) par.ramUsage * 1024 * 1024 * 1024;
 
-    size_t bytesPerThread = 
-        1024 * 1024 * sizeof(Match) + // local match buffer 32 MB
-        1024 * 1024 * 4 * sizeof(Kmer) +  // DeltaIdxReader::valueBuffer 64 MB
-        1024 * 1024 * 4 * sizeof(uint16_t) +   // DeltaIdxReader::deltaBuffer 2 MB
-        1024 * 1024 * 4 * sizeof(uint32_t);    // DeltaIdxReader::infoBuffer 4 MB
-
-    size_t overhead = 128 * 1024 * 1024; // 128MB
-    size_t queryListBytes = queryListSize * (sizeof(Query) + 150); //  104,857,600
-    size_t availableBytes = totalBytes - (par.threads * bytesPerThread) - overhead - queryListBytes; 
-    size_t bytePerKmer = sizeof(Kmer) + matchPerKmer * sizeof(Match);
-    size_t totalSize = availableBytes / bytePerKmer;
-
-    return totalSize;
-}
 
 void Classifier::classifyReads() {
     Buffer<Kmer> queryKmerBuffer;
@@ -148,6 +227,7 @@ void Classifier::classifyReads() {
     SeqEntry * savedSeq_1 = new SeqEntry();
     SeqEntry * savedSeq_2 = new SeqEntry(); 
     uint64_t processedReadCnt = 0;
+    std::unordered_map<TaxID, double> cladeScoreSums;
 
     std::cout << "--------------------" << std::endl;
     while (!complete) {
@@ -160,7 +240,7 @@ void Classifier::classifyReads() {
             if (par.seqMode == 2) { kseq2->ReadEntry(); }
         }
 
-        size_t queryKmerBufferSize = calculateBufferSize(queryList.size(), matchPerKmer);
+        size_t queryKmerBufferSize = calculateBufferSize(queryList.size(), matchPerKmer, 1);
         queryKmerBuffer.reallocateMemory(queryKmerBufferSize);
         matchBuffer.reallocateMemory(queryKmerBufferSize * matchPerKmer);
 
@@ -208,6 +288,11 @@ void Classifier::classifyReads() {
 
                 // 5) Assign taxonomy
                 assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                for (const Query &query : queryList) {
+                    if (query.classification != 0) {
+                        addScoreToClade(taxonomy, query.classification, query.idScore, cladeScoreSums);
+                    }
+                }
 
                 // 6) Write classification results
                 start = time(nullptr);
@@ -236,155 +321,168 @@ void Classifier::classifyReads() {
     }
     delete savedSeq_1;
     delete savedSeq_2;
-    reporter->closeReadClassificationFile();
     std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
-
+    reporter->closeReadClassificationFile();
 
     std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
     unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
-    for (const auto & it : sp2score_global) {
-        sp2score_global[it.first] = it.second / cladeCounts[it.first].cladeCount;
-    }
-    rollUpScore(sp2score_global, parentToChildren, 1);
-
-    // Finalize original classification results
-    reporter->writeReportFile(processedReadCnt, cladeCounts, sp2score_global, ReportType::Default);
+    std::unordered_map<TaxID, double> avgScores;
+    addAverageScoresToMap(cladeScoreSums, cladeCounts, avgScores);
+    reporter->writeReportFile(processedReadCnt, cladeCounts, avgScores, ReportType::Default);
     std::cout << "Taxonomic classification completed." << std::endl;
 
 }
 
-// void Classifier::startClassify(const LocalParameters &par) {
-//     Buffer<Kmer> queryKmerBuffer;
-//     Buffer<Match> matchBuffer;
-//     vector<Query> queryList;
-//     size_t numOfTatalQueryKmerCnt = 0;
-//     reporter->openReadClassificationFile();
+void Classifier::classifyReadsWithPos() {
+    Buffer<Kmer> queryKmerBuffer;
+    Buffer<MatchWithPos> matchBuffer;
+    vector<Query> queryList;
+    queryList.reserve(512 * 1024);
 
-//     bool complete = false;
-//     size_t processedReadCnt = 0;
-//     size_t tries = 0;
-//     size_t totalSeqCnt = 0;
+    reporter->openReadClassificationFile();
+
+    bool complete = false;
+    SeqEntry * savedSeq_1 = new SeqEntry();
+    SeqEntry * savedSeq_2 = new SeqEntry(); 
+    uint64_t processedReadCnt = 0;
+    std::unordered_map<TaxID, double> cladeScoreSums;
+
+    std::cout << "--------------------" << std::endl;
+    while (!complete) {
+        KSeqWrapper* kseq1 = KSeqFactory(par.filenames[0].c_str());
+        KSeqWrapper* kseq2 = par.seqMode == 2 ? KSeqFactory(par.filenames[1].c_str()) : nullptr;
+
+        // Move kseq to unprocessed reads
+        for (size_t i = 0; i < processedReadCnt; i++) {
+            kseq1->ReadEntry();
+            if (par.seqMode == 2) { kseq2->ReadEntry(); }
+        }
+
+        size_t queryKmerBufferSize = calculateBufferSize(queryList.size(), matchPerKmer, 2);
+        queryKmerBuffer.reallocateMemory(queryKmerBufferSize);
+        matchBuffer.reallocateMemory(queryKmerBufferSize * matchPerKmer);
+
+        bool moreReads = true;
+        while (moreReads) {
+            queryList.clear(); 
+            queryKmerBuffer.init();
+            matchBuffer.startIndexOfReserve = 0;
+
+            // 1) Extract query k-mers
+            time_t start = time(nullptr);
+            std::cout << "Query k-mer extraction : " << std::flush;
+            uint64_t seqCnt = 0;
+            moreReads = kmerExtractor->extractQueryKmers(
+                    queryKmerBuffer,
+                    queryList,
+                    seqCnt,
+                    savedSeq_1,
+                    savedSeq_2,
+                    kseq1,
+                    kseq2);
+            std::cout << difftime(time(nullptr), start) << " s" << std::endl;
+
+            // 2) Sort k-mers
+            start = time(nullptr);
+            std::cout << "Query k-mer sorting    : " << std::flush;
+            SORT_PARALLEL(queryKmerBuffer.buffer, queryKmerBuffer.buffer + queryKmerBuffer.startIndexOfReserve, Kmer::compareQueryKmer);
+            std::cout << difftime(time(nullptr), start) << " s" << std::endl;
+
+            // for (size_t i = 0; i < queryKmerBuffer.startIndexOfReserve; i++) {
+            //     if (queryKmerBuffer.buffer[i].qInfo.sequenceID == 1003) {
+            //         cout << "Sorted Kmer: ";
+            //         metamerPattern->printDNA(queryKmerBuffer.buffer[i].value); cout << endl;
+            //     }
+            // }
+            // 3) Match k-mers
+            start = time(nullptr);
+            bool searchComplete = kmerMatcher->matchKmersWithPos(&queryKmerBuffer, &matchBuffer, dbDir);
+            if (searchComplete) {
+                std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
+
+                // 4) Sort matches
+                time_t beforeSortMatches = time(nullptr);
+                std::cout << "K-mer match sorting    : " << std::flush;
+                SORT_PARALLEL(matchBuffer.buffer,
+                              matchBuffer.buffer + matchBuffer.startIndexOfReserve,
+                              MatchWithPos::compare);
+                std::cout << double(time(nullptr) - beforeSortMatches) << " s" << std::endl;
+
+                // 5) Assign taxonomy
+                assignTaxonomy<MatchWithPos>(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                for (const Query &query : queryList) {
+                    if (query.classification != 0) {
+                        addScoreToClade(taxonomy, query.classification, query.idScore, cladeScoreSums);
+                    }
+                }
+
+                // 6) Write classification results
+                start = time(nullptr);
+                std::cout << "Writing results        : " << std::flush;
+                reporter->writeReadClassification(queryList);
+                processedReadCnt += seqCnt;                    
+                std::cout << difftime(time(nullptr), start) << " s" << std::endl;
+                std::cout << "Processed read count   : " << processedReadCnt << std::endl;
+            } else {
+                matchPerKmer *= 2;
+                moreReads = true;
+                std::cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << std::endl;
+                break;
+            }
+            std::cout << "--------------------" << std::endl;
+
+        }
+        delete kseq1;
+        if (par.seqMode == 2) {
+            delete kseq2;
+        }
+        if (!moreReads) {
+            complete = true;
+        }
+        std::cout << "--------------------" << std::endl;
+    }
+    delete savedSeq_1;
+    delete savedSeq_2;
+    std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
+    reporter->closeReadClassificationFile();
+
+    parseSp2GenomeSize();
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
+
+    for (const auto& [spId, bins] : sp2coverage_global) {
+        auto countIt = cladeCounts.find(spId);
+        if (countIt == cladeCounts.end() || countIt->second.cladeCount == 0) {
+            continue;
+        }
+
+        sp2covMetric[spId] = calCovMetrics(
+            bins,
+            countIt->second.cladeCount,
+            sp2totalReadLength[spId],
+            sp2genomeSize[spId]
+        );
+    }
+
+    rollUpCoverageMetrics(parentToChildren, cladeCounts, sp2covMetric, 1);
+    std::unordered_map<TaxID, double> avgScores;
+    addAverageScoresToMap(cladeScoreSums, cladeCounts, avgScores);
     
-//     // Extract k-mers from query sequences and compare them to target k-mer DB
-//     while (!complete) {
-//         tries++;
-//         queryIndexer->setBytesPerKmer(matchPerKmer);
-//         queryIndexer->indexQueryFile(processedReadCnt);
-//         const vector<QuerySplit> & queryReadSplit = queryIndexer->getQuerySplits();
-//         if (tries == 1) {
-//             totalSeqCnt = queryIndexer->getReadNum_1();
-//             cout << "--------------------" << endl;
-//             cout << "Total read count : " << queryIndexer->getReadNum_1() << endl;
-//             cout << "Total read length: " << queryIndexer->getTotalReadLength() <<  "nt" << endl;
-//             cout << "--------------------" << endl;
-//         }
+    reporter->filterClassificationFile(
+        reporter->getClassificationFileName(), 
+        reporter->getClassificationFileName() + ".filtered", 
+        sp2covMetric, 
+        avgScores,
+        0.4
+    );
+    reporter->writeReportFile(processedReadCnt, cladeCounts, sp2covMetric, avgScores, ReportType::Default);
 
-//         // Set up kseq
-//         KSeqWrapper* kseq1 = KSeqFactory(par.filenames[0].c_str());
-//         KSeqWrapper* kseq2 = nullptr;
-//         if (par.seqMode == 2) { kseq2 = KSeqFactory(par.filenames[1].c_str()); }
+    std::cout << "Taxonomic classification completed." << std::endl;
 
-//         // Move kseq to unprocessed reads
-//         for (size_t i = 0; i < processedReadCnt; i++) {
-//             kseq1->ReadEntry();
-//             if (par.seqMode == 2) { kseq2->ReadEntry(); }
-//         }
+}
 
-//         for (size_t splitIdx = 0; splitIdx < queryReadSplit.size(); splitIdx++) {
-//             // Allocate memory for query list
-//             queryList.clear();
-//             queryList.resize(queryReadSplit[splitIdx].end - queryReadSplit[splitIdx].start);
-
-//             // Allocate memory for query k-mer buffer
-//             queryKmerBuffer.reallocateMemory(queryReadSplit[splitIdx].kmerCnt);
-//             queryKmerBuffer.init();
-//             // memset(queryKmerBuffer.buffer, 0, queryReadSplit[splitIdx].kmerCnt * sizeof(Kmer));
-
-//             // Allocate memory for match buffer
-//             if (queryReadSplit.size() == 1) {
-//                 size_t remain = queryIndexer->getAvailableRam() 
-//                                 - (queryReadSplit[splitIdx].kmerCnt * sizeof(Kmer)) 
-//                                 - (queryIndexer->getReadNum_1() * 200); // TODO: check it later
-//                 matchBuffer.reallocateMemory(remain / sizeof(Match));
-//             } else {
-//                 matchBuffer.reallocateMemory(queryReadSplit[splitIdx].kmerCnt * matchPerKmer);
-//             }
-
-//             // Initialize query k-mer buffer and match buffer
-//             matchBuffer.startIndexOfReserve = 0;
-
-//             // Extract query k-mers
-//             kmerExtractor->extractQueryKmers(queryKmerBuffer,
-//                                              queryList,
-//                                              queryReadSplit[splitIdx],
-//                                              par,
-//                                              kseq1,
-//                                              kseq2);
-            
-//             // Search matches between query and target k-mers
-//             bool searchComplete = false;
-//             searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer, dbDir);
-//             if (searchComplete) {
-//                 cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << endl;
-//                 kmerMatcher->sortMatches(&matchBuffer);
-//                 // for (size_t i = 0; matchBuffer.startIndexOfReserve < matchBuffer.startIndexOfReserve; i++) {
-//                 //     matchBuffer.buffer[i].printMatch();
-//                 // }
-//                 assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
-//                 reporter->writeReadClassification(queryList);
-//                 if (par.em) {
-//                     reporter->writeMappings(queryList, processedReadCnt);
-//                     getTopSpecies(queryList);
-//                 }
-//                 processedReadCnt += queryReadSplit[splitIdx].readCnt;
-//                 cout << "Processed read count   : " << processedReadCnt << " (" << (double) processedReadCnt / (double) totalSeqCnt << ")" << endl;
-//                 // numOfTatalQueryKmerCnt += queryKmerBuffer.startIndexOfReserve;
-//             } else { // search was incomplete
-//                 matchPerKmer += 4;
-//                 cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << endl;
-//                 break;
-//             }
-//             cout << "--------------------" << endl;
-//         }
-         
-//         delete kseq1;
-//         if (par.seqMode == 2) {
-//             delete kseq2;
-//         }
-//         if (processedReadCnt == totalSeqCnt) {
-//             complete = true;
-//         }
-
-//         cout << "--------------------" << endl;
-//     }
-
-//     std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
-//     unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
-
-//     // Finalize original classification results
-//     cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << endl;    
-//     reporter->closeReadClassificationFile();
-//     reporter->writeReportFile(totalSeqCnt, cladeCounts, ReportType::Default);
-//     cout << "Taxonomic classification completed." << endl;
-
-//     // Perform EM algorithm    
-//     if (par.em) {
-//         cout << "Running EM algorithm for taxonomic re-assignment..." << endl;
-//         reporter->freeMappingWriteBuffer();        
-//         loadOriginalResults(reporter->getClassificationFileName(), totalSeqCnt);   
-//         em(totalSeqCnt);
-//         reporter->writeReclassifyResults(emResults);
-//         unordered_map<TaxID, TaxonCounts> emCladeCounts = taxonomy->getCladeCounts(emTaxCounts, parentToChildren);
-//         reporter->writeReportFile(totalSeqCnt, emCladeCounts, ReportType::EM);
-
-//         unordered_map<TaxID, TaxonCounts> reclassifyCladeCounts = taxonomy->getCladeCounts(reclassifyTaxCounts, parentToChildren);
-//         reporter->writeReportFile(totalSeqCnt, reclassifyCladeCounts, ReportType::EM_RECLASSIFY);
-//     }
-    
-//     return;
-// }
-
-void Classifier::assignTaxonomy(const Match *matchList, 
+template <typename MatchType>
+void Classifier::assignTaxonomy(const MatchType *matchList, 
                                size_t numOfMatches,
                                std::vector<Query> &queryList,
                                const LocalParameters &par) {
@@ -392,9 +490,9 @@ void Classifier::assignTaxonomy(const Match *matchList,
     std::cout << "K-mer match analysis   : " << std::flush;
     // Divide matches into blocks for multi threading
     size_t seqNum = queryList.size();
-    MatchBlock *matchBlocks = new MatchBlock[seqNum];
+    std::vector<MatchBlock> matchBlocks;
+    matchBlocks.reserve(std::min(seqNum, numOfMatches));
     size_t matchIdx = 0;
-    size_t blockIdx = 0;
     uint32_t currentQuery;
     if (par.printLog==1) {
 #ifdef OPENMP
@@ -403,32 +501,49 @@ void Classifier::assignTaxonomy(const Match *matchList,
     }
     while (matchIdx < numOfMatches) {
         currentQuery = matchList[matchIdx].qKmer.qInfo.sequenceID;
-        matchBlocks[blockIdx].id = currentQuery;
-        matchBlocks[blockIdx].start = matchIdx;
-        while ((currentQuery == matchList[matchIdx].qKmer.qInfo.sequenceID) && (matchIdx < numOfMatches)) ++matchIdx;
-        matchBlocks[blockIdx].end = matchIdx - 1;
-        blockIdx++;
+        MatchBlock block;
+        block.id = currentQuery;
+        block.start = matchIdx;
+        while (matchIdx < numOfMatches && currentQuery == matchList[matchIdx].qKmer.qInfo.sequenceID) {
+            ++matchIdx;
+        }
+        block.end = matchIdx - 1;
+        matchBlocks.push_back(block);
     }
     // Process each block
-#pragma omp parallel default(none), shared(cout, matchBlocks, matchList, seqNum, queryList, blockIdx, par)
-    {
-        Taxonomer taxonomer(par, taxonomy, metamerPattern);
-        #pragma omp for schedule(dynamic, 1)
-        for (size_t i = 0; i < blockIdx; ++i) {
-            taxonomer.chooseBestTaxon(matchBlocks[i].id - 1,
-                            matchBlocks[i].start,
-                            matchBlocks[i].end,
-                            matchList,
-                            queryList,
-                            par);
-        }
-
-        #pragma omp critical
+    if (!matchBlocks.empty()) {
+#pragma omp parallel default(none), shared(matchBlocks, matchList, queryList, par)
         {
-            for (const auto & it : taxonomer.sp2scoreSum) {
-                sp2score_global[it.first] += it.second;
+            Taxonomer<MatchType> taxonomer(par, taxonomy, metamerPattern);
+            #pragma omp for schedule(guided, 8)
+            for (size_t i = 0; i < matchBlocks.size(); ++i) {
+                taxonomer.chooseBestTaxon(
+                                matchBlocks[i].id - 1,
+                                matchBlocks[i].start,
+                                matchBlocks[i].end,
+                                matchList,
+                                queryList);
             }
-        }    
+
+            if (par.storeKmerPos) {
+                for (auto& [spId, localArray] : taxonomer.sp2coverage) {
+                    #pragma omp critical(sp2coverage_merge)
+                    {
+                        sp2totalReadLength[spId] += taxonomer.sp2totalReadLength[spId];
+
+                        // Ensure the global map has this species
+                        if (sp2coverage_global.find(spId) == sp2coverage_global.end()) {
+                            sp2coverage_global[spId].resize(65536, 0);
+                        }
+
+                        uint8_t* globalBins = sp2coverage_global[spId].data();
+                        uint8_t* threadBins = localArray.data();
+                        saturatingAddBins(globalBins, threadBins, 65536);
+                    }
+                }
+            }
+
+        }
     }
 
     if (par.printLog) {
@@ -440,8 +555,6 @@ void Classifier::assignTaxonomy(const Match *matchList,
     for (size_t i = 0; i < seqNum; i++) {
         ++taxCounts[queryList[i].classification];
     }
-    
-    delete[] matchBlocks;
     cout << double(time(nullptr) - beforeAnalyze) << " s" << endl;
 
 }
@@ -722,26 +835,20 @@ void Classifier::loadOriginalResults(
     }
 }
 
-
-
 void Classifier::rollUpScore(
-    std::unordered_map<TaxID, double> & sp2score_global,
+    std::unordered_map<TaxID, double> &sp2score_global,
     const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
-    TaxID currentTaxID) 
+    TaxID currentTaxID)
 {
     auto childrenIt = parentToChildren.find(currentTaxID);
     if (childrenIt == parentToChildren.end() || childrenIt->second.empty()) {
-        return; 
+        return;
     }
 
     double childrenSum = 0.0;
-    // double weightedAvgScore = 0.0;
-    // uint64_t totalChildReads = 0;
-
-    // 1. Recursively process all children FIRST (Post-order traversal)
     for (TaxID childID : childrenIt->second) {
         rollUpScore(sp2score_global, parentToChildren, childID);
-        
+
         auto scoreIt = sp2score_global.find(childID);
         if (scoreIt != sp2score_global.end()) {
             childrenSum += scoreIt->second;
@@ -749,4 +856,148 @@ void Classifier::rollUpScore(
     }
 
     sp2score_global[currentTaxID] += childrenSum;
+}
+
+CovMetric Classifier::calCovMetrics(
+    const std::vector<uint8_t>& bins,
+    int readCnt,
+    uint64_t totalReadLength,
+    uint64_t genomeSize) 
+{
+    uint64_t totalCount = 0;
+    double sum_c_log_c = 0.0;
+    int occupiedBins = 0;
+
+    // Macro-bin tracking
+    int occupiedMacroBins = 0;
+    bool macro_seen[256] = {false};
+
+    size_t binLimit = std::min(genomeSize + 1, static_cast<uint64_t>(65536));
+    for (size_t i = 1; i < binLimit; ++i) {
+        uint8_t count = bins[i];
+        if (count == 0) continue; // Skip empty bins
+
+        totalCount += count;
+        occupiedBins++;
+        sum_c_log_c += C_LOG2_C[count];
+
+        size_t macro_bin_idx = i >> 8; // Equivalent to i / 256
+        if (!macro_seen[macro_bin_idx]) {
+            macro_seen[macro_bin_idx] = true;
+            occupiedMacroBins++;
+        }
+    }
+
+    if (totalCount == 0) {
+        return {0.0, 0.0, 0.0, 0.0, 0.0};
+    }
+
+    double effective_bins = std::min(65535.0, static_cast<double>(genomeSize));
+    if (effective_bins <= 1.0) {
+        return {0.0, 0.0, 0.0, 0.0, 0.0};
+    }
+
+    // Calculate Macro-bin Coverage
+    double max_macro_bins = std::ceil(effective_bins / 256.0);
+    max_macro_bins = std::min(max_macro_bins, 256.0);
+    double macro_coverage = static_cast<double>(occupiedMacroBins) / max_macro_bins;
+    macro_coverage = std::min(1.0, macro_coverage);
+
+    // 3. Calculate Coverage (Breadth)
+    double coverage = static_cast<double>(occupiedBins) / effective_bins;
+    coverage = std::min(1.0, coverage); // Clamped just in case
+
+    // 4. Calculate Observed Shannon Entropy (H_obs)
+    double H_obs = std::log2(static_cast<double>(totalCount)) - (sum_c_log_c / totalCount);
+    H_obs = std::max(0.0, H_obs);
+    
+    // 5. Calculate Standard Evenness
+    // Normalized strictly against the maximum capacity of the genome
+    double max_H_standard = std::log2(effective_bins);
+    double evenness = (max_H_standard > 0.0001) ? std::min(1.0, H_obs / max_H_standard) : 0.0;
+
+    // 6. Calculate Expected Occupied Bins under random uniform distribution
+    double read_length = static_cast<double>(totalReadLength) / readCnt;
+    double bin_size_bp = static_cast<double>(genomeSize) / effective_bins;
+    double bins_per_read = 1.0 + (read_length / bin_size_bp);
+    double expected_occupied = effective_bins * (1.0 - std::exp(-(readCnt * bins_per_read) / effective_bins));
+
+    // 7. Calculate Expected Maximum Entropy (Poisson adjusted)
+    double expected_max_H = std::log2(std::max(1.0, expected_occupied));
+
+    // 8. Calculate Adjusted Evenness
+    double adjustedEvenness = 0.0;
+    if (expected_max_H >= 0.0001) {
+        adjustedEvenness = std::min(1.0, H_obs / expected_max_H);
+    }
+
+
+    double unified_score = std::pow(2.0, H_obs) / effective_bins;
+
+    // 9. Return the populated struct
+    return {evenness, coverage, adjustedEvenness, unified_score, macro_coverage};
+}
+
+
+void Classifier::rollUpCoverageMetrics(
+    const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
+    const std::unordered_map<TaxID, TaxonCounts>& cladeCounts,
+    std::unordered_map<TaxID, CovMetric>& allMetrics, // Starts with species, gets filled with all ranks
+    TaxID currentTaxID) 
+{
+// NEW BASE CASE: If this node already has a metric calculated (i.e., it's a Species),
+    // it is the base of our roll-up. Stop recursing down to subspecies and return immediately.
+    if (allMetrics.find(currentTaxID) != allMetrics.end()) {
+        return;
+    }
+
+    // Secondary Base Case: True leaf node (no children at all) but no pre-calculated metric
+    auto childrenIt = parentToChildren.find(currentTaxID);
+    if (childrenIt == parentToChildren.end() || childrenIt->second.empty()) {
+        return; 
+    }
+
+    double weightedEvenness = 0.0;
+    double weightedCoverage = 0.0;
+    double weightedAdjEvenness = 0.0;
+    double weightedUnifiedScore = 0.0;
+    double weightedMacroCoverage = 0.0;
+    uint64_t totalChildReads = 0;
+
+    // 1. Recursively process all children FIRST (Post-order traversal)
+    for (TaxID childID : childrenIt->second) {
+        rollUpCoverageMetrics(parentToChildren, cladeCounts, allMetrics, childID);
+        
+        // 2. Gather data for the weighted average
+        auto countIt = cladeCounts.find(childID);
+        auto metricIt = allMetrics.find(childID);
+
+        if (countIt != cladeCounts.end() && metricIt != allMetrics.end()) {
+            uint64_t reads = countIt->second.cladeCount;
+            
+            // Only include children that actually have metrics and reads
+            if (reads > 0) {
+                weightedEvenness += metricIt->second.evenness * reads;
+                weightedCoverage += metricIt->second.coverage * reads;
+                weightedAdjEvenness += metricIt->second.adjustedEvenness * reads;
+                weightedUnifiedScore += metricIt->second.unifiedScore * reads;
+                weightedMacroCoverage += metricIt->second.macroCoverage * reads; // Assuming macro coverage is the same as coverage for weighting
+
+                totalChildReads += reads;
+            }
+        }
+    }
+
+    // 3. Calculate the final weighted metrics for THIS parent node
+    if (totalChildReads > 0) {
+        CovMetric parentMetric;
+        parentMetric.evenness = weightedEvenness / static_cast<double>(totalChildReads);
+        parentMetric.coverage = weightedCoverage / static_cast<double>(totalChildReads);
+        parentMetric.adjustedEvenness = weightedAdjEvenness / static_cast<double>(totalChildReads);
+        parentMetric.unifiedScore = weightedUnifiedScore / static_cast<double>(totalChildReads);
+        parentMetric.macroCoverage = weightedMacroCoverage / static_cast<double>(totalChildReads);
+        
+        // Save it to the map
+        allMetrics[currentTaxID] = parentMetric;
+    } 
 }

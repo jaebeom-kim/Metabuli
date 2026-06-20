@@ -125,7 +125,9 @@ class DeltaIdxReader {
 private:
     std::string deltaIdxFileName;
     std::string infoFileName;
+    std::string posFileName;
     size_t totalValueNum;
+    bool hasPos = false;
 
     // To manage values
     size_t valueBufferSize;
@@ -137,44 +139,56 @@ private:
     // To manage delta indices    
     ReadBuffer<uint16_t> deltaIdxBuffer;
     ReadBuffer<TaxID> infoBuffer;
+    ReadBuffer<uint16_t> posBuffer;
     bool fileCompleted = false;
     bool valueBufferCompleted = false;
 
     void fillValueBuffer() {
         for (; valueCnt < valueBufferSize; ++valueCnt) {
             if (unlikely(infoBuffer.p == infoBuffer.end)) {
-                size_t readCnt = infoBuffer.loadBuffer();
-                if (readCnt == 0) {
+                if (posBuffer.p != posBuffer.end) {
+                    std::cerr << "Error: Info buffer is exhausted but position buffer is not. This should not happen." << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                if (infoBuffer.loadBuffer() == 0) {
                     fileCompleted = true;
                     break;
                 }
             }
+            
+            if (hasPos && unlikely(posBuffer.p == posBuffer.end)) {
+                posBuffer.loadBuffer();
+            }
+
             valueBuffer[valueCnt].tInfo.taxId = *infoBuffer.p++;
             valueBuffer[valueCnt].value = getNextMetamer();
-        }
-        if (infoBuffer.p == infoBuffer.end) {
-            if (infoBuffer.loadBuffer() == 0) {
-                fileCompleted = true;
+            
+            if (hasPos) {
+                valueBuffer[valueCnt].tInfo.pos = *posBuffer.p++;
             }
         }
     }
 
     uint64_t getNextMetamer() {
-        if (deltaIdxBuffer.end < deltaIdxBuffer.p + 7) {
+        if (unlikely(deltaIdxBuffer.end - deltaIdxBuffer.p < 5)) {
             size_t readCnt = deltaIdxBuffer.loadBuffer(deltaIdxBuffer.end - deltaIdxBuffer.p);
             if (readCnt == 0) {
                 return UINT64_MAX; // No more values
             }
         }
+
+        uint16_t* p = deltaIdxBuffer.p;
         uint64_t diffIn64bit = 0;
-        while ((*deltaIdxBuffer.p & 0x8000) == 0) {
-            diffIn64bit = (diffIn64bit << 15) | *deltaIdxBuffer.p;
-            ++deltaIdxBuffer.p;
-        }
-        diffIn64bit = (diffIn64bit << 15) | (*deltaIdxBuffer.p & 0x7FFF);
-        ++deltaIdxBuffer.p;
-        this->lastValue = diffIn64bit + this->lastValue;
-        return this->lastValue;
+        uint16_t word;
+
+        do {
+            word = *p++;
+            diffIn64bit = (diffIn64bit << 15) | (word & 0x7FFF);
+        } while ((word & 0x8000) == 0);
+
+        deltaIdxBuffer.p = p;
+        lastValue += diffIn64bit;
+        return lastValue;
     }
 
 public:
@@ -197,9 +211,39 @@ public:
         totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
     }
 
+    DeltaIdxReader(
+        std::string deltaIdxFileName,
+        std::string infoFileName,
+        std::string posFileName,
+        size_t valueBufferSize = 32768, 
+        size_t readBufferSize = 8192)
+        : deltaIdxFileName(deltaIdxFileName),
+        infoFileName(infoFileName),
+        posFileName(posFileName),
+        valueBufferSize(valueBufferSize), 
+        deltaIdxBuffer(deltaIdxFileName, readBufferSize),
+        infoBuffer(infoFileName, readBufferSize),
+        posBuffer(posFileName, readBufferSize)
+    {
+        lastValue = 0;
+        valueCnt = 0;
+        valueBuffer = new Kmer[valueBufferSize];
+        hasPos = true;
+        fillValueBuffer();
+        // Get the size of infoFile
+        totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
+    }
+
     ~DeltaIdxReader() {
         delete[] valueBuffer;
     }
+
+    // void setPosBuffer(const std::string & posFileName) {
+    //     this->posFileName = posFileName;
+    //     posBuffer = ReadBuffer<uint16_t>(posFileName, readBufferSize);
+    //     hasPos = true;
+    // }
+
 
     uint64_t getLastValue() const {
         return lastValue;
@@ -260,6 +304,9 @@ public:
     void setReadPosition(DiffIdxSplit offset) {
         deltaIdxBuffer.loadBufferAt(offset.diffIdxOffset);
         infoBuffer.loadBufferAt(offset.infoIdxOffset - (offset.ADkmer != 0));
+        if (hasPos) {
+            posBuffer.loadBufferAt(offset.infoIdxOffset - (offset.ADkmer != 0));
+        }
         if (offset.ADkmer == 0 && offset.diffIdxOffset == 0 && offset.infoIdxOffset == 0) {
             valueCnt = 0;
             lastValue = 0;
@@ -267,6 +314,9 @@ public:
             lastValue = offset.ADkmer;
             valueBuffer[0].value = lastValue;
             valueBuffer[0].tInfo.taxId = *infoBuffer.p++;
+            if (hasPos) {
+                valueBuffer[0].tInfo.pos = *posBuffer.p++;
+            }
             valueCnt = 1;
         }
         valueBufferIdx = 0;
@@ -280,7 +330,5 @@ public:
     size_t getValueCnt() const {
         return valueCnt;
     }
-
-
 };
 #endif // METABULI_DELTAIDXREADER_H

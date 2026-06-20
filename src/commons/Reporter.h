@@ -31,6 +31,11 @@ private:
     ofstream readClassificationFile;
     WriteBuffer<MappingRes> * mappingResBuffer = nullptr;
     bool isFirstTime = true;
+    unordered_map<TaxID, TaxID> originalTaxIdCache;
+    unordered_map<TaxID, string> rankCache;
+    unordered_map<TaxID, string> lineageCache;
+    string readClassificationOutputBuffer;
+    vector<char> readClassificationFileBuffer;
 
     
 
@@ -67,7 +72,29 @@ public:
     void writeReportFile(
         int numOfQuery, 
         unordered_map<TaxID, TaxonCounts> cladeCounts, 
-        unordered_map<TaxID, double> &taxon2avgScore,
+        const unordered_map<TaxID, double> &taxon2avgScore,
+        ReportType reportType,
+        string kronaFileName = "");
+
+    void writeReportFile(
+        int numOfQuery,
+        unordered_map<TaxID, TaxonCounts> cladeCounts,
+        unordered_map<TaxID, CovMetric> &sp2covMetric,
+        const unordered_map<TaxID, double> &taxon2avgScore,
+        ReportType reportType,
+        string kronaFileName = "");
+
+    void writeReportFile(
+        int numOfQuery,
+        unordered_map<TaxID, unsigned int> &taxCnt,
+        ReportType reportType,
+        string kronaFileName = "");
+
+    void writeReportFile(
+        int numOfQuery,
+        unordered_map<TaxID, unsigned int> &taxCnt,
+        unordered_map<TaxID, CovMetric> &sp2covMetric,
+        const unordered_map<TaxID, double> &taxon2avgScore,
         ReportType reportType,
         string kronaFileName = "");
     
@@ -82,6 +109,15 @@ public:
     void writeReport(
         FILE *FP, 
         const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+        unsigned long totalReads,
+        TaxID taxID = 0,
+        int depth = 0);
+
+    void writeReport(
+        FILE *FP,
+        const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+        const unordered_map<TaxID, CovMetric> &sp2covMetric,
+        const unordered_map<TaxID, double> &taxon2avgScore,
         unsigned long totalReads,
         TaxID taxID = 0,
         int depth = 0);
@@ -118,6 +154,20 @@ public:
 
     void writeReclassifyResults(const std::vector<Classification> & results);
 
+    void filterClassificationFile(
+        const std::string& inputFilePath,
+        const std::string& outputFilePath,
+        const std::unordered_map<TaxID, CovMetric> &sp2covMetric,
+        const std::unordered_map<TaxID, double> &taxon2avgScore,
+        double cutoff);
+
+
+    void rollUpCoverageMetrics(
+        const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
+        const std::unordered_map<TaxID, TaxonCounts>& cladeCounts,
+        std::unordered_map<TaxID, CovMetric>& allMetrics, // Starts with species, gets filled with all ranks
+        TaxID currentTaxID);
+
     unsigned int cladeCountVal(const std::unordered_map<TaxID, TaxonCounts> &map, TaxID key);
 
     // Extract reads classified to a specific clade
@@ -146,6 +196,7 @@ public:
         return mappingResFileName;
     }
 };
+
 
 
 #endif //METABULI_REPORTER_H

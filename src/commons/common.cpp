@@ -152,6 +152,8 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
           par.kmerFormat = stoi(tokens[1]);
         } else if (tokens[0] == "Total_seq_length") {
           par.dbTotalLength = std::stoul(tokens[1]);
+        } else if (tokens[0] == "Kmer_position") {
+          par.storeKmerPos = stoi(tokens[1]);
         } else if (eachLine == "===BEGIN_CUSTOM_METAMER===") {
           par.customMetamer = dbDir + "/db.parameters";
         }
@@ -385,6 +387,26 @@ uint32_t safe_left_shift_32(uint32_t value, unsigned int shift) {
         return 0;
     }
     return value << shift;
+}
+
+  
+std::string reverseComplement(std::string &read) {
+    int len = read.length();
+    std::string out;
+    for (int i = 0; i < len; i++) {
+        out.push_back(iRCT[read[i]]);
+    }
+    reverse(out.begin(), out.end());
+    return out;
+}
+
+char *reverseComplement(char *read, size_t length) {
+    char *revCom = (char *) malloc(sizeof(char) * (length + 1));
+    for (size_t i = 0; i < length; i++) {
+        revCom[length - i - 1] = iRCT[read[i]];
+    }
+    revCom[length] = '\0';
+    return revCom;
 }
 
 int getFirstOneAfterFirstZero(uint32_t mask) {

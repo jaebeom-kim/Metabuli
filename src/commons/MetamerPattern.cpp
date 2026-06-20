@@ -1,7 +1,182 @@
 #include "MetamerPattern.h"
 #include "json.h"
+#include <array>
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
+#if defined(__SSSE3__)
+#include <tmmintrin.h>
+#endif
 
 using json = nlohmann::json;
+
+namespace {
+constexpr size_t MAX_BATCH_KMER_LEN = 64;
+
+inline bool usesRegularEightCodonLookup(const GeneticCode *geneticCode) {
+    return dynamic_cast<const RegularGeneticCode *>(geneticCode) != nullptr;
+}
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+size_t hammingDistSumBatchRegularNeon(
+    uint64_t kmer1,
+    const Kmer *candidates,
+    size_t candidateCnt,
+    uint8_t *hammings,
+    int kmerLen,
+    const uint8_t *lookup) {
+    if (kmerLen > static_cast<int>(MAX_BATCH_KMER_LEN)) {
+        return 0;
+    }
+
+    uint8x8_t rows[MAX_BATCH_KMER_LEN];
+    uint64_t queryCodons = kmer1;
+    for (int pos = 0; pos < kmerLen; ++pos) {
+        rows[pos] = vld1_u8(lookup + ((queryCodons & 0x7U) << 3U));
+        queryCodons >>= 3U;
+    }
+
+    size_t i = 0;
+    for (; i + 8 <= candidateCnt; i += 8) {
+        uint64_t streams[8] = {
+            candidates[i + 0].value,
+            candidates[i + 1].value,
+            candidates[i + 2].value,
+            candidates[i + 3].value,
+            candidates[i + 4].value,
+            candidates[i + 5].value,
+            candidates[i + 6].value,
+            candidates[i + 7].value,
+        };
+        uint8x8_t sums = vdup_n_u8(0);
+
+        for (int pos = 0; pos < kmerLen; ++pos) {
+            alignas(8) uint8_t targetCodons[8] = {
+                static_cast<uint8_t>(streams[0] & 0x7U),
+                static_cast<uint8_t>(streams[1] & 0x7U),
+                static_cast<uint8_t>(streams[2] & 0x7U),
+                static_cast<uint8_t>(streams[3] & 0x7U),
+                static_cast<uint8_t>(streams[4] & 0x7U),
+                static_cast<uint8_t>(streams[5] & 0x7U),
+                static_cast<uint8_t>(streams[6] & 0x7U),
+                static_cast<uint8_t>(streams[7] & 0x7U),
+            };
+
+            streams[0] >>= 3U;
+            streams[1] >>= 3U;
+            streams[2] >>= 3U;
+            streams[3] >>= 3U;
+            streams[4] >>= 3U;
+            streams[5] >>= 3U;
+            streams[6] >>= 3U;
+            streams[7] >>= 3U;
+
+            sums = vadd_u8(sums, vtbl1_u8(rows[pos], vld1_u8(targetCodons)));
+        }
+
+        vst1_u8(hammings + i, sums);
+    }
+
+    return i;
+}
+#endif
+
+#if defined(__SSSE3__)
+size_t hammingDistSumBatchRegularSsse3(
+    uint64_t kmer1,
+    const Kmer *candidates,
+    size_t candidateCnt,
+    uint8_t *hammings,
+    int kmerLen,
+    const uint8_t *lookup) {
+    if (kmerLen > static_cast<int>(MAX_BATCH_KMER_LEN)) {
+        return 0;
+    }
+
+    __m128i rows[MAX_BATCH_KMER_LEN];
+    uint64_t queryCodons = kmer1;
+    for (int pos = 0; pos < kmerLen; ++pos) {
+        alignas(16) uint8_t row[16] = {};
+        const uint8_t *src = lookup + ((queryCodons & 0x7U) << 3U);
+        for (int j = 0; j < 8; ++j) {
+            row[j] = src[j];
+        }
+        rows[pos] = _mm_load_si128(reinterpret_cast<const __m128i *>(row));
+        queryCodons >>= 3U;
+    }
+
+    size_t i = 0;
+    for (; i + 16 <= candidateCnt; i += 16) {
+        uint64_t streams[16] = {
+            candidates[i + 0].value,
+            candidates[i + 1].value,
+            candidates[i + 2].value,
+            candidates[i + 3].value,
+            candidates[i + 4].value,
+            candidates[i + 5].value,
+            candidates[i + 6].value,
+            candidates[i + 7].value,
+            candidates[i + 8].value,
+            candidates[i + 9].value,
+            candidates[i + 10].value,
+            candidates[i + 11].value,
+            candidates[i + 12].value,
+            candidates[i + 13].value,
+            candidates[i + 14].value,
+            candidates[i + 15].value,
+        };
+        __m128i sums = _mm_setzero_si128();
+
+        for (int pos = 0; pos < kmerLen; ++pos) {
+            alignas(16) uint8_t targetCodons[16] = {
+                static_cast<uint8_t>(streams[0] & 0x7U),
+                static_cast<uint8_t>(streams[1] & 0x7U),
+                static_cast<uint8_t>(streams[2] & 0x7U),
+                static_cast<uint8_t>(streams[3] & 0x7U),
+                static_cast<uint8_t>(streams[4] & 0x7U),
+                static_cast<uint8_t>(streams[5] & 0x7U),
+                static_cast<uint8_t>(streams[6] & 0x7U),
+                static_cast<uint8_t>(streams[7] & 0x7U),
+                static_cast<uint8_t>(streams[8] & 0x7U),
+                static_cast<uint8_t>(streams[9] & 0x7U),
+                static_cast<uint8_t>(streams[10] & 0x7U),
+                static_cast<uint8_t>(streams[11] & 0x7U),
+                static_cast<uint8_t>(streams[12] & 0x7U),
+                static_cast<uint8_t>(streams[13] & 0x7U),
+                static_cast<uint8_t>(streams[14] & 0x7U),
+                static_cast<uint8_t>(streams[15] & 0x7U),
+            };
+
+            streams[0] >>= 3U;
+            streams[1] >>= 3U;
+            streams[2] >>= 3U;
+            streams[3] >>= 3U;
+            streams[4] >>= 3U;
+            streams[5] >>= 3U;
+            streams[6] >>= 3U;
+            streams[7] >>= 3U;
+            streams[8] >>= 3U;
+            streams[9] >>= 3U;
+            streams[10] >>= 3U;
+            streams[11] >>= 3U;
+            streams[12] >>= 3U;
+            streams[13] >>= 3U;
+            streams[14] >>= 3U;
+            streams[15] >>= 3U;
+
+            const __m128i idx =
+                _mm_load_si128(reinterpret_cast<const __m128i *>(targetCodons));
+            sums = _mm_add_epi8(sums, _mm_shuffle_epi8(rows[pos], idx));
+        }
+
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(hammings + i), sums);
+    }
+
+    return i;
+}
+#endif
+}
 
 int getCodeNum(const std::string & customFile) {
     std::ifstream file(customFile);
@@ -364,6 +539,67 @@ uint8_t SingleCodePattern::hammingDistSum(
         kmer2 >>= bCodon;
     }  
     return hammingSum;
+}
+
+void SingleCodePattern::hammingDistSumBatch(
+    uint64_t kmer1,
+    const Kmer *candidates,
+    size_t candidateCnt,
+    uint8_t *hammings) const {
+    if (candidateCnt == 0) {
+        return;
+    }
+
+    const bool regularLookup = usesRegularEightCodonLookup(geneticCode.get());
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    size_t i = 0;
+    if (regularLookup && bitPerCodon == 3 && codonMask == 0x7U) {
+        i = hammingDistSumBatchRegularNeon(
+            kmer1, candidates, candidateCnt, hammings, kmerLen, geneticCode->hammingLookup);
+    }
+#elif defined(__SSSE3__)
+    size_t i = 0;
+    if (regularLookup && bitPerCodon == 3 && codonMask == 0x7U) {
+        i = hammingDistSumBatchRegularSsse3(
+            kmer1, candidates, candidateCnt, hammings, kmerLen, geneticCode->hammingLookup);
+    }
+#else
+    size_t i = 0;
+#endif
+
+    if (kmerLen > static_cast<int>(MAX_BATCH_KMER_LEN)) {
+        for (; i < candidateCnt; ++i) {
+            hammings[i] = hammingDistSum(kmer1, candidates[i].value);
+        }
+        return;
+    }
+
+    std::array<const uint8_t *, MAX_BATCH_KMER_LEN> rows{};
+    uint64_t aaStream = kmer1 >> totalDNABits;
+    uint64_t queryCodons = kmer1;
+    const uint8_t *lookup = geneticCode->hammingLookup;
+    const int maxCodon = geneticCode->maxCodonPerAA;
+    const int rowStride = maxCodon * maxCodon;
+
+    for (int pos = 0; pos < kmerLen; ++pos) {
+        const int aa = aaStream & aaMask;
+        const int queryCodon = queryCodons & codonMask;
+        rows[pos] = regularLookup
+            ? lookup + queryCodon * 8
+            : lookup + aa * rowStride + queryCodon * maxCodon;
+        aaStream >>= bitPerAA;
+        queryCodons >>= bitPerCodon;
+    }
+
+    for (; i < candidateCnt; ++i) {
+        uint64_t targetCodons = candidates[i].value;
+        uint8_t hammingSum = 0;
+        for (int pos = 0; pos < kmerLen; ++pos) {
+            hammingSum += rows[pos][targetCodons & codonMask];
+            targetCodons >>= bitPerCodon;
+        }
+        hammings[i] = hammingSum;
+    }
 }
 
 // uint8_t SingleCodePattern::hammingDistSum(
@@ -819,6 +1055,64 @@ uint8_t LegacyPattern::hammingDistSum(uint64_t kmer1, uint64_t kmer2) const {
     return hammingSum;
 
 }
+
+void LegacyPattern::hammingDistSumBatch(
+    uint64_t kmer1,
+    const Kmer *candidates,
+    size_t candidateCnt,
+    uint8_t *hammings) const {
+    if (candidateCnt == 0) {
+        return;
+    }
+
+    const bool regularLookup = usesRegularEightCodonLookup(geneticCode.get());
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    size_t i = 0;
+    if (regularLookup && bitPerCodon == 3 && codonMask == 0x7U) {
+        i = hammingDistSumBatchRegularNeon(
+            kmer1, candidates, candidateCnt, hammings, kmerLen, geneticCode->hammingLookup);
+    }
+#elif defined(__SSSE3__)
+    size_t i = 0;
+    if (regularLookup && bitPerCodon == 3 && codonMask == 0x7U) {
+        i = hammingDistSumBatchRegularSsse3(
+            kmer1, candidates, candidateCnt, hammings, kmerLen, geneticCode->hammingLookup);
+    }
+#else
+    size_t i = 0;
+#endif
+
+    if (kmerLen > static_cast<int>(MAX_BATCH_KMER_LEN)) {
+        for (; i < candidateCnt; ++i) {
+            hammings[i] = hammingDistSum(kmer1, candidates[i].value);
+        }
+        return;
+    }
+
+    std::array<const uint8_t *, MAX_BATCH_KMER_LEN> rows{};
+    uint64_t queryCodons = kmer1;
+    const uint8_t *lookup = geneticCode->hammingLookup;
+    const int maxCodon = geneticCode->maxCodonPerAA;
+
+    for (int pos = 0; pos < kmerLen; ++pos) {
+        const int queryCodon = queryCodons & codonMask;
+        rows[pos] = regularLookup
+            ? lookup + queryCodon * 8
+            : lookup + queryCodon * maxCodon;
+        queryCodons >>= bitPerCodon;
+    }
+
+    for (; i < candidateCnt; ++i) {
+        uint64_t targetCodons = candidates[i].value;
+        uint8_t hammingSum = 0;
+        for (int pos = 0; pos < kmerLen; ++pos) {
+            hammingSum += rows[pos][targetCodons & codonMask];
+            targetCodons >>= bitPerCodon;
+        }
+        hammings[i] = hammingSum;
+    }
+}
+
 MatchScore LegacyPattern::calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, bool fromR) const {
     float idScore = 0.0f;
     int dnaBitSum = (fromR) ? 0 : totalDNABits;

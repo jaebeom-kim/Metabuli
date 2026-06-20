@@ -1,49 +1,12 @@
 #include "SeqIterator.h"
 
 SeqIterator::~SeqIterator() {
-    delete[] mask;
-    delete[] mask_int;
-    delete[] powers;
 }
 SeqIterator::SeqIterator(const LocalParameters &par) {
-    // Mask for spaced k-mer
-    size_t maskLen = kmerLen; // par.spaceMask.length();
-    mask = new uint32_t[maskLen+1];
-    mask_int = new int[maskLen+1];
-    powers = new uint64_t[kmerLen + 2];
-    spaceNum = 0;
-    spaceNum_int = 0;
-    string spaceMask = string(kmerLen, '1'); // par.spaceMask;
-    smerLen = par.smerLen;
-    smerMask = (1u << (5 * smerLen)) - 1;
-
-    for(size_t i = 0; i < maskLen; i++){
-        mask[i] = spaceMask[i] - 48;
-        mask_int[i] = spaceMask[i] - 48;
-        spaceNum += (mask[i] == 0);
-        spaceNum_int += (mask[i] == 0);
-    }
 
 }
 
-string SeqIterator::reverseComplement(string &read) const {
-    int len = read.length();
-    string out;
-    for (int i = 0; i < len; i++) {
-        out.push_back(iRCT[read[i]]);
-    }
-    reverse(out.begin(), out.end());
-    return out;
-}
 
-char *SeqIterator::reverseComplement(char *read, size_t length) const {
-    char *revCom = (char *) malloc(sizeof(char) * (length + 1));
-    for (size_t i = 0; i < length; i++) {
-        revCom[length - i - 1] = iRCT[read[i]];
-    }
-    revCom[length] = '\0';
-    return revCom;
-}
 
 bool SeqIterator::compareMinHashList(priority_queue <uint64_t> list1, priority_queue <uint64_t> &list2, size_t length1,
                                      size_t length2) {
@@ -94,45 +57,6 @@ void SeqIterator::getMinHashList(priority_queue <uint64_t> &sortedHashQue, const
     free(kmer);
 }
 
-void SeqIterator::generateIntergenicKmerList(_gene *genes, _node *nodes, int numberOfGenes,
-                                             vector <uint64_t> &intergenicKmerList,
-                                             const char *seq) {
-    if (numberOfGenes == 0) return;
-
-    int k = 23;
-    char *kmer = (char *) malloc(sizeof(char) * (k + 1));
-    char *reverseKmer = (char *) malloc(sizeof(char) * (k + 1));
-
-    // Use the frame of the first gene for the first intergenic region
-    int beginOfFisrtGene = genes[0].begin - 1;
-    if (beginOfFisrtGene > k - 1) {
-        strncpy(kmer, seq + beginOfFisrtGene - k, k);
-        if (nodes[genes[0].start_ndx].strand == 1) {
-            intergenicKmerList.push_back(XXH64(kmer, k, 0));
-        } else {
-            for (int j = k - 1; j >= 0; j--) {
-                reverseKmer[k - j - 1] = iRCT[kmer[j]];
-            }
-            intergenicKmerList.push_back(XXH64(reverseKmer, k, 0));
-        }
-    }
-
-    //
-    for (int i = 0; i < numberOfGenes; i++) {
-        strncpy(kmer, seq + genes[i].end, k);
-        if (nodes[genes[i].start_ndx].strand == 1) {
-            intergenicKmerList.push_back(XXH64(kmer, k, 0));
-        } else {
-            for (int j = k - 1; j >= 0; j--) {
-                reverseKmer[k - j - 1] = iRCT[kmer[j]];
-            }
-            intergenicKmerList.push_back(XXH64(reverseKmer, k, 0));
-        }
-    }
-
-    free(reverseKmer);
-    free(kmer);
-}
 
 void SeqIterator::maskLowComplexityRegions(const unsigned char *seq, unsigned char *maskedSeq, ProbabilityMatrix & probMat,
                                            float maskProb, const BaseMatrix * subMat) {

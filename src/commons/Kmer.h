@@ -20,8 +20,13 @@ struct QueryKmerInfo {
 
 struct TargetKmerInfo {
     explicit TargetKmerInfo(TaxID taxId = 0, TaxID speciesId = 0) : taxId(taxId), speciesId(speciesId) {}
+    TargetKmerInfo(TaxID taxId, uint32_t pos) : taxId(taxId), pos(pos) {}
+    
     TaxID taxId;     // 4 byte
-    TaxID speciesId; // 4 byte
+    union {
+        TaxID speciesId; // 4 byte
+        uint32_t pos;    // 4 byte
+    };
 };
 
 struct Kmer {
@@ -44,6 +49,8 @@ struct Kmer {
     Kmer(uint64_t value, const TargetKmerInfo & tInfo) : value(value), tInfo(tInfo) {}
 
     Kmer(uint64_t value, TaxID taxId, TaxID speciesId) : value(value), tInfo(taxId, speciesId) {}
+
+    Kmer(uint64_t value, TaxID taxId, uint32_t pos) : value(value), tInfo(taxId, pos) {}
 
     Kmer(uint64_t value, uint32_t seqId, uint32_t pos, uint8_t frame) 
         : value(value), qInfo(seqId, pos, frame) {}
@@ -120,6 +127,18 @@ struct Kmer {
         return a.tInfo.taxId < b.tInfo.taxId;
     }
 
+    static bool compareTargetKmerPerSpecies(const Kmer & a, const Kmer & b) {
+        if (a.value != b.value) {
+            return a.value < b.value;
+        }
+
+        if (a.tInfo.pos != b.tInfo.pos) {
+            return a.tInfo.pos > b.tInfo.pos;
+        }
+
+        return a.tInfo.taxId < b.tInfo.taxId;
+    }
+
     static bool compareQueryKmer(const Kmer &a, const Kmer &b) {
         if (a.value != b.value) {
             return a.value < b.value;
@@ -149,6 +168,13 @@ struct Kmer {
         }
         return a.id < b.id;
     }
+};
+
+struct Kmer_binned: public Kmer {
+    uint32_t pos;
+
+    Kmer_binned(uint64_t value, TaxID taxId, TaxID speciesId, uint32_t pos) 
+        : Kmer(value, taxId, speciesId), pos(pos) {}
 };
 
 

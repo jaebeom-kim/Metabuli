@@ -701,7 +701,6 @@ void GroupGenerator::mergeTrueRelations(
 
 void GroupGenerator::mergeRelations() {
     cout << "Merging subgraphs." << endl;
-    time_t before = time(nullptr);
     ofstream relationLog(outDir + "/allRelations.txt");
     if (!relationLog.is_open()) {
         cerr << "Failed to open relation log file." << endl;

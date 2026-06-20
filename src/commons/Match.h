@@ -10,6 +10,8 @@ public:
     Match(){}
     Match(Kmer qKmer, Kmer tKmer): qKmer(qKmer), tKmer(tKmer) { }
 
+    ~Match() {}
+
     Kmer qKmer;
     Kmer tKmer;
 
@@ -39,7 +41,41 @@ public:
         
         return a.tKmer.value < b.tKmer.value;
     }
+};
 
+class MatchWithPos {
+    public:
+    Kmer qKmer;
+    Kmer tKmer;
+    uint16_t posId;
+    MatchWithPos(Kmer qKmer, Kmer tKmer, uint16_t posId) : qKmer(qKmer), tKmer(tKmer), posId(posId) {}
+
+    void printMatch() const {
+        std::cout << qKmer.qInfo.sequenceID << " " << qKmer.qInfo.pos << " " << qKmer.qInfo.frame << " "
+        << tKmer.tInfo.taxId << " " << tKmer.tInfo.speciesId << " " << posId << "\n";
+    }  
+
+    static bool compare(const MatchWithPos &a, const MatchWithPos &b) {
+        if (a.qKmer.qInfo.sequenceID != b.qKmer.qInfo.sequenceID)
+            return a.qKmer.qInfo.sequenceID < b.qKmer.qInfo.sequenceID;
+        
+        if (a.tKmer.tInfo.speciesId != b.tKmer.tInfo.speciesId)
+            return a.tKmer.tInfo.speciesId < b.tKmer.tInfo.speciesId;
+
+        if (a.qKmer.qInfo.frame != b.qKmer.qInfo.frame)
+            return a.qKmer.qInfo.frame < b.qKmer.qInfo.frame;
+
+        if (a.qKmer.qInfo.pos != b.qKmer.qInfo.pos)
+            return a.qKmer.qInfo.pos < b.qKmer.qInfo.pos;
+
+        if (a.tKmer.tInfo.taxId != b.tKmer.tInfo.taxId)
+            return a.tKmer.tInfo.taxId < b.tKmer.tInfo.taxId;
+
+        if (a.qKmer.value != b.qKmer.value)
+            return a.qKmer.value < b.qKmer.value;
+        
+        return a.tKmer.value < b.tKmer.value;
+    }
 };
 
 
@@ -125,14 +161,15 @@ inline MatchScore operator+(MatchScore lhs, const MatchScore& rhs) {
     return lhs;
 }
 
+template <typename MatchType>
 struct MatchPath {
     MatchPath() : start(0), end(0), score(), hammingDist(0), coveredPosCnt(0), startMatch(nullptr), endMatch(nullptr), lastHistoryMask(0), firstHistoryMask(0) {}
 
-    MatchPath(int start, int end, MatchScore score, int hammingDist, int coveredPosCnt, const Match * startMatch, const Match * endMatch) :
+    MatchPath(int start, int end, MatchScore score, int hammingDist, int coveredPosCnt, const MatchType * startMatch, const MatchType * endMatch) :
          start(start), end(end), score(score), hammingDist(hammingDist), coveredPosCnt(coveredPosCnt), startMatch(startMatch), endMatch(endMatch), lastHistoryMask(0), firstHistoryMask(0) {}
 
     
-    MatchPath(const Match * startMath, int kmerLen, int windowSizeNt) 
+    MatchPath(const MatchType * startMath, int kmerLen, int windowSizeNt) 
         : start(startMath->qKmer.qInfo.pos),
           end(startMath->qKmer.qInfo.pos + windowSizeNt - 1), 
           score(),
@@ -144,7 +181,7 @@ struct MatchPath {
           firstHistoryMask(0) {}
     
     MatchPath(
-        const Match * startMatch,
+        const MatchType * startMatch,
         MatchScore score, 
         int kmerLen, 
         int windowLenNt) 
@@ -162,8 +199,8 @@ struct MatchPath {
     MatchScore score;
     int hammingDist = 0;
     int coveredPosCnt;
-    const Match * startMatch;
-    const Match * endMatch;
+    const MatchType * startMatch;
+    const MatchType * endMatch;
 
     uint32_t lastHistoryMask;      
     uint64_t lastAAs = 0;      
@@ -175,9 +212,11 @@ struct MatchPath {
     uint64_t firstCodons_t = 0;
     uint64_t firstCodons_q = 0;
 
-
     bool rightEndTrimmed = false;     
     bool leftEndTrimmed = false;      
+
+    uint64_t prevMatchIdx = UINT64_MAX;
+    std::vector<const MatchType*> chain;
 
     void printMatchPath() {
         std::cout << start << " " << end << " " << score.idScore << " " << score.subScore << " " << hammingDist << " " << coveredPosCnt << std::endl;

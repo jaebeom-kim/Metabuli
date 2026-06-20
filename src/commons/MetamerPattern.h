@@ -32,7 +32,6 @@ int getWeightedPosNum(const std::string & customFile);
 // /* Y */ -3.532, /* Z */ 0
 // };
 
-
 class MetamerPattern {
 public:
     uint64_t dnaMask; // Value & dnaMask -> DNA part
@@ -89,6 +88,15 @@ public:
     virtual float hammingDistScore(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const = 0;
     virtual uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const = 0;
     virtual uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2) const  = 0;
+    virtual void hammingDistSumBatch(
+        uint64_t kmer1,
+        const Kmer *candidates,
+        size_t candidateCnt,
+        uint8_t *hammings) const {
+        for (size_t i = 0; i < candidateCnt; ++i) {
+            hammings[i] = hammingDistSum(kmer1, candidates[i].value);
+        }
+    }
     virtual MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, bool fromR = false) const = 0;
     virtual MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2) const = 0;
     virtual MatchScore calMatchScore(uint64_t aa, uint64_t codon1, uint64_t codon2, uint32_t validPosMask) const = 0;
@@ -98,8 +106,6 @@ public:
     
     virtual void printAA(uint64_t value) const = 0;
     virtual void printDNA(uint64_t value) const = 0;
-    // virtual void printAA(uint64_t value, int len) const = 0;
-    // virtual void printDNA(uint64_t value, int len) const = 0;
     virtual std::string toDnaString(uint64_t value) const = 0;
 };
 
@@ -143,6 +149,11 @@ public:
     float hammingDistScore(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2) const override;
+    void hammingDistSumBatch(
+        uint64_t kmer1,
+        const Kmer *candidates,
+        size_t candidateCnt,
+        uint8_t *hammings) const override;
     MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, bool fromR = false) const override;
     MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2) const override;
     MatchScore calMatchScore(uint64_t aa, uint64_t codon1, uint64_t codon2, uint32_t validPosMask) const override;
@@ -171,8 +182,6 @@ public:
             std::cout << geneticCode->aa2codon[aa][codon];
         }
     }
-
-
 
     std::string toDnaString(uint64_t value) const override {
         std::string dnaStr;
@@ -337,6 +346,11 @@ public:
 
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2) const override;
+    void hammingDistSumBatch(
+        uint64_t kmer1,
+        const Kmer *candidates,
+        size_t candidateCnt,
+        uint8_t *hammings) const override;
     MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, bool fromR = false) const override;
     MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2) const override;
 

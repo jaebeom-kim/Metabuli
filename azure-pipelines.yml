@@ -16,21 +16,31 @@ jobs:
       matrix:
         avx2:
           SIMD: 'AVX2'
+          SIMD_FLAGS: '-mavx2 -mssse3'
+          STATIC: 1
+          MPI: 0
+          BUILD_TYPE: Release
+        sse41:
+          SIMD: 'SSE4_1'
+          SIMD_FLAGS: '-msse4.1 -mssse3'
           STATIC: 1
           MPI: 0
           BUILD_TYPE: Release
         sse2:
           SIMD: 'SSE2'
+          SIMD_FLAGS: '-msse2'
           STATIC: 1
           MPI: 0
           BUILD_TYPE: Release
         avx2_mpi:
           SIMD: 'AVX2'
+          SIMD_FLAGS: '-mavx2 -mssse3'
           STATIC: 0
           MPI: 1
           BUILD_TYPE: Release
         asan:
           SIMD: 'AVX2'
+          SIMD_FLAGS: '-mavx2 -mssse3'
           STATIC: 0
           MPI: 0
           BUILD_TYPE: ASanOpt
@@ -54,10 +64,12 @@ jobs:
             LIBGOMP=/usr/lib/gcc/x86_64-linux-gnu/11
             
             cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DFORCE_STATIC_DEPS=1 -DHAVE_TESTS=1 \
+              -DCMAKE_C_FLAGS="${SIMD_FLAGS}" -DCMAKE_CXX_FLAGS="${SIMD_FLAGS}" \
               -DOpenMP_C_FLAGS="-fopenmp -I${LIBGOMP}" -DOpenMP_C_LIB_NAMES=gomp -DOpenMP_CXX_FLAGS="-fopenmp -I${LIBGOMP}" -DOpenMP_CXX_LIB_NAMES=gomp -DOpenMP_gomp_LIBRARY=${LIBGOMP}/libgomp.a \
               -DENABLE_WERROR=0 -DHAVE_${SIMD}=1 -DHAVE_MPI=${MPI} ..
           else
             cmake -DHAVE_SANITIZER=1 -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DHAVE_TESTS=1 \
+              -DCMAKE_C_FLAGS="${SIMD_FLAGS}" -DCMAKE_CXX_FLAGS="${SIMD_FLAGS}" \
               -DENABLE_WERROR=0 -DHAVE_${SIMD}=1 -DHAVE_MPI=${MPI} ..
           fi
           make -j $(nproc --all) VERBOSE=1
@@ -83,6 +95,7 @@ jobs:
           SIMD: ARM8
           ARCH: arm64
           CPREF: aarch64
+          BUILD_TYPE: Release
     steps:
       - checkout: self
         submodules: true
@@ -107,6 +120,7 @@ jobs:
           LIBGOMP=/usr/lib/gcc-cross/${CPREF}-linux-gnu/11;
           CC=${CPREF}-linux-gnu-gcc CXX=${CPREF}-linux-gnu-g++ \
           cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DHAVE_TESTS=1 -DFORCE_STATIC_DEPS=1 \
+            -DCMAKE_C_FLAGS="-march=armv8-a+simd" -DCMAKE_CXX_FLAGS="-march=armv8-a+simd" \
             -DOpenMP_C_FLAGS="-fopenmp -I${LIBGOMP}" -DOpenMP_C_LIB_NAMES=gomp -DOpenMP_CXX_FLAGS="-fopenmp -I${LIBGOMP}" -DOpenMP_CXX_LIB_NAMES=gomp -DOpenMP_gomp_LIBRARY=${LIBGOMP}/libgomp.a \
             -DENABLE_WERROR=0 -DHAVE_${SIMD}=1 ..
           make -j $(nproc --all)
@@ -266,6 +280,27 @@ jobs:
           includeRootFolder: true
           archiveType: tar
 
+      # === Package Linux SSE4.1 / SSSE3 ===
+      - script: |
+          echo "--- Packaging Linux SSE4.1/SSSE3 artifact ---"
+          cd "${BUILD_SOURCESDIRECTORY}"
+          rm -rf metabuli
+          mkdir -p metabuli/bin
+          cp -f README.md LICENSE metabuli
+        displayName: 'Prepare staging dir for Linux-SSE4.1'
+      - task: DownloadPipelineArtifact@1
+        inputs:
+          artifactName: metabuli-linux-SSE4_1
+          targetPath: $(Build.SourcesDirectory)/metabuli/bin
+      - script:
+          chmod +x "${BUILD_SOURCESDIRECTORY}/metabuli/bin/metabuli"
+      - task: ArchiveFiles@2
+        inputs:
+          rootFolderOrFile: $(Build.SourcesDirectory)/metabuli
+          archiveFile: $(Build.SourcesDirectory)/metabuli-linux-sse41.tar.gz
+          includeRootFolder: true
+          archiveType: tar
+
           
       # === Package Linux AVX2 ===
       - script: |
@@ -317,16 +352,18 @@ jobs:
           chmod 700 ~/.ssh && chmod 600 ~/.ssh/id_rsa
           ssh-keygen -f ~/.ssh/id_rsa -y > ~/.ssh/id_rsa.pub
           cd "${BUILD_SOURCESDIRECTORY}"
-          # disabled:metabuli-linux-sse41.tar.gz metabuli-linux-ppc64le-POWER8.tar.gz metabuli-linux-ppc64le-POWER9.tar.gz
+          # disabled:metabuli-linux-ppc64le-POWER8.tar.gz metabuli-linux-ppc64le-POWER9.tar.gz
           ssh-keygen -Y sign -f ~/.ssh/id_rsa -n file \
              metabuli-osx-universal.tar.gz \
              metabuli-linux-sse2.tar.gz \
+             metabuli-linux-sse41.tar.gz \
              metabuli-linux-avx2.tar.gz \
              metabuli-linux-arm64.tar.gz \
              metabuli-win64.zip
           curl --retry 5 --retry-all-errors -X POST \
             -F file[]=@metabuli-osx-universal.tar.gz -F signature[]=@metabuli-osx-universal.tar.gz.sig \
             -F file[]=@metabuli-linux-sse2.tar.gz -F signature[]=@metabuli-linux-sse2.tar.gz.sig \
+            -F file[]=@metabuli-linux-sse41.tar.gz -F signature[]=@metabuli-linux-sse41.tar.gz.sig \
             -F file[]=@metabuli-linux-avx2.tar.gz -F signature[]=@metabuli-linux-avx2.tar.gz.sig \
             -F file[]=@metabuli-linux-arm64.tar.gz -F signature[]=@metabuli-linux-arm64.tar.gz.sig \
             -F file[]=@metabuli-win64.zip  -F signature[]=@metabuli-win64.zip.sig \

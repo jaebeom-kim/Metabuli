@@ -91,7 +91,8 @@ public:
     PARAMETER(MAX_SHIFT)
     PARAMETER(EM)
     PARAMETER(NEIGHBOR_KMERS)
-    PARAMETER(PDM_KMER)
+    PARAMETER(PMD_KMER)
+    PARAMETER(DISABLE_TRIMMING)
     PARAMETER(SCORE_MODE)
     PARAMETER(DB_TOTAL_LENGTH)
     PARAMETER(MAX_E_VALUE)
@@ -131,6 +132,8 @@ public:
     PARAMETER(GTDB)
     PARAMETER(VALIDATE_INPUT)
     PARAMETER(READING_FRAME)
+    PARAMETER(STORE_KMER_POS)
+    PARAMETER(REP_GENOME_LIST)
     PARAMETER(NO_MASK_TAXA)
 
     // DB updated parameters
@@ -204,7 +207,8 @@ public:
     int printLineage;
     int maxShift;
     bool em;
-    int pdmKmer;
+    int pmdKmer;
+    int disableTrimming;
     int scoreMode;
     size_t dbTotalLength;
     double maxEValue;
@@ -237,6 +241,8 @@ public:
     int gtdb;
     int validateInput;
     int readingFrame;
+    int storeKmerPos;
+    std::string repGenomeList;
     std::string noMaskTaxa;
 
     // DB updated parameters

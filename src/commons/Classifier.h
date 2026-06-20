@@ -56,7 +56,6 @@ protected:
     TaxonomyWrapper * taxonomy = nullptr;
 
     unordered_map<TaxID, unsigned int> taxCounts;
-    unordered_map<TaxID, double> sp2score_global;
 
 
     size_t mappingResListSize = 0;
@@ -69,6 +68,19 @@ protected:
     std::vector<Classification> emResults;
     std::unordered_set<TaxID> topSpeciesSet;
 
+    // Coverage
+    unordered_map<TaxID, uint64_t> sp2genomeSize;
+    unordered_map<TaxID, uint64_t> sp2totalReadLength;
+    unordered_map<TaxID, vector<uint8_t>> sp2coverage_global;
+    unordered_map<TaxID, CovMetric> sp2covMetric;
+    std::vector<double> C_LOG2_C;
+
+    CovMetric calCovMetrics(
+        const std::vector<uint8_t>& bins, 
+        int readCnt, 
+        uint64_t totalReadLength,
+        uint64_t genomeSize = 65536);
+
     void countUniqueKmerPerSpecies(vector<uint32_t> & sp2uniqKmerCnt);
 
     void loadMappings(const string & mappingResFileName);
@@ -77,17 +89,43 @@ protected:
 
     void preciseModePreset(LocalParameters & par);
 
-public:
-    void startClassify(const LocalParameters &par);
+    void parseSp2GenomeSize() {
+        std::string fileName = dbDir + "/species2genomeSize.tsv";
+        ifstream infile(fileName);
+        if (!infile.is_open()) {
+            cerr << "Error: Could not open species to genome size file " << fileName << endl;
+            return;
+        }
+        string line;
+        while (getline(infile, line)) {
+            if (line.empty()) continue;
+            vector<string> columns = TaxonomyWrapper::splitByDelimiter(line, "\t", 3);
+            sp2genomeSize[static_cast<TaxID>(stoul(columns[0]))] = stoull(columns[2]);
+        }
+        infile.close();
+    }
 
+    unordered_map<TaxID, TaxonCounts> getCladeCounts() {
+        return taxonomy->getCladeCounts(taxCounts, taxonomy->getParentToChildren());
+    }
+
+    void rollUpCoverageMetrics(
+        const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
+        const std::unordered_map<TaxID, TaxonCounts>& cladeCounts,
+        std::unordered_map<TaxID, CovMetric>& allMetrics, // Starts with species, gets filled with all ranks
+        TaxID currentTaxID);
+
+public:
     void classifyReads();
+    void classifyReadsWithPos();
 
     uint64_t calculateBufferSize(
         uint64_t queryListSize,
-        uint64_t matchPerKmer);
+        uint64_t matchPerKmer,
+        int mode);
 
-
-    void assignTaxonomy(const Match *matchList,
+    template <typename MatchType>
+    void assignTaxonomy(const MatchType *matchList,
                         size_t numOfMatches,
                         std::vector<Query> & queryList,
                         const LocalParameters &par);

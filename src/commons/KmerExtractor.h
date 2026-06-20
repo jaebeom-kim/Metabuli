@@ -37,8 +37,14 @@ private:
     };
 
     static constexpr int MAX_N = 32;
+    static constexpr size_t QUERY_CHUNK_SIZE = 1000;
+    static constexpr size_t QUERY_READ_RESERVE = 1000;
     size_t binom[MAX_N + 1][MAX_N + 1];
-    
+
+    std::vector<std::vector<std::string>> queryReadsPerThread1;
+    std::vector<std::vector<std::string>> queryReadsPerThread2;
+
+    void ensureQueryReadBuffers(bool paired);
 
 
 
@@ -86,7 +92,7 @@ private:
         uint32_t seqID, 
         uint32_t offset = 0);
 
-    void generatePDMNeighborKmers(
+    void generatePMDNeighborKmers(
         const char *seq,
         size_t seqStart, 
         int seqLen,
@@ -101,15 +107,15 @@ private:
         const char *seq,
         int seqLen);    
     
-        int getPDMKmerCount(
-    const char *seq,
-    int seqLen);
+    int getPMDKmerCount(
+        const char *seq,
+        int seqLen);
 
-    inline size_t countMutationComb(size_t nt, size_t na, int maxDamage) {
+    inline size_t countMutationComb(size_t nt, size_t na, size_t maxDamage) {
         size_t count = 0;
         size_t N = nt + na;
 
-        for (int d = 1; d <= maxDamage; ++d) {
+        for (size_t d = 1; d <= maxDamage; ++d) {
             if (d > N) break;
             count += binom[N][d];
         }
@@ -179,6 +185,15 @@ public:
         int seqID,
         int taxIdAtRank,
         SequenceBlock block);
+    
+    int extractTargetKmers(
+        const char *seq,
+        Buffer<Kmer> &kmerBuffer,
+        size_t &posToWrite,
+        uint64_t posOffset,
+        int seqID,
+        SequenceBlock block,
+        uint64_t scaleFactor);
 
     bool extractKmers(
         KSeqWrapper *kseq,

@@ -214,13 +214,20 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &neighborKmers,
                 "[0-4]"),
-        PDM_KMER(PDM_KMER_ID,
-                "--pdm-kmer",
-                "Number of bases from each end to extract PDM-aware neighbor k-mers",
-                "Number of bases from each end to extract PDM-aware neighbor k-mers",
+        PMD_KMER(PMD_KMER_ID,
+                "--pmd-kmer",
+                "Number of bases from each end to extract PMD-aware neighbor k-mers",
+                "Number of bases from each end to extract PMD-aware neighbor k-mers",
                 typeid(int),
-                (void *) &pdmKmer,
+                (void *) &pmdKmer,
                 "^[0-9]+$"),
+        DISABLE_TRIMMING(DISABLE_TRIMMING_ID,
+                "--disable-trimming",
+                "Disable query-end trimming",
+                "Disable query-end trimming before translated k-mer extraction",
+                typeid(int),
+                (void *) &disableTrimming,
+                "[0-1]"),
         SCORE_MODE(SCORE_MODE_ID,
                    "--score-mode",
                    "Scoring mode for classification",
@@ -424,6 +431,20 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &readingFrame,
                 "^[0-6]$"),
+        STORE_KMER_POS(STORE_KMER_POS_ID,
+                "--kmer-pos",
+                "Store k-mer positions in the index",
+                "Store k-mer positions in the index",
+                typeid(int),
+                (void *) &storeKmerPos,
+                "[0-1]"),
+        REP_GENOME_LIST(REP_GENOME_LIST_ID,
+                "--rep-genomes",
+                "Species representative genomes.",
+                "Species representative genomes.",
+                typeid(std::string),
+                (void *) &repGenomeList,
+                "^.*$"),
         NO_MASK_TAXA(NO_MASK_TAXA_ID,
                 "--no-mask-taxa",
                 "Comma-separated tax IDs to not mask low-complexity regions",
@@ -679,6 +700,8 @@ LocalParameters::LocalParameters() :
     build.push_back(&PARAM_CUSTOM_METAMER);
     build.push_back(&SPACE_MASK);
     build.push_back(&READING_FRAME);
+    build.push_back(&STORE_KMER_POS);
+    build.push_back(&REP_GENOME_LIST);
     build.push_back(&NO_MASK_TAXA);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
@@ -706,14 +729,12 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&GTDB);
     updateDB.push_back(&VALIDATE_INPUT);
     updateDB.push_back(&VALIDATE_DB);
-    // updateDB.push_back(&SYNCMER);
     updateDB.push_back(&NO_MASK_TAXA);
 
     //classify
     classify.push_back(&PARAM_THREADS);
     classify.push_back(&SEQ_MODE);
     classify.push_back(&PRECISION_MODE);
-    classify.push_back(&MAX_E_VALUE);
     classify.push_back(&MIN_SCORE);
     classify.push_back(&MIN_SP_SCORE);
     classify.push_back(&MIN_AA_MATCH);
@@ -733,7 +754,12 @@ LocalParameters::LocalParameters() :
     classify.push_back(&PARAM_SUB_MAT);
     // classify.push_back(&KMER_FORMAT);
     classify.push_back(&PRINT_LOG);
+    classify.push_back(&PMD_KMER);
+    classify.push_back(&DISABLE_TRIMMING);
+    classify.push_back(&SCORE_MODE);
+    classify.push_back(&MAX_E_VALUE);
     classify.push_back(&TIE_BRAKER);
+    classify.push_back(&USE_ALL_MATCHES);
     // classify.push_back(&PDM_KMER);
     // classify.push_back(&SCORE_MODE);
     

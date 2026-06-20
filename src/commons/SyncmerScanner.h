@@ -7,6 +7,13 @@
 #include "KmerScanner.h"
 #include "printBinary.h"
 
+static inline uint64_t syncmerLowMask(int bits) {
+    if (bits <= 0) {
+        return 0;
+    }
+    return bits >= 64 ? UINT64_MAX : ((1ULL << bits) - 1);
+}
+
 class SyncmerScanner : public MetamerScanner {
 protected:
     // Internal values
@@ -24,7 +31,7 @@ public:
         : MetamerScanner(geneticCode, kmerLen) 
     {
         this->smerLen = smerLen;
-        this->smerMask = (1ULL << (5 * smerLen)) - 1;
+        this->smerMask = syncmerLowMask(bitsPerAA * smerLen);
     }
 
     void initScanner(const char * seq, size_t seqStart, size_t seqEnd, bool isForward) override {
@@ -69,11 +76,11 @@ public:
                 smer = 0;
                 continue;
             }
-            if (!dq.empty() && dq.front().pos < posStart) dq.pop_front();
+            if (!dq.empty() && dq.front().pos < static_cast<uint32_t>(posStart)) dq.pop_front();
             uint32_t anchor1 = static_cast<uint32_t>(posStart);
             uint32_t anchor2 = static_cast<uint32_t>(posStart + (kmerSize - smerLen));
             if (!dq.empty() && (dq.front().pos == anchor1 || dq.front().pos == anchor2)) {
-                int shifts = posStart - prevPos;
+                int shifts = static_cast<int>(posStart - prevPos);
                 if (isForward) {
                     for (int i = 0; i < shifts; ++i) {
                         int ci = seqStart + (prevPos + kmerSize + i) * 3;
@@ -94,9 +101,9 @@ public:
         }
         if (syncmerFound) {
             if (isForward) {
-                return {(aaPart << dnaBits) | (dnaPart & dnaMask), seqStart + prevPos * 3};
+                return {((aaPart & aaMask) << dnaBits) | (dnaPart & dnaMask), seqStart + prevPos * 3};
             } else {
-                return {(aaPart << dnaBits) | (dnaPart & dnaMask), seqEnd - (prevPos + kmerSize) * 3 + 1};
+                return {((aaPart & aaMask) << dnaBits) | (dnaPart & dnaMask), seqEnd - (prevPos + kmerSize) * 3 + 1};
             }
         } else {
             return {UINT64_MAX, 0}; // No more syncmers found
@@ -118,7 +125,7 @@ protected:
 
 public:
     SyncmerScanner_aa2aa(int k, int s) : KmerScanner_aa2aa(k), smerLen(s) {
-        smerMask = (1ULL << (5 * smerLen)) - 1;
+        smerMask = syncmerLowMask(5 * smerLen);
     }
 
     ~SyncmerScanner_aa2aa() {}
@@ -207,7 +214,7 @@ public:
     SyncmerScanner_dna2aa(const GeneticCode &geneticCode, int k, int s) 
         : KmerScanner_dna2aa(geneticCode, k), smerLen(s) 
     {
-        this->smerMask = (1ULL << (bitsPerAA * smerLen)) - 1;
+        this->smerMask = syncmerLowMask(bitsPerAA * smerLen);
     }
 
     void initScanner(
@@ -310,7 +317,7 @@ public:
         int sLen) 
         : SpacedMetamerScanner(gc, kmerLen, spaceMask), smerLen(sLen) 
     {
-        smerMask = (~0ULL) >> (64 - (smerLen * bitsPerAA));
+        smerMask = syncmerLowMask(smerLen * bitsPerAA);
     }
 
     Kmer next() override {
@@ -414,7 +421,7 @@ public:
                 // }
 
                 // Prepare result
-                const uint64_t finalKmer = (packedAA << dnaBits) | packedDNA;
+                const uint64_t finalKmer = ((packedAA & aaMask) << dnaBits) | (packedDNA & dnaMask);
                 uint32_t finalPos;
                 
                 if (isForward) finalPos = seqStart + posStart * 3;

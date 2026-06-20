@@ -1,5 +1,55 @@
 #include "Reporter.h"
 #include "taxonomyreport.cpp"
+#include <cstdio>
+#include <type_traits>
+
+namespace {
+inline void appendUnsignedNumber(std::string &out, unsigned long long value) {
+    char buffer[32];
+    char *ptr = buffer + sizeof(buffer);
+    do {
+        *--ptr = static_cast<char>('0' + (value % 10));
+        value /= 10;
+    } while (value != 0);
+    out.append(ptr, static_cast<size_t>(buffer + sizeof(buffer) - ptr));
+}
+
+template <typename T>
+inline void appendNumber(std::string &out, T value, std::true_type) {
+    if (value < 0) {
+        out += '-';
+        appendUnsignedNumber(out, static_cast<unsigned long long>(-(value + 1)) + 1);
+    } else {
+        appendUnsignedNumber(out, static_cast<unsigned long long>(value));
+    }
+}
+
+template <typename T>
+inline void appendNumber(std::string &out, T value, std::false_type) {
+    appendUnsignedNumber(out, static_cast<unsigned long long>(value));
+}
+
+template <typename T>
+inline void appendNumber(std::string &out, T value) {
+    appendNumber(out, value, typename std::is_signed<T>::type());
+}
+
+inline void appendFloat(std::string &out, double value) {
+    char buffer[64];
+    int len = std::snprintf(buffer, sizeof(buffer), "%.6g", value);
+    if (len > 0) {
+        out.append(buffer, static_cast<size_t>(len));
+    }
+}
+
+inline void writeMetricOrDash(FILE *fp, double value) {
+    if (value >= 0.0) {
+        fprintf(fp, "\t%.4f", value);
+    } else {
+        fprintf(fp, "\t-");
+    }
+}
+}
 
 Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const std::string &customReportFileName) : par(par), taxonomy(taxonomy) {
     if (!customReportFileName.empty()){
@@ -29,18 +79,57 @@ Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const 
 }
 
 void Reporter::openReadClassificationFile() {
+    if (readClassificationFileBuffer.empty()) {
+        readClassificationFileBuffer.resize(1 << 20);
+    }
+    readClassificationFile.rdbuf()->pubsetbuf(readClassificationFileBuffer.data(), static_cast<std::streamsize>(readClassificationFileBuffer.size()));
     readClassificationFile.open(readClassificationFileName);
 }
 
 void Reporter::writeReadClassification(const vector<Query> & queryList, bool classifiedOnly) {
+    std::string &out = readClassificationOutputBuffer;
+    out.clear();
+    out.reserve(std::max<size_t>(4096, queryList.size() * 96));
+
     if (isFirstTime) {
-        readClassificationFile << "#is_classified\tname\ttaxID\tquery_length\tscore\te_value\trank";
+        out += "#is_classified\tname\ttaxID\tquery_length\tscore\te_value\trank";
         if (par.printLineage) {
-            readClassificationFile << "\tlineage";
+            out += "\tlineage";
         }
-        readClassificationFile << "\ttaxID:match_count\n";
+        out += "\ttaxID:match_count\n";
         isFirstTime = false;
     }
+
+    auto originalTaxId = [this](TaxID taxId) {
+        auto it = originalTaxIdCache.find(taxId);
+        if (it != originalTaxIdCache.end()) {
+            return it->second;
+        }
+        TaxID original = taxonomy->getOriginalTaxID(taxId);
+        originalTaxIdCache.emplace(taxId, original);
+        return original;
+    };
+
+    auto rankName = [this](TaxID taxId) -> const string& {
+        auto it = rankCache.find(taxId);
+        if (it != rankCache.end()) {
+            return it->second;
+        }
+        const TaxonNode *node = taxonomy->taxonNode(taxId);
+        auto inserted = rankCache.emplace(taxId, taxonomy->getString(node->rankIdx));
+        return inserted.first->second;
+    };
+
+    auto lineage = [this](TaxID taxId) -> const string& {
+        auto it = lineageCache.find(taxId);
+        if (it != lineageCache.end()) {
+            return it->second;
+        }
+        const TaxonNode *node = taxonomy->taxonNode(taxId);
+        auto inserted = lineageCache.emplace(taxId, taxonomy->taxLineage2(node));
+        return inserted.first->second;
+    };
+
     for (size_t i = 0; i < queryList.size(); i++) {
         if (classifiedOnly && !(queryList[i].classification == 0)) {
             continue;
@@ -48,40 +137,54 @@ void Reporter::writeReadClassification(const vector<Query> & queryList, bool cla
         if (queryList[i].name.empty()) {
             break;
         }
-        if (queryList[i].classification != 0) {
-            readClassificationFile 
-                << "1\t" 
-                << queryList[i].name << "\t"
-                << taxonomy->getOriginalTaxID(queryList[i].classification) << "\t"
-                << queryList[i].queryLength + queryList[i].queryLength2 << "\t"
-                << queryList[i].idScore << "\t"
-                << queryList[i].eValue << "\t"
-                << taxonomy->getString(taxonomy->taxonNode(queryList[i].classification)->rankIdx) << "\t";
-            
+        const Query &query = queryList[i];
+        if (query.classification != 0) {
+            out += "1\t";
+            out += query.name;
+            out += '\t';
+            appendNumber(out, originalTaxId(query.classification));
+            out += '\t';
+            appendNumber(out, query.queryLength + query.queryLength2);
+            out += '\t';
+            appendFloat(out, query.idScore);
+            out += '\t';
+            appendFloat(out, query.eValue);
+            out += '\t';
+            out += rankName(query.classification);
+            out += '\t';
+
             if (par.printLineage) {
-                readClassificationFile << taxonomy->taxLineage2(taxonomy->taxonNode(queryList[i].classification)) << "\t";
+                out += lineage(query.classification);
+                out += '\t';
             }
-            
-            for (auto it = queryList[i].taxCnt.begin(); it != queryList[i].taxCnt.end(); ++it) {
-                readClassificationFile << taxonomy->getOriginalTaxID(it->first) << ":" << it->second << " ";
+
+            for (auto it = query.taxCnt.begin(); it != query.taxCnt.end(); ++it) {
+                appendNumber(out, originalTaxId(it->first));
+                out += ':';
+                appendNumber(out, it->second);
+                out += ' ';
             }
-            readClassificationFile << "\n";
+            out += '\n';
         } else {
-            readClassificationFile 
-                << "0\t" 
-                << queryList[i].name << "\t"
-                << taxonomy->getOriginalTaxID(queryList[i].classification) << "\t"
-                << queryList[i].queryLength + queryList[i].queryLength2 << "\t"
-                << queryList[i].idScore << "\t"
-                << "-" << "\t" // eValue
-                << "-" << "\t";
-            
+            out += "0\t";
+            out += query.name;
+            out += '\t';
+            appendNumber(out, originalTaxId(query.classification));
+            out += '\t';
+            appendNumber(out, query.queryLength + query.queryLength2);
+            out += '\t';
+            appendFloat(out, query.idScore);
+            out += "\t-\t-";
+            out += '\t';
+
             if (par.printLineage) {
-                readClassificationFile << "-\t";
+                out += "-\t";
             }
-            readClassificationFile << "-\t\n";
+            out += "-\t\n";
         }
     }
+
+    readClassificationFile.write(out.data(), static_cast<std::streamsize>(out.size()));
 }
 
 void Reporter::closeReadClassificationFile() {
@@ -120,7 +223,7 @@ void Reporter::kronaReport(FILE *FP, const TaxonomyWrapper &taxDB, const std::un
 void Reporter::writeReportFile(
     int numOfQuery, 
     unordered_map<TaxID, TaxonCounts> cladeCounts,
-    unordered_map<TaxID, double> &taxon2avgScore,
+    const unordered_map<TaxID, double> &taxon2avgScore,
     ReportType reportType,
     string kronaFileName) 
 {
@@ -524,4 +627,294 @@ void Reporter::writeReclassifyResults(const std::vector<Classification> & result
 
     emResultFile.close();
     cout << "EM results written to " << reclassifyFileName << endl;
+}
+
+void Reporter::writeReportFile(
+    int numOfQuery,
+    unordered_map<TaxID, unsigned int> &taxCnt,
+    ReportType reportType,
+    string kronaFileName)
+{
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCnt, parentToChildren);
+    writeReportFile(numOfQuery, cladeCounts, reportType, kronaFileName);
+}
+
+void Reporter::writeReportFile(
+    int numOfQuery,
+    unordered_map<TaxID, unsigned int> &taxCnt,
+    unordered_map<TaxID, CovMetric> &species2covMetrics,
+    const unordered_map<TaxID, double> &taxon2avgScore,
+    ReportType reportType,
+    string kronaFileName)
+{
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCnt, parentToChildren);
+    writeReportFile(numOfQuery, cladeCounts, species2covMetrics, taxon2avgScore, reportType, kronaFileName);
+}
+
+void Reporter::writeReportFile(
+    int numOfQuery,
+    unordered_map<TaxID, TaxonCounts> cladeCounts,
+    unordered_map<TaxID, CovMetric> &species2covMetrics,
+    const unordered_map<TaxID, double> &taxon2avgScore,
+    ReportType reportType,
+    string kronaFileName)
+{
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    rollUpCoverageMetrics(parentToChildren, cladeCounts, species2covMetrics, 1);
+    FILE *fp = nullptr;
+    
+    if (reportType == ReportType::Default) {
+        fp = fopen(reportFileName.c_str(), "w");
+    } else if (reportType == ReportType::EM) {
+        fp = fopen(reportFileName_em.c_str(), "w");
+    } else if (reportType == ReportType::EM_RECLASSIFY) {
+        fp = fopen(reportFileName_em_reclassify.c_str(), "w");
+    }
+    
+    fprintf(fp, "#clade_proportion\tclade_count\ttaxon_count\trank\ttaxID\tevenness\tcoverage\tmacro_coverage\tadjusted_evenness\tunified_score\tavg_score\tname\n");
+    writeReport(fp, cladeCounts, species2covMetrics, taxon2avgScore, numOfQuery);
+    fclose(fp);
+
+    // Write Krona chart (Krona HTML structure left unmodified to prevent rendering breaks)
+    if (jobId.empty()) { return; }
+    
+    FILE *kronaFile = nullptr;
+
+    if (reportType == ReportType::Default) {
+        if (!kronaFileName.empty()) {
+            kronaFile = fopen(kronaFileName.c_str(), "w");
+        } else {
+            kronaFile = fopen((outDir + "/" + jobId + "_krona.html").c_str(), "w");
+        }
+    } else if (reportType == ReportType::EM) {
+        kronaFile = fopen((outDir + "/" + jobId + "_EM_krona.html").c_str(), "w");
+    } else if (reportType == ReportType::EM_RECLASSIFY) {
+        kronaFile = fopen((outDir + "/" + jobId + "_EM+reclassify_krona.html").c_str(), "w");
+    }
+    if (kronaFile == nullptr) {
+        Debug(Debug::ERROR) << "Could not open Krona file for writing: " << kronaFileName << "\n";
+        EXIT(EXIT_FAILURE);
+    }
+    fwrite(krona_prelude_html, krona_prelude_html_len, sizeof(char), kronaFile);
+    fprintf(kronaFile, "<node name=\"all\"><magnitude><val>%zu</val></magnitude>", (size_t) numOfQuery);
+    kronaReport(kronaFile, *taxonomy, cladeCounts, numOfQuery);
+    fprintf(kronaFile, "</node></krona></div></body></html>");
+    fclose(kronaFile);
+}
+
+
+void Reporter::writeReport(
+    FILE *FP,
+    const std::unordered_map<TaxID, TaxonCounts> &cladeCounts,
+    const std::unordered_map<TaxID, CovMetric> &species2covMetrics,
+    const unordered_map<TaxID, double> &taxon2avgScore,
+    unsigned long totalReads,
+    TaxID taxID,
+    int depth)
+{
+    std::unordered_map<TaxID, TaxonCounts>::const_iterator it = cladeCounts.find(taxID);
+    unsigned int cladeCount = it == cladeCounts.end() ? 0 : it->second.cladeCount;
+    unsigned int taxCount = it == cladeCounts.end() ? 0 : it->second.taxCount;
+    
+    if (taxID == 0) {
+        if (cladeCount > 0) {
+            fprintf(FP, "%.4f\t%i\t%i\tno rank\t0\t-\t-\t-\t-\t-\t-\tunclassified\n",
+                    100 * cladeCount / double(totalReads),
+                    cladeCount, taxCount);
+        }
+        writeReport(FP, cladeCounts, species2covMetrics, taxon2avgScore, totalReads, 1);
+    } else {
+        if (cladeCount == 0) {
+            return;
+        }
+        const TaxonNode *taxon = taxonomy->taxonNode(taxID);
+        
+        fprintf(FP, "%.4f\t%i\t%i\t%s\t%i",
+                100 * cladeCount / double(totalReads), cladeCount, taxCount,
+                taxonomy->getString(taxon->rankIdx), taxonomy->getOriginalTaxID(taxID));
+
+        auto evIt = species2covMetrics.find(taxID);
+        if (evIt != species2covMetrics.end()) {
+            writeMetricOrDash(FP, evIt->second.evenness);
+            writeMetricOrDash(FP, evIt->second.coverage);
+            writeMetricOrDash(FP, evIt->second.macroCoverage);
+            writeMetricOrDash(FP, evIt->second.adjustedEvenness);
+            writeMetricOrDash(FP, evIt->second.unifiedScore);
+        } else {
+            fprintf(FP, "\t-\t-\t-\t-\t-");
+        }
+
+        auto scoreIt = taxon2avgScore.find(taxID);
+        if (scoreIt != taxon2avgScore.end()) {
+            writeMetricOrDash(FP, scoreIt->second);
+        } else {
+            fprintf(FP, "\t-");
+        }
+        fprintf(FP, "\t%s%s\n", std::string(2 * depth, ' ').c_str(), taxonomy->getString(taxon->nameIdx));
+
+        std::vector<TaxID> children = it->second.children;
+        SORT_SERIAL(children.begin(), children.end(), [&](int a, int b) { 
+            return cladeCountVal(cladeCounts, a) > cladeCountVal(cladeCounts, b); 
+        });
+        
+        for (size_t i = 0; i < children.size(); ++i) {
+            TaxID childTaxId = children[i];
+            if (cladeCounts.count(childTaxId)) {
+                writeReport(FP, cladeCounts, species2covMetrics, taxon2avgScore, totalReads, childTaxId, depth + 1);
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+
+void Reporter::filterClassificationFile(
+    const std::string& inputFilePath,
+    const std::string& outputFilePath,
+    const std::unordered_map<TaxID, CovMetric> &sp2covMetric,
+    const std::unordered_map<TaxID, double> &taxon2avgScore,
+    double cutoff)
+{
+    (void) cutoff;
+    std::ifstream inFile(inputFilePath);
+    if (!inFile.is_open()) {
+        std::cerr << "Error: Could not open input file " << inputFilePath << "\n";
+        return;
+    }
+
+    std::ofstream outFile(outputFilePath);
+    if (!outFile.is_open()) {
+        std::cerr << "Error: Could not open output file " << outputFilePath << "\n";
+        return;
+    }
+
+    std::unordered_map<TaxID, TaxID> ex2inTaxId;
+    taxonomy->getExternal2internalTaxID(ex2inTaxId);
+    std::string line;
+    while (std::getline(inFile, line)) {
+        // 1. Pass the header or empty lines directly to the new file
+        if (line.empty() || line[0] == '#') {
+            outFile << line << "\n";
+            continue;
+        }
+
+        // 2. Split the line by tabs to parse the columns
+        std::vector<std::string> columns;
+        size_t start = 0, end = 0;
+        while ((end = line.find('\t', start)) != std::string::npos) {
+            columns.push_back(line.substr(start, end - start));
+            start = end + 1;
+        }
+        columns.push_back(line.substr(start)); // Grab the final column
+
+        // Safety check to ensure the line has at least the basic columns
+        if (columns.size() < 5) {
+            outFile << line << "\n";
+            continue;
+        }
+
+        // 3. Check if the read is currently classified
+        if (columns[0] == "1") {
+            TaxID taxID = ex2inTaxId[std::stoull(columns[2])]; // Convert the string taxID to your integer type
+
+            TaxID speciesTaxID = taxonomy->getTaxIdAtRank(taxID, "species");
+
+            auto evIt = sp2covMetric.find(speciesTaxID);
+            auto avgIt = taxon2avgScore.find(speciesTaxID);
+            
+            // 4. If the species is in the map AND its score is below the cutoff, rewrite it
+            if ((evIt != sp2covMetric.end() && evIt->second.adjustedEvenness < 0.6) ||
+                (avgIt != taxon2avgScore.end() && avgIt->second < 0.2)) {
+                // Reconstruct the line exactly as your original "unclassified" else-block did
+                outFile << "0\t"          // is_classified
+                        << columns[1] << "\t" // name
+                        << "0\t"          // taxID (forced to 0)
+                        << columns[3] << "\t" // query_length
+                        << columns[4] << "\t" // idScore
+                        << "-\t"          // subScore
+                        << "-\t"          // eValue
+                        << "-\t";         // rank
+
+                // Check if lineage was printed (original format has > 9 columns if lineage exists)
+                if (columns.size() > 9) {
+                    outFile << "-\t";     // empty lineage
+                }
+                
+                outFile << "-\n";         // empty taxID:match_count
+                continue;                 // Skip writing the original line
+            }
+        }
+
+        // 5. If it wasn't filtered, write the original line exactly as it was
+        outFile << line << "\n";
+    }
+
+    inFile.close();
+    outFile.close();
+}
+
+void Reporter::rollUpCoverageMetrics(
+    const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren,
+    const std::unordered_map<TaxID, TaxonCounts>& cladeCounts,
+    std::unordered_map<TaxID, CovMetric>& allMetrics, // Starts with species, gets filled with all ranks
+    TaxID currentTaxID) 
+{
+// NEW BASE CASE: If this node already has a metric calculated (i.e., it's a Species),
+    // it is the base of our roll-up. Stop recursing down to subspecies and return immediately.
+    if (allMetrics.find(currentTaxID) != allMetrics.end()) {
+        return;
+    }
+
+    // Secondary Base Case: True leaf node (no children at all) but no pre-calculated metric
+    auto childrenIt = parentToChildren.find(currentTaxID);
+    if (childrenIt == parentToChildren.end() || childrenIt->second.empty()) {
+        return; 
+    }
+
+    double weightedEvenness = 0.0;
+    double weightedCoverage = 0.0;
+    double weightedAdjEvenness = 0.0;
+    double weightedUnifiedScore = 0.0;
+    double weightedMacroCoverage = 0.0;
+    uint64_t totalChildReads = 0;
+
+    // 1. Recursively process all children FIRST (Post-order traversal)
+    for (TaxID childID : childrenIt->second) {
+        rollUpCoverageMetrics(parentToChildren, cladeCounts, allMetrics, childID);
+        
+        // 2. Gather data for the weighted average
+        auto countIt = cladeCounts.find(childID);
+        auto metricIt = allMetrics.find(childID);
+
+        if (countIt != cladeCounts.end() && metricIt != allMetrics.end()) {
+            uint64_t reads = countIt->second.cladeCount;
+            
+            // Only include children that actually have metrics and reads
+            if (reads > 0) {
+                weightedEvenness += metricIt->second.evenness * reads;
+                weightedCoverage += metricIt->second.coverage * reads;
+                weightedAdjEvenness += metricIt->second.adjustedEvenness * reads;
+                weightedUnifiedScore += metricIt->second.unifiedScore * reads;
+                weightedMacroCoverage += metricIt->second.macroCoverage * reads; // Assuming macro coverage is the same as coverage for weighting
+
+                totalChildReads += reads;
+            }
+        }
+    }
+
+    // 3. Calculate the final weighted metrics for THIS parent node
+    if (totalChildReads > 0) {
+        CovMetric parentMetric;
+        parentMetric.evenness = weightedEvenness / static_cast<double>(totalChildReads);
+        parentMetric.coverage = weightedCoverage / static_cast<double>(totalChildReads);
+        parentMetric.adjustedEvenness = weightedAdjEvenness / static_cast<double>(totalChildReads);
+        parentMetric.unifiedScore = weightedUnifiedScore / static_cast<double>(totalChildReads);
+        parentMetric.macroCoverage = weightedMacroCoverage / static_cast<double>(totalChildReads);
+        
+        // Save it to the map
+        allMetrics[currentTaxID] = parentMetric;
+    } 
 }

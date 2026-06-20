@@ -8,6 +8,7 @@
 #include "validateDatabase.h"
 
 void setDefaults_build(LocalParameters & par) {
+    par.storeKmerPos = 0;
     par.noMaskTaxa = "";
     par.readingFrame = 0;
     par.spaceMask = "";
@@ -96,7 +97,12 @@ int build(int argc, const char **argv, const Command &command){
                                                       true);
 
     IndexCreator idxCre(par, taxonomy, 2);
-    idxCre.createIndex();
+    if (par.storeKmerPos == 0) {
+        idxCre.createIndex();
+    } else {
+        idxCre.createIndexWithPos();
+    }
+
     if (par.accessionLevel == 1) 
     {
         taxonomy = idxCre.getTaxonomy();
@@ -111,14 +117,21 @@ int build(int argc, const char **argv, const Command &command){
     }
 
     cout << "Merge reference DB files ... " << endl;
-    // for (int i = 0; i < 66; i++) {
+    // for (int i = 0; i < 10; i++) {
     //     idxCre.addFilesToMerge(dbDir + "/" + to_string(i) + "_diffIdx",
-    //                            dbDir + "/" + to_string(i) + "_info");
+    //                            dbDir + "/" + to_string(i) + "_info",
+    //                            dbDir + "/" + to_string(i) + "_kmerpos");
     // }
     idxCre.updateTaxId2SpeciesTaxId(dbDir + "/taxID_list");
     idxCre.printFilesToMerge();
-    idxCre.setMergedFileNames(dbDir + "/diffIdx", dbDir + "/info", dbDir + "/split");
-    idxCre.mergeTargetFiles<FilterMode::DB_CREATION>();
+
+    if (par.storeKmerPos == 0) {
+        idxCre.setMergedFileNames(dbDir + "/diffIdx", dbDir + "/info", dbDir + "/split");
+        idxCre.mergeTargetFiles<FilterMode::DB_CREATION>();
+    } else {
+        idxCre.setMergedFileNames(dbDir + "/diffIdx", dbDir + "/info", dbDir + "/split", dbDir + "/kmerpos");
+        idxCre.mergeTargetFiles<FilterMode::DB_CREATION_POS>();
+    }
     delete taxonomy;
     cout << "Index creation completed." << endl;
 
