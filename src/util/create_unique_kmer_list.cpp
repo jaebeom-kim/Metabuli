@@ -8,7 +8,7 @@
 void setDefaults_uniqKmers(LocalParameters & par){
     par.syncmer = 0;
     par.smerLen = 5;
-    par.ramUsage = 128;
+    par.ramUsage = LocalParameters::defaultRamUsage();
     par.validateInput = 0;
     par.taxonomyPath = "" ;
     par.splitNum = 4096;

@@ -14,6 +14,7 @@ public:
     // }
 
     LocalParameters();
+    static int defaultRamUsage();
     static LocalParameters& getLocalInstance() {
         if (instance == NULL) {
             initParameterSingleton();

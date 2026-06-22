@@ -5,11 +5,85 @@
 #include "common.h"
 #include "printBinary.h"
 #include <cstdint>
+#include <limits>
 #include <sys/types.h>
 #include <unordered_map>
 
 template <typename MatchType>
-Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *taxonomy, const MetamerPattern *metamerPattern) :  
+std::vector<uint8_t> Taxonomer<MatchType>::makePriorityTaxonLookup(
+    const LocalParameters &par,
+    TaxonomyWrapper *taxonomy)
+{
+    std::vector<uint8_t> lookup;
+    if (par.priorityTaxa.empty()) {
+        return lookup;
+    }
+
+    std::vector<std::string> taxaStr = Util::split(par.priorityTaxa, ",");
+    lookup.assign(static_cast<size_t>(taxonomy->getMaxTaxID()) + 1, 0);
+    const std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    std::vector<TaxID> stack;
+
+    for (const std::string &taxIdStr : taxaStr) {
+        if (taxIdStr.empty()) {
+            std::cerr << "Error: Empty tax ID in --priority-taxid." << std::endl;
+            EXIT(EXIT_FAILURE);
+        }
+
+        TaxID externalTaxId;
+        try {
+            size_t parsedChars = 0;
+            const long long parsedTaxId = std::stoll(taxIdStr, &parsedChars);
+            if (parsedChars != taxIdStr.size()
+                || parsedTaxId < 0
+                || parsedTaxId > std::numeric_limits<TaxID>::max()) {
+                throw std::invalid_argument("Invalid tax ID");
+            }
+            externalTaxId = static_cast<TaxID>(parsedTaxId);
+        } catch (...) {
+            std::cerr << "Error: Invalid tax ID in --priority-taxid: " << taxIdStr << std::endl;
+            EXIT(EXIT_FAILURE);
+        }
+
+        TaxID taxId = taxonomy->getInternalTaxID(externalTaxId);
+        if (taxId < 0
+            || static_cast<size_t>(taxId) >= lookup.size()
+            || !taxonomy->nodeExists(taxId)) {
+            std::cerr << "Error: Tax ID " << externalTaxId << " in --priority-taxid was not found in the taxonomy database." << std::endl;
+            EXIT(EXIT_FAILURE);
+        }
+
+        stack.push_back(taxId);
+        lookup[taxId] = 1;
+        while (!stack.empty()) {
+            TaxID currentTaxId = stack.back();
+            stack.pop_back();
+
+            auto it = parentToChildren.find(currentTaxId);
+            if (it == parentToChildren.end()) {
+                continue;
+            }
+
+            for (TaxID childTaxId : it->second) {
+                if (childTaxId >= 0
+                    && static_cast<size_t>(childTaxId) < lookup.size()
+                    && lookup[childTaxId] == 0) {
+                    lookup[childTaxId] = 1;
+                    stack.push_back(childTaxId);
+                }
+            }
+        }
+    }
+
+    return lookup;
+}
+
+template <typename MatchType>
+Taxonomer<MatchType>::Taxonomer(
+    const LocalParameters &par,
+    TaxonomyWrapper *taxonomy,
+    const MetamerPattern *metamerPattern,
+    const std::vector<uint8_t> *priorityTaxonLookup) :
     par(par), 
     taxonomy(taxonomy), 
     metamerPattern(metamerPattern), 
@@ -61,6 +135,7 @@ Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *tax
     sp2score.reserve(4096);
     tiedIndices.reserve(4096);
     tempPrioritySpecies.reserve(4096);
+    tempPriorityIndices.reserve(4096);
 
     // lowerRankClassification
     cladeCnt.reserve(4096);
@@ -82,14 +157,11 @@ Taxonomer<MatchType>::Taxonomer(const LocalParameters &par, TaxonomyWrapper *tax
         useEvalueFilter = false;
     }
 
-    if (par.priorityTaxa.empty()) {
-        priorityTaxa = {};
+    if (priorityTaxonLookup != nullptr) {
+        this->priorityTaxonLookup = priorityTaxonLookup;
     } else {
-        std::vector<std::string> taxaStr = Util::split(par.priorityTaxa, ",");
-        for (const std::string &taxIdStr : taxaStr) {
-            TaxID taxId = taxonomy->getInternalTaxID(stoi(taxIdStr));
-            priorityTaxa.push_back(taxId);
-        }
+        ownedPriorityTaxonLookup = makePriorityTaxonLookup(par, taxonomy);
+        this->priorityTaxonLookup = &ownedPriorityTaxonLookup;
     }
 }
 
@@ -418,14 +490,17 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
                 continue;
             }
 
-            sp2score.emplace_back(currentSpecies, score);
+            sp2score.emplace_back(currentSpecies,
+                                  score,
+                                  make_pair(speciesStart, i),
+                                  make_pair(spStart, spEnd));
             if (score.idScore > 0.f) {
                 meaningfulSpecies++;
             }
             if (score.isLargerThan(bestSpScore, par.scoreMode)) {
                 bestSpScore = score;
-                bestSpeciesRange = make_pair(speciesStart, i);
-                bestMatchPathRange = make_pair(spStart, spEnd);
+                bestSpeciesRange = sp2score.back().speciesRange;
+                bestMatchPathRange = sp2score.back().matchPathRange;
             }
         }
     }
@@ -441,9 +516,9 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
     //          [](const pair<TaxID, float> &a, const pair<TaxID, float> &b) {
     //              return a.second > b.second;
     //          });
-    //     query.topSpeciesId = sp2score[0].first;
+    //     query.topSpeciesId = sp2score[0].taxId;
     //     for (size_t i = 0; i < 10 && i < sp2score.size(); i++) {
-    //         query.species2Score.emplace_back(sp2score[i].first, sp2score[i].second * sp2score[i].second);
+    //         query.species2Score.emplace_back(sp2score[i].taxId, sp2score[i].score * sp2score[i].score);
     //     }
     // }
 
@@ -457,26 +532,33 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
     //                         : (par.tieRatio - diff) + (bestSpScore.idScore * diff);
     
     for (size_t i = 0; i < sp2score.size(); i++) {
-        if (sp2score[i].second.isLargerThan(bestSpScore * myTieRatio, par.scoreMode)) {
-            maxSpecies.push_back(sp2score[i].first);
+        if (sp2score[i].score.isLargerThan(bestSpScore * myTieRatio, par.scoreMode)) {
+            maxSpecies.push_back(sp2score[i].taxId);
             tiedIndices.push_back(i);
-            bestScore.score += sp2score[i].second;   
+            bestScore.score += sp2score[i].score;
         }
     }
 
-    if (maxSpecies.size() > 1 && !priorityTaxa.empty()) {
+    const std::vector<uint8_t> &priorityLookup = *priorityTaxonLookup;
+    if (maxSpecies.size() > 1 && !priorityLookup.empty()) {
         tempPrioritySpecies.clear();
+        tempPriorityIndices.clear();
         TaxonScore tempBestScore; 
         
         for (size_t i = 0; i < maxSpecies.size(); ++i) {
-            if (taxonomy->isAunderB(maxSpecies[i], priorityTaxa)) {
+            TaxID speciesId = maxSpecies[i];
+            if (speciesId >= 0
+                && static_cast<size_t>(speciesId) < priorityLookup.size()
+                && priorityLookup[speciesId] != 0) {
                 tempPrioritySpecies.push_back(maxSpecies[i]);
-                tempBestScore.score += sp2score[tiedIndices[i]].second; 
+                tempPriorityIndices.push_back(tiedIndices[i]);
+                tempBestScore.score += sp2score[tiedIndices[i]].score;
             }
         }
         
         if (!tempPrioritySpecies.empty()) {
             maxSpecies.assign(tempPrioritySpecies.begin(), tempPrioritySpecies.end());
+            tiedIndices.assign(tempPriorityIndices.begin(), tempPriorityIndices.end());
             bestScore.score = tempBestScore.score;
         }
     }
@@ -486,8 +568,11 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
         bestScore.LCA = true;
         bestScore.score.idScore /= maxSpecies.size();
     } else if (maxSpecies.size() == 1) {
-        bestScore.taxId = maxSpecies[0];
+        const SpeciesScoreCandidate &selectedCandidate = sp2score[tiedIndices[0]];
+        bestScore.taxId = selectedCandidate.taxId;
         bestScore.LCA = false;
+        bestSpeciesRange = selectedCandidate.speciesRange;
+        bestMatchPathRange = selectedCandidate.matchPathRange;
         bestScore.matchPathRange = bestMatchPathRange;
     }
     

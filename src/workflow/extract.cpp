@@ -8,6 +8,7 @@ void setExtractDefaults(LocalParameters & par){
     par.outputDir = "";
     par.seqMode = 2;
     par.targetTaxId = 0;
+    par.excludeTaxid = "";
     par.extractMode = 0;
 }
 
@@ -61,8 +62,13 @@ int extract(int argc, const char **argv, const Command& command) {
         }
     }
 
-    if (par.targetTaxId == 0) {
-        cerr << "Please provide a target taxon ID with --tax-id parameter." << endl;
+    const bool excludeMode = !par.excludeTaxid.empty();
+    if (par.targetTaxId == 0 && !excludeMode) {
+        cerr << "Please provide a target taxon ID with --tax-id or --exclude-taxid parameter." << endl;
+        exit(1);
+    }
+    if (par.targetTaxId != 0 && excludeMode) {
+        cerr << "Please provide only one of --tax-id or --exclude-taxid." << endl;
         exit(1);
     }
 
@@ -77,6 +83,23 @@ int extract(int argc, const char **argv, const Command& command) {
     string classificationFileName = par.filenames[1 + (par.seqMode == 2)];
     string dbDir = par.filenames[2 + (par.seqMode == 2)];
     TaxID externalTaxID = par.targetTaxId;
+    if (excludeMode) {
+        if (par.excludeTaxid.find(',') != string::npos) {
+            cerr << "Please provide a single target taxon ID with --exclude-taxid for extract." << endl;
+            exit(1);
+        }
+        try {
+            externalTaxID = stoi(par.excludeTaxid);
+        } catch (...) {
+            cerr << "Invalid taxon ID provided with --exclude-taxid: " << par.excludeTaxid << endl;
+            exit(1);
+        }
+        if (externalTaxID == 0) {
+            cerr << "Please provide a non-zero target taxon ID with --exclude-taxid." << endl;
+            exit(1);
+        }
+        par.targetTaxId = externalTaxID;
+    }
     
     TaxonomyWrapper *taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
     Reporter reporter(par, taxonomy);
@@ -94,8 +117,13 @@ int extract(int argc, const char **argv, const Command& command) {
 
     vector<size_t> readIdxs;
     
-    cout << "Extracting reads classified to taxon " << externalTaxID << " ... " << flush;
-    reporter.getReadsClassifiedToClade(targetTaxID, classificationFileName, readIdxs);
+    if (excludeMode) {
+        cout << "Extracting reads not classified under taxon " << externalTaxID << " ... " << flush;
+        reporter.getReadsNotClassifiedToClade(targetTaxID, classificationFileName, readIdxs);
+    } else {
+        cout << "Extracting reads classified under taxon " << externalTaxID << " ... " << flush;
+        reporter.getReadsClassifiedToClade(targetTaxID, classificationFileName, readIdxs);
+    }
     cout << "done." << endl;
 
     for(size_t i = 0; i < 10; i++) {
@@ -114,7 +142,8 @@ int extract(int argc, const char **argv, const Command& command) {
     } else {
         outdirPath = outdirPath + "/";
     }
-    string outFileName = outdirPath + baseName + "_" + to_string(externalTaxID);
+    string outputTaxIdSuffix = excludeMode ? "not_" + to_string(externalTaxID) : to_string(externalTaxID);
+    string outFileName = outdirPath + baseName + "_" + outputTaxIdSuffix;
     reporter.printSpecifiedReads(readIdxs, queryFileName, outFileName);
     cout << "Extracted file  : " << outFileName << endl;
     
@@ -127,7 +156,7 @@ int extract(int argc, const char **argv, const Command& command) {
         } else {
             outdirPath = outdirPath + "/";
         }
-        outFileName = outdirPath + baseName + "_" + to_string(externalTaxID);
+        outFileName = outdirPath + baseName + "_" + outputTaxIdSuffix;
         reporter.printSpecifiedReads(readIdxs, queryFileName, outFileName);
         cout << "Extracted file 2: " << outFileName << endl;
     }

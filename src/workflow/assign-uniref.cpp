@@ -2,7 +2,7 @@
 #include "fasta_validate.h"
 
 void setDefaults_uniref(LocalParameters & par){
-    par.ramUsage = 128;
+    par.ramUsage = LocalParameters::defaultRamUsage();
     par.matchPerKmer = 3;
     par.validateInput = 0;
 }

@@ -49,6 +49,70 @@ inline void writeMetricOrDash(FILE *fp, double value) {
         fprintf(fp, "\t-");
     }
 }
+
+bool isReadInClade(const char *line,
+                   TaxID cladeId,
+                   TaxonomyWrapper *taxonomy,
+                   const unordered_map<TaxID, TaxID> *extern2intern) {
+    if (cladeId == -1) {
+        return line[0] == '0';
+    }
+
+    if (line[0] == '0') {
+        return false;
+    }
+
+    int taxId;
+    if (sscanf(line, "%*s %*s %d", &taxId) != 1) {
+        return false;
+    }
+
+    TaxID taxonomyTaxId = taxId;
+    if (extern2intern != nullptr) {
+        auto it = extern2intern->find(taxId);
+        if (it == extern2intern->end()) {
+            return false;
+        }
+        taxonomyTaxId = it->second;
+    }
+
+    return taxonomy->IsAncestor(cladeId, taxonomyTaxId);
+}
+
+void getReadsByCladeMembership(TaxID cladeId,
+                               const string &readClassificationFileName,
+                               vector<size_t> &readIdxs,
+                               TaxonomyWrapper *taxonomy,
+                               bool keepMatches) {
+    FILE *results = fopen(readClassificationFileName.c_str(), "r");
+    if (!results) {
+        perror("Failed to open read-by-read classification file");
+        return;
+    }
+
+    unordered_map<TaxID, TaxID> extern2intern;
+    const unordered_map<TaxID, TaxID> *extern2internPtr = nullptr;
+    if (cladeId != -1 && taxonomy->hasInternalTaxID()) {
+        taxonomy->getExternal2internalTaxID(extern2intern);
+        extern2internPtr = &extern2intern;
+    }
+
+    char line[4096];
+    size_t idx = 0;
+    while (fgets(line, sizeof(line), results)) {
+        if (line[0] == '#') {
+            continue;
+        }
+
+        const bool inClade = isReadInClade(line, cladeId, taxonomy, extern2internPtr);
+        if (inClade == keepMatches) {
+            readIdxs.push_back(idx);
+        }
+        idx++;
+    }
+
+    fclose(results);
+}
 }
 
 Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const std::string &customReportFileName) : par(par), taxonomy(taxonomy) {
@@ -457,53 +521,13 @@ unsigned int Reporter::cladeCountVal(const std::unordered_map<TaxID, TaxonCounts
 void Reporter::getReadsClassifiedToClade(TaxID cladeId,
                                          const string &readClassificationFileName,
                                          vector<size_t> &readIdxs) {
-    FILE *results = fopen(readClassificationFileName.c_str(), "r");
-    if (!results) {
-        perror("Failed to open read-by-read classification file");
-        return;
-    }
-    char line[4096];
-    size_t idx = 0;
-    if (cladeId == -1) {
-        while (fgets(line, sizeof(line), results)) {
-            if (line[0] == '#') {
-                continue;
-            }
-            if (line[0] == '0') { // unclassified
-                readIdxs.push_back(idx);
-            }
-            idx++;
-        }
-    } else if (taxonomy->hasInternalTaxID()) {
-        unordered_map<TaxID, TaxID> extern2intern;
-        taxonomy->getExternal2internalTaxID(extern2intern);
-        while (fgets(line, sizeof(line), results)) {
-            if (line[0] == '#') {
-                continue;
-            }
-            int taxId;
-            if (sscanf(line, "%*s %*s %d", &taxId) == 1) {            
-                if (taxonomy->IsAncestor(cladeId, extern2intern[taxId])) {
-                    readIdxs.push_back(idx);
-                }
-            }
-            idx++;
-        }
-    } else {
-        while (fgets(line, sizeof(line), results)) {
-            if (line[0] == '#') {
-                continue;
-            }
-            int taxId;
-            if (sscanf(line, "%*s %*s %d", &taxId) == 1) {            
-                if (taxonomy->IsAncestor(cladeId, taxId)) {
-                    readIdxs.push_back(idx);
-                }
-            }
-            idx++;
-        }
-    }
-    fclose(results);
+    getReadsByCladeMembership(cladeId, readClassificationFileName, readIdxs, taxonomy, true);
+}
+
+void Reporter::getReadsNotClassifiedToClade(TaxID cladeId,
+                                            const string &readClassificationFileName,
+                                            vector<size_t> &readIdxs) {
+    getReadsByCladeMembership(cladeId, readClassificationFileName, readIdxs, taxonomy, false);
 }
 
 void Reporter::printSpecifiedReads(const vector<size_t> & readIdxs,
@@ -534,6 +558,13 @@ void Reporter::printSpecifiedReads(const vector<size_t> & readIdxs,
     FILE *outFile = fopen(outFileName.c_str(), "w");
     if (!outFile) {
         perror("Failed to open file");
+        delete kseq;
+        return;
+    }
+
+    if (readIdxs.empty()) {
+        fclose(outFile);
+        delete kseq;
         return;
     }
 
@@ -582,6 +613,7 @@ void Reporter::printSpecifiedReads(const vector<size_t> & readIdxs,
             readCnt++;
         }
     }
+    fclose(outFile);
     delete kseq;
 }
 

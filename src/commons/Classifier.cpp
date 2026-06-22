@@ -516,11 +516,14 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
         block.end = matchIdx - 1;
         matchBlocks.push_back(block);
     }
+
+    std::vector<uint8_t> priorityTaxonLookup = Taxonomer<MatchType>::makePriorityTaxonLookup(par, taxonomy);
+
     // Process each block
     if (!matchBlocks.empty()) {
-#pragma omp parallel default(none), shared(matchBlocks, matchList, queryList, par)
+#pragma omp parallel default(none), shared(matchBlocks, matchList, queryList, par, priorityTaxonLookup)
         {
-            Taxonomer<MatchType> taxonomer(par, taxonomy, metamerPattern);
+            Taxonomer<MatchType> taxonomer(par, taxonomy, metamerPattern, &priorityTaxonLookup);
             #pragma omp for schedule(guided, 8)
             for (size_t i = 0; i < matchBlocks.size(); ++i) {
                 taxonomer.chooseBestTaxon(

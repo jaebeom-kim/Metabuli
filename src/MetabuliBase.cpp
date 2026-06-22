@@ -129,7 +129,7 @@ std::vector<Command> metabuliCommands = {
                  {"UniRef tree", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile},
                  {"out dir", DbType::ACCESS_MODE_OUTPUT, DbType::NEED_DATA, &DbValidator::directory}}},
         {"extract", extract, &localPar.extract, COMMAND_FORMAT_CONVERSION,
-                "Extract reads classified to a certain taxon (Used after classification)",
+                "Extract reads classified under, or not under, a certain taxon (Used after classification)",
                 nullptr,
                 "Jaebeom Kim <jbeom0731@gmail.com>",
                 "<i:query file(s)> <i:read-by-read result> <i:database directory>",

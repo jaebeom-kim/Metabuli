@@ -11,7 +11,7 @@ void setGroupGenerationDefaults(LocalParameters & par){
     par.smerLen = 5;
     par.seqMode = 2;    
     par.verbosity = 3;
-    par.ramUsage = 128;
+    par.ramUsage = LocalParameters::defaultRamUsage();
     par.printLog = 0;
     par.maskMode = 0;
     par.maskProb = 0.9;

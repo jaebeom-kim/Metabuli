@@ -17,7 +17,7 @@ void setDefaults_updateDB(LocalParameters & par){
     par.validateDb = 0;
     par.kmerFormat = 1;
     par.skipRedundancy = 0;
-    par.ramUsage = 128;
+    par.ramUsage = LocalParameters::defaultRamUsage();
     par.taxonomyPath = "" ;
     par.splitNum = 4096;
     par.maskProb = 0.9;

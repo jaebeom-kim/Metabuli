@@ -28,6 +28,22 @@ struct TaxonScore {
     TaxonScore() : taxId(0), score(), hammingDist(0), LCA(false) {}
 };
 
+struct SpeciesScoreCandidate {
+    TaxID taxId;
+    MatchScore score;
+    std::pair<size_t, size_t> speciesRange;
+    std::pair<size_t, size_t> matchPathRange;
+
+    SpeciesScoreCandidate(TaxID taxId,
+                          MatchScore score,
+                          std::pair<size_t, size_t> speciesRange,
+                          std::pair<size_t, size_t> matchPathRange)
+        : taxId(taxId),
+          score(score),
+          speciesRange(speciesRange),
+          matchPathRange(matchPathRange) {}
+};
+
 template <typename MatchType>
 class Taxonomer {
 private:
@@ -47,7 +63,8 @@ private:
     // Parameters from user
     int accessionLevel;
     int eukaryotaTaxId;
-    std::vector<TaxID> priorityTaxa;
+    std::vector<uint8_t> ownedPriorityTaxonLookup;
+    const std::vector<uint8_t> *priorityTaxonLookup = &ownedPriorityTaxonLookup;
 
     // Internal
     int denominator;
@@ -66,9 +83,10 @@ private:
     vector<MatchPath<MatchType>> matchPaths;
     vector<MatchPath<MatchType>> combinedMatchPaths;
     vector<TaxID> maxSpecies;
-    vector<pair<TaxID, MatchScore>> sp2score;
+    vector<SpeciesScoreCandidate> sp2score;
     vector<size_t> tiedIndices;
     vector<TaxID> tempPrioritySpecies;
+    vector<size_t> tempPriorityIndices;
 
     // getMatchPaths
     vector<bool> connectedToNext;
@@ -170,9 +188,14 @@ public:
     Taxonomer(
         const LocalParameters & par, 
         TaxonomyWrapper * taxonomy, 
-        const MetamerPattern *metamerPattern);
+        const MetamerPattern *metamerPattern,
+        const std::vector<uint8_t> *priorityTaxonLookup = nullptr);
         
     ~Taxonomer();
+
+    static std::vector<uint8_t> makePriorityTaxonLookup(
+        const LocalParameters &par,
+        TaxonomyWrapper *taxonomy);
 
     std::unordered_map<TaxID, double> sp2scoreSum;
 

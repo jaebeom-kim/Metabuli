@@ -4,7 +4,7 @@
 #include "validateDatabase.h"
 
 void setDefaults_create_unirefdb(LocalParameters & par){
-    par.ramUsage = 128;
+    par.ramUsage = LocalParameters::defaultRamUsage();
     par.validateDb = 0;
     par.taxonomyPath = "";
     par.splitNum = 4096;

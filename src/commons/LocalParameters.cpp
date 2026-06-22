@@ -5,9 +5,75 @@
 #include "CommandCaller.h"
 #include "ByteParser.h"
 #include <iomanip>
+#include <algorithm>
+#include <climits>
+#include <cstdint>
 #include "DistanceCalculator.h"
 
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#elif defined(__linux__)
+#include <sys/sysinfo.h>
+#else
+#include <unistd.h>
+#endif
+
 extern const char *version;
+
+namespace {
+uint64_t totalSystemRamBytes() {
+#if defined(_WIN32)
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    if (GlobalMemoryStatusEx(&status)) {
+        return static_cast<uint64_t>(status.ullTotalPhys);
+    }
+    return 0;
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    uint64_t memSize = 0;
+    size_t len = sizeof(memSize);
+    if (sysctlbyname("hw.memsize", &memSize, &len, nullptr, 0) == 0 && memSize > 0) {
+        return memSize;
+    }
+    return 0;
+#elif defined(__linux__)
+    struct sysinfo info;
+    if (sysinfo(&info) == 0) {
+        return static_cast<uint64_t>(info.totalram) * static_cast<uint64_t>(info.mem_unit);
+    }
+    return 0;
+#elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGE_SIZE)
+    const long pages = sysconf(_SC_PHYS_PAGES);
+    const long pageSize = sysconf(_SC_PAGE_SIZE);
+    if (pages > 0 && pageSize > 0) {
+        return static_cast<uint64_t>(pages) * static_cast<uint64_t>(pageSize);
+    }
+    return 0;
+#else
+    return 0;
+#endif
+}
+}
+
+int LocalParameters::defaultRamUsage() {
+    static const int maxDefaultRamGiB = 128;
+    static const uint64_t bytesPerGiB = 1024ULL * 1024ULL * 1024ULL;
+
+    const uint64_t totalBytes = totalSystemRamBytes();
+    if (totalBytes == 0) {
+        return maxDefaultRamGiB;
+    }
+
+    const long double defaultBytes = static_cast<long double>(totalBytes) * 0.8L;
+    const uint64_t defaultGiB = static_cast<uint64_t>(defaultBytes / bytesPerGiB);
+    if (defaultGiB == 0) {
+        return 1;
+    }
+    return static_cast<int>(std::min<uint64_t>(defaultGiB, maxDefaultRamGiB));
+}
 
 LocalParameters::LocalParameters() :
         Parameters(),
@@ -140,7 +206,7 @@ LocalParameters::LocalParameters() :
         RAM_USAGE(RAM_USAGE_ID,
                   "--max-ram",
                   "RAM usage in GiB",
-                  "RAM usage in GiB",
+                  "RAM usage in GiB (default: min(80% of system RAM, 128 GiB))",
                   typeid(int),
                   (void *) &ramUsage,
                   "^[0-9]+$"),
@@ -626,7 +692,7 @@ LocalParameters::LocalParameters() :
     minScore = 0;
     hammingMargin = 0;
     minSpScore = 0;
-    ramUsage = 0;
+    ramUsage = defaultRamUsage();
     printLog = 0;
     matchPerKmer = 0;
     minSSMatch = 0;
@@ -777,6 +843,7 @@ LocalParameters::LocalParameters() :
     extract.push_back(&TAXONOMY_PATH);
     extract.push_back(&SEQ_MODE);
     extract.push_back(&TARGET_TAX_ID);
+    extract.push_back(&EXCLUDE_TAXID);
     extract.push_back(&EXTRACT_MODE);
     extract.push_back(&PARAM_OUTDIR);
 

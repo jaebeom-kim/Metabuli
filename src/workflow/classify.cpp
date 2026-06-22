@@ -23,7 +23,7 @@ void setClassifyDefaults(LocalParameters & par){
     par.minSpScore = 0;
     par.hammingMargin = 0;
     par.verbosity = 3;
-    par.ramUsage = 128;
+    par.ramUsage = LocalParameters::defaultRamUsage();
     par.printLog = 0;
     par.taxonomyPath = "" ;
     par.maskMode = 0;

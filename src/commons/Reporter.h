@@ -181,6 +181,10 @@ public:
                                    const string &readClassificationFileName,
                                    vector<size_t> &readIdxs);
 
+    void getReadsNotClassifiedToClade(TaxID cladeId,
+                                      const string &readClassificationFileName,
+                                      vector<size_t> &readIdxs);
+
     void printSpecifiedReads(const vector<size_t> & readIdxs,
                              const string & readFileName,
                              string & outFileName); 
