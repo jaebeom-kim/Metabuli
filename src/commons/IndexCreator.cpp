@@ -1373,7 +1373,7 @@ bool IndexCreator::extractKmerFromSixFrames(
                         char *maskedSeq = nullptr;
                         if (par.maskMode) {
                             maskedSeq = new char[e.sequence.l + 1]; 
-                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, probMatrix, par.maskProb, subMat);
+                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat);
                             maskedSeq[e.sequence.l] = '\0';
                         } else {
                             maskedSeq = e.sequence.s;
@@ -1548,7 +1548,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                                 maxSeqLen = e.sequence.l;
                                 maskedSeq = new char[maxSeqLen + 1];
                             }
-                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, probMatrix, par.maskProb, subMat);
+                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat);
                             maskedSeq[e.sequence.l] = '\0';
                         } else {
                             maskedSeq = e.sequence.s;
@@ -1850,7 +1850,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                         char *maskedSeq = nullptr;
                         if (doMasking) {
                             maskedSeq = new char[e.sequence.l + 1]; // TODO: reuse the buffer
-                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, probMatrix, par.maskProb, subMat);
+                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat);
                             maskedSeq[e.sequence.l] = '\0';
                         } else {
                             maskedSeq = e.sequence.s;
@@ -1981,7 +1981,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                 if (doMasking) {
                                     delete[] maskedSeq;
                                     maskedSeq = new char[e.sequence.l + 1];
-                                    SeqIterator::maskLowComplexityRegions((unsigned char *) rcomp, (unsigned char *) maskedSeq, probMatrix, par.maskProb, subMat);
+                                    SeqIterator::maskLowComplexityRegions((unsigned char *) rcomp, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat);
                                     maskedSeq[e.sequence.l] = '\0';
                                 } else {
                                     maskedSeq = rcomp;

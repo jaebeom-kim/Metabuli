@@ -46,6 +46,11 @@ private:
 
     void ensureQueryReadBuffers(bool paired);
 
+    const char *getMaskedQuerySequence(
+        const std::string &read,
+        char *&maskedSeq,
+        size_t &maxReadLength);
+
 
 
     // Extract query k-mer
@@ -77,9 +82,6 @@ private:
         size_t processedQueryNum,
         const vector<string> & reads,
         const vector<bool> & emptyReads,
-        char *seq,
-        char *maskedSeq,
-        size_t & maxReadLength,
         Buffer<Kmer> &kmerBuffer,
         const vector<Query> & queryList,
         bool isReverse);
@@ -164,7 +166,7 @@ public:
         uint32_t queryOffset,
         const std::vector<std::string> & reads, 
         size_t seqNum,
-        char *maskedSeq,
+        char *&maskedSeq,
         size_t & maxReadLength,
         const std::vector<std::string> * pairedReads = nullptr
     );

@@ -58,15 +58,17 @@ void SeqIterator::getMinHashList(priority_queue <uint64_t> &sortedHashQue, const
 }
 
 
-void SeqIterator::maskLowComplexityRegions(const unsigned char *seq, unsigned char *maskedSeq, ProbabilityMatrix & probMat,
+void SeqIterator::maskLowComplexityRegions(const unsigned char *seq, unsigned char *maskedSeq, size_t seqLen, ProbabilityMatrix & probMat,
                                            float maskProb, const BaseMatrix * subMat) {
-    unsigned int seqLen = 0;
-    while (seq[seqLen] != '\0') {
-        maskedSeq[seqLen] = (char) subMat->aa2num[static_cast<int>(seq[seqLen])];
-        seqLen++;
+    if (seqLen == 0) {
+        return;
     }
-    tantan::maskSequences(maskedSeq,
-                          maskedSeq + seqLen,
+
+    for (size_t seqPos = 0; seqPos < seqLen; ++seqPos) {
+        maskedSeq[seqPos] = (char) subMat->aa2num[static_cast<int>(seq[seqPos])];
+    }
+    tantan::maskSequences((unsigned char *) maskedSeq,
+                          (unsigned char *) maskedSeq + seqLen,
                           50 /*options.maxCycleLength*/,
                           probMat.probMatrixPointers,
                           0.005 /*options.repeatProb*/,
@@ -75,14 +77,13 @@ void SeqIterator::maskLowComplexityRegions(const unsigned char *seq, unsigned ch
                           0, 0,
                           maskProb /*options.minMaskProb*/,
                           probMat.hardMaskTable);
-    for (unsigned int pos = 0; pos < seqLen; pos++) {
+
+    const unsigned char maskChar = subMat->aa2num[static_cast<int>('X')];
+    for (size_t pos = 0; pos < seqLen; pos++) {
         char nt = seq[pos];
-        maskedSeq[pos] = (maskedSeq[pos] == probMat.hardMaskTable[0]) ? 'N' : nt;
+        maskedSeq[pos] = (maskedSeq[pos] == maskChar) ? 'N' : nt;
     }
 }
-
-
-
 
 void SeqIterator::devideToCdsAndNonCds(const char *maskedSeq,
                                        size_t seqLen,

@@ -50,10 +50,9 @@ public:
 
     bool compareMinHashList(priority_queue<uint64_t> list1, priority_queue<uint64_t> &list2, size_t length1, size_t length2);
 
-    static void maskLowComplexityRegions(const unsigned char * seq, unsigned char * maskedSeq, ProbabilityMatrix & probMat,
+    static void maskLowComplexityRegions(const unsigned char * seq, unsigned char * maskedSeq, size_t seqLen, ProbabilityMatrix & probMat,
                                          float maskProb, const BaseMatrix * subMat);
 
 };
 
 #endif //ADKMER4_KMEREXTRACTOR_H
-

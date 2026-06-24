@@ -110,6 +110,33 @@ void KmerExtractor::ensureQueryReadBuffers(bool paired) {
     }
 }
 
+const char *KmerExtractor::getMaskedQuerySequence(
+    const std::string &read,
+    char *&maskedSeq,
+    size_t &maxReadLength)
+{
+    if (!maskMode || read.empty()) {
+        return read.c_str();
+    }
+
+    const size_t requiredLength = read.length() + 1;
+    if (maxReadLength < requiredLength) {
+        maxReadLength = requiredLength;
+        delete[] maskedSeq;
+        maskedSeq = new char[maxReadLength];
+    }
+
+    SeqIterator::maskLowComplexityRegions(
+        reinterpret_cast<const unsigned char *>(read.c_str()),
+        reinterpret_cast<unsigned char *>(maskedSeq),
+        read.length(),
+        *probMatrix,
+        maskProb,
+        subMat);
+    maskedSeq[read.length()] = '\0';
+    return maskedSeq;
+}
+
 int KmerExtractor::getKmerCount(
     const char *seq,
     int seqLen) 
@@ -172,6 +199,13 @@ bool KmerExtractor::extractQueryKmers(
 {
     uint32_t queryIdx = 0;
     if (!savedSeq_1->name.empty()) {
+        size_t savedMaxReadLength1 = 0;
+        char *savedMaskedSeq1 = nullptr;
+        const char *savedSeq1 = getMaskedQuerySequence(
+            savedSeq_1->s,
+            savedMaskedSeq1,
+            savedMaxReadLength1);
+
         // Forward
         int queryLength = (par.pmdKmer > 0 || par.disableTrimming) ?
             static_cast<int>(savedSeq_1->s.length()) :
@@ -186,7 +220,7 @@ bool KmerExtractor::extractQueryKmers(
         if (kmerCnt > 0) {
             size_t posToWrite = kmerBuffer.reserveMemory(kmerCnt);
             fillQueryKmerBuffer(
-                savedSeq_1->s.c_str(),
+                savedSeq1,
                 static_cast<int>(savedSeq_1->s.length()),
                 kmerBuffer,
                 posToWrite,
@@ -198,6 +232,13 @@ bool KmerExtractor::extractQueryKmers(
 
         // Reverse
         if (kseq_2 != nullptr) {
+            size_t savedMaxReadLength2 = 0;
+            char *savedMaskedSeq2 = nullptr;
+            const char *savedSeq2 = getMaskedQuerySequence(
+                savedSeq_2->s,
+                savedMaskedSeq2,
+                savedMaxReadLength2);
+
             queryList.back().queryLength2 = (par.pmdKmer > 0 || par.disableTrimming) ?
                 static_cast<int>(savedSeq_2->s.length()) :
                 LocalUtil::getMaxCoveredLength(static_cast<int>(savedSeq_2->s.length()));
@@ -205,7 +246,7 @@ bool KmerExtractor::extractQueryKmers(
             if (queryList.back().kmerCnt2 > 0) {
                 size_t posToWrite = kmerBuffer.reserveMemory(queryList.back().kmerCnt2);
                 fillQueryKmerBuffer(
-                    savedSeq_2->s.c_str(),
+                    savedSeq2,
                     static_cast<int>(savedSeq_2->s.length()),
                     kmerBuffer,
                     posToWrite,
@@ -214,7 +255,9 @@ bool KmerExtractor::extractQueryKmers(
             }
             savedSeq_2->name.clear();
             savedSeq_2->s.clear();
+            delete[] savedMaskedSeq2;
         }
+        delete[] savedMaskedSeq1;
         
         queryIdx++;
         processedSeqCnt++;
@@ -466,8 +509,6 @@ void KmerExtractor::fillQueryKmerBufferParallel(KSeqWrapper *kseq,
 #pragma omp parallel default(none) shared(par, readLength, kmerBuffer, \
 queryList, currentSplit, processedQueryNum, kseq, chunkSize, chunkReads_thread, busyThreads, emptyReads)
     {
-        char *maskedSeq = new char[readLength];
-        char *seq = nullptr;     
 #pragma omp single nowait
         {
             int masterThread = 0;
@@ -508,17 +549,16 @@ queryList, currentSplit, processedQueryNum, kseq, chunkSize, chunkReads_thread, 
                                  false);
 
                 if (par.threads == 1) {
-                    processSequence(count, processedQueryNum, chunkReads_thread[threadId], emptyReads[threadId], seq, maskedSeq, readLength, kmerBuffer, queryList, false);
+                    processSequence(count, processedQueryNum, chunkReads_thread[threadId], emptyReads[threadId], kmerBuffer, queryList, false);
                 } else {
                     #pragma omp task firstprivate(count, processedQueryNum, threadId)
                     {
-                        processSequence(count, processedQueryNum, chunkReads_thread[threadId], emptyReads[threadId], seq, maskedSeq, readLength, kmerBuffer, queryList, false);
+                        processSequence(count, processedQueryNum, chunkReads_thread[threadId], emptyReads[threadId], kmerBuffer, queryList, false);
                         busyThreads[threadId].store(false);
                     }
                 }  
             }
         }
-        delete[] maskedSeq;
     }
 }
 
@@ -562,12 +602,6 @@ void KmerExtractor::fillQueryKmerBufferParallel_paired(KSeqWrapper *kseq1,
 kmerBuffer, queryList, currentSplit, processedQueryNum, kseq1, kseq2, \
 chunkSize, chunkReads1_thread, chunkReads2_thread, busyThreads, cout, emptyReads)
     {
-        size_t maxReadLength1 = 1000;
-        size_t maxReadLength2 = 1000;
-        char *maskedSeq1 = new char[maxReadLength1];
-        char *maskedSeq2 = new char[maxReadLength2];   
-        char *seq1 = nullptr;
-        char *seq2 = nullptr;  
 #pragma omp single
         {
             int masterThread = 0;
@@ -620,21 +654,19 @@ chunkSize, chunkReads1_thread, chunkReads2_thread, busyThreads, cout, emptyReads
                                  true);
 
                 if (par.threads == 1) {
-                    processSequence(count, processedQueryNum, chunkReads1_thread[threadId], emptyReads[threadId], seq1, maskedSeq1, maxReadLength1, kmerBuffer, queryList, false);
-                    processSequence(count, processedQueryNum, chunkReads2_thread[threadId], emptyReads[threadId], seq2, maskedSeq2, maxReadLength2, kmerBuffer, queryList, true);
+                    processSequence(count, processedQueryNum, chunkReads1_thread[threadId], emptyReads[threadId], kmerBuffer, queryList, false);
+                    processSequence(count, processedQueryNum, chunkReads2_thread[threadId], emptyReads[threadId], kmerBuffer, queryList, true);
                 } 
                 else {
                     #pragma omp task firstprivate(count, processedQueryNum, threadId)
                     {
-                        processSequence(count, processedQueryNum, chunkReads1_thread[threadId], emptyReads[threadId], seq1, maskedSeq1, maxReadLength1, kmerBuffer, queryList, false);
-                        processSequence(count, processedQueryNum, chunkReads2_thread[threadId], emptyReads[threadId], seq2, maskedSeq2, maxReadLength2, kmerBuffer, queryList, true);
+                        processSequence(count, processedQueryNum, chunkReads1_thread[threadId], emptyReads[threadId], kmerBuffer, queryList, false);
+                        processSequence(count, processedQueryNum, chunkReads2_thread[threadId], emptyReads[threadId], kmerBuffer, queryList, true);
                         busyThreads[threadId].store(false);
                     }
                 }   
             }   
         }   
-        delete[] maskedSeq1;
-        delete[] maskedSeq2;
     }
 }
 
@@ -643,28 +675,16 @@ void KmerExtractor::processSequence(
     size_t processedQueryNum,
     const vector<string> & reads,
     const vector<bool> & emptyReads,
-    char *seq,
-    char *maskedSeq,
-    size_t & maxReadLength,
     Buffer<Kmer> &kmerBuffer,
     const vector<Query> & queryList,
     bool isReverse) 
 {
+    char *maskedSeq = nullptr;
+    size_t maxReadLength = 0;
     for (size_t i = 0; i < count; ++i) {
         size_t queryIdx = processedQueryNum - count + i;
         if (emptyReads[i]) { continue; }
-        // Get masked sequence
-        if (maskMode) {
-            if (maxReadLength < reads[i].length() + 1) {
-                maxReadLength = reads[i].length() + 1;
-                delete[] maskedSeq;
-                maskedSeq = new char[maxReadLength];
-            }
-            SeqIterator::maskLowComplexityRegions((unsigned char *) reads[i].c_str(), (unsigned char *) maskedSeq, *probMatrix, maskProb, subMat);
-            seq = maskedSeq;
-        } else {
-            seq = const_cast<char *>(reads[i].c_str());
-        }
+        const char *seq = getMaskedQuerySequence(reads[i], maskedSeq, maxReadLength);
 
         if (isReverse) {
             size_t posToWrite = kmerBuffer.reserveMemory(queryList[queryIdx].kmerCnt2);
@@ -685,6 +705,7 @@ void KmerExtractor::processSequence(
                 (uint32_t) queryIdx+1);                             
         }
     }
+    delete[] maskedSeq;
 }
 
 void KmerExtractor::fillQueryKmerBuffer(
@@ -1394,7 +1415,7 @@ void KmerExtractor::processSequenceChunk(
     uint32_t queryOffset,
     const std::vector<std::string> & reads, 
     size_t seqNum,
-    char *maskedSeq,
+    char *&maskedSeq,
     size_t & maxReadLength,
     const std::vector<std::string> * pairedReads) 
 {
@@ -1402,23 +1423,7 @@ void KmerExtractor::processSequenceChunk(
     for (size_t i = 0; i < seqNum; ++i) {
         size_t queryIdx = queryOffset + i;
         if (reads[i].empty()) {continue;}
-
-        if (par.maskMode) {
-            if (maxReadLength < reads[i].length() + 1) {
-                maxReadLength = reads[i].length() + 1;
-                delete[] maskedSeq;
-                maskedSeq = new char[maxReadLength];
-            }
-            SeqIterator::maskLowComplexityRegions(
-                (unsigned char *) reads[i].c_str(), 
-                (unsigned char *) maskedSeq,
-                *probMatrix, 
-                maskProb, 
-                subMat);
-            seq = maskedSeq;
-        } else {
-            seq = reads[i].c_str();
-        }
+        seq = getMaskedQuerySequence(reads[i], maskedSeq, maxReadLength);
 
         if (pairedReads != nullptr) {
             // Process reverse read
