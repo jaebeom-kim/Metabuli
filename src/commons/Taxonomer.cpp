@@ -4,7 +4,9 @@
 #include "NcbiTaxonomy.h"
 #include "common.h"
 #include "printBinary.h"
+#include <cerrno>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <sys/types.h>
 #include <unordered_map>
@@ -30,20 +32,18 @@ std::vector<uint8_t> Taxonomer<MatchType>::makePriorityTaxonLookup(
             EXIT(EXIT_FAILURE);
         }
 
-        TaxID externalTaxId;
-        try {
-            size_t parsedChars = 0;
-            const long long parsedTaxId = std::stoll(taxIdStr, &parsedChars);
-            if (parsedChars != taxIdStr.size()
-                || parsedTaxId < 0
-                || parsedTaxId > std::numeric_limits<TaxID>::max()) {
-                throw std::invalid_argument("Invalid tax ID");
-            }
-            externalTaxId = static_cast<TaxID>(parsedTaxId);
-        } catch (...) {
+        errno = 0;
+        char *parseEnd = nullptr;
+        const long long parsedTaxId = std::strtoll(taxIdStr.c_str(), &parseEnd, 10);
+        if (errno == ERANGE
+            || parseEnd == taxIdStr.c_str()
+            || *parseEnd != '\0'
+            || parsedTaxId < 0
+            || parsedTaxId > std::numeric_limits<TaxID>::max()) {
             std::cerr << "Error: Invalid tax ID in --priority-taxid: " << taxIdStr << std::endl;
             EXIT(EXIT_FAILURE);
         }
+        TaxID externalTaxId = static_cast<TaxID>(parsedTaxId);
 
         TaxID taxId = taxonomy->getInternalTaxID(externalTaxId);
         if (taxId < 0
