@@ -2,6 +2,9 @@
 #include "FileUtil.h"
 #include "common.h"
 #include "Reporter.h"
+#include <cerrno>
+#include <cstdlib>
+#include <limits>
 
 void setExtractDefaults(LocalParameters & par){
     par.taxonomyPath = "" ;
@@ -88,12 +91,18 @@ int extract(int argc, const char **argv, const Command& command) {
             cerr << "Please provide a single target taxon ID with --exclude-taxid for extract." << endl;
             exit(1);
         }
-        try {
-            externalTaxID = stoi(par.excludeTaxid);
-        } catch (...) {
+        errno = 0;
+        char *parseEnd = nullptr;
+        const long long parsedTaxID = std::strtoll(par.excludeTaxid.c_str(), &parseEnd, 10);
+        if (errno == ERANGE
+            || parseEnd == par.excludeTaxid.c_str()
+            || *parseEnd != '\0'
+            || parsedTaxID < std::numeric_limits<TaxID>::min()
+            || parsedTaxID > std::numeric_limits<TaxID>::max()) {
             cerr << "Invalid taxon ID provided with --exclude-taxid: " << par.excludeTaxid << endl;
             exit(1);
         }
+        externalTaxID = static_cast<TaxID>(parsedTaxID);
         if (externalTaxID == 0) {
             cerr << "Please provide a non-zero target taxon ID with --exclude-taxid." << endl;
             exit(1);
