@@ -3,6 +3,9 @@
 #include "QueryIndexer.h"
 #include "common.h"
 
+#include <cerrno>
+#include <cstdlib>
+#include <limits>
 #include <variant>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -65,6 +68,55 @@ inline void addAverageScoresToMap(
 
         avgScores[taxScore.first] = taxScore.second / static_cast<double>(countIt->second.cladeCount);
     }
+}
+
+inline bool parseTaxId(const std::string &value, TaxID &taxId) {
+    errno = 0;
+    char *parseEnd = nullptr;
+    const long long parsed = std::strtoll(value.c_str(), &parseEnd, 10);
+    if (errno == ERANGE
+        || parseEnd == value.c_str()
+        || *parseEnd != '\0'
+        || parsed < std::numeric_limits<TaxID>::min()
+        || parsed > std::numeric_limits<TaxID>::max()) {
+        return false;
+    }
+
+    taxId = static_cast<TaxID>(parsed);
+    return true;
+}
+
+inline bool parseDouble(const std::string &value, double &number) {
+    errno = 0;
+    char *parseEnd = nullptr;
+    const double parsed = std::strtod(value.c_str(), &parseEnd);
+    if (errno == ERANGE || parseEnd == value.c_str() || *parseEnd != '\0') {
+        return false;
+    }
+
+    number = parsed;
+    return true;
+}
+
+inline std::string replaceSuffix(
+    const std::string &value,
+    const std::string &suffix,
+    const std::string &replacement)
+{
+    if (value.size() >= suffix.size()
+        && value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0) {
+        return value.substr(0, value.size() - suffix.size()) + replacement;
+    }
+
+    return value + replacement;
+}
+
+inline std::string filteredReportFileName(const std::string &classificationFileName) {
+    return replaceSuffix(classificationFileName, "_classifications.tsv", "_filtered_report.tsv");
+}
+
+inline std::string filteredKronaFileName(const std::string &classificationFileName) {
+    return replaceSuffix(classificationFileName, "_classifications.tsv", "_filtered_krona.html");
 }
 }
 
@@ -165,6 +217,73 @@ uint64_t Classifier::calculateBufferSize(
     size_t bytePerKmer = sizeof(Kmer) + matchPerKmer * matchSize;
     size_t totalSize = availableBytes / bytePerKmer;
     return totalSize;
+}
+
+void Classifier::collectClassificationStats(
+    const string &classificationFileName,
+    unordered_map<TaxID, unsigned int> &classificationCounts,
+    unordered_map<TaxID, double> &cladeScoreSums)
+{
+    ifstream classificationFile(classificationFileName);
+    if (!classificationFile.is_open()) {
+        cerr << "Error: Could not open classification results file " << classificationFileName << endl;
+        return;
+    }
+
+    unordered_map<TaxID, TaxID> external2internalTaxID;
+    taxonomy->getExternal2internalTaxID(external2internalTaxID);
+
+    int taxIdCol = -1;
+    int scoreCol = -1;
+    string line;
+    while (getline(classificationFile, line)) {
+        if (line.empty()) {
+            continue;
+        }
+
+        if (line[0] == '#') {
+            vector<string> columns = TaxonomyWrapper::splitByDelimiter(line, "\t", 16);
+            for (size_t i = 0; i < columns.size(); ++i) {
+                if (columns[i] == "taxID") {
+                    taxIdCol = static_cast<int>(i);
+                } else if (columns[i] == "score") {
+                    scoreCol = static_cast<int>(i);
+                }
+            }
+            continue;
+        }
+
+        vector<string> columns = TaxonomyWrapper::splitByDelimiter(line, "\t", 16);
+        if (columns.empty() || columns[0] == "0") {
+            classificationCounts[0]++;
+            continue;
+        }
+
+        if (taxIdCol < 0
+            || scoreCol < 0
+            || static_cast<size_t>(taxIdCol) >= columns.size()
+            || static_cast<size_t>(scoreCol) >= columns.size()) {
+            continue;
+        }
+
+        TaxID externalTaxId = 0;
+        if (!parseTaxId(columns[taxIdCol], externalTaxId)) {
+            continue;
+        }
+
+        auto taxIt = external2internalTaxID.find(externalTaxId);
+        if (taxIt == external2internalTaxID.end()) {
+            continue;
+        }
+
+        TaxID taxId = taxIt->second;
+        classificationCounts[taxId]++;
+
+        double score = 0.0;
+        if (parseDouble(columns[scoreCol], score)) {
+            addScoreToClade(taxonomy, taxId, score, cladeScoreSums);
+        }
+    }
 }
     
 void Classifier::preciseModePreset(LocalParameters & par) {
@@ -328,13 +447,34 @@ void Classifier::classifyReads() {
     unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
     std::unordered_map<TaxID, double> avgScores;
     addAverageScoresToMap(cladeScoreSums, cladeCounts, avgScores);
-    reporter->filterClassificationFile(
-        reporter->getClassificationFileName(),
-        reporter->getClassificationFileName() + ".filtered",
-        avgScores,
-        0.2
-    );
     reporter->writeReportFile(processedReadCnt, cladeCounts, avgScores, ReportType::Default);
+
+    if (par.minAvgScore > 0) {
+        const string classificationFileName = reporter->getClassificationFileName();
+        const string filteredClassificationFileName = classificationFileName + ".filtered";
+        reporter->filterClassificationFile(
+            classificationFileName,
+            filteredClassificationFileName,
+            avgScores,
+            par.minAvgScore
+        );
+
+        unordered_map<TaxID, unsigned int> filteredTaxCounts;
+        std::unordered_map<TaxID, double> filteredCladeScoreSums;
+        collectClassificationStats(filteredClassificationFileName, filteredTaxCounts, filteredCladeScoreSums);
+        unordered_map<TaxID, TaxonCounts> filteredCladeCounts =
+            taxonomy->getCladeCounts(filteredTaxCounts, parentToChildren);
+        std::unordered_map<TaxID, double> filteredAvgScores;
+        addAverageScoresToMap(filteredCladeScoreSums, filteredCladeCounts, filteredAvgScores);
+
+        reporter->setReportFileName(filteredReportFileName(classificationFileName));
+        reporter->writeReportFile(
+            processedReadCnt,
+            filteredCladeCounts,
+            filteredAvgScores,
+            ReportType::Default,
+            filteredKronaFileName(classificationFileName));
+    }
     std::cout << "Taxonomic classification completed." << std::endl;
 
 }
@@ -473,15 +613,43 @@ void Classifier::classifyReadsWithPos() {
     rollUpCoverageMetrics(parentToChildren, cladeCounts, sp2covMetric, 1);
     std::unordered_map<TaxID, double> avgScores;
     addAverageScoresToMap(cladeScoreSums, cladeCounts, avgScores);
-    
-    reporter->filterClassificationFile(
-        reporter->getClassificationFileName(), 
-        reporter->getClassificationFileName() + ".filtered", 
-        sp2covMetric, 
-        avgScores,
-        0.4
-    );
     reporter->writeReportFile(processedReadCnt, cladeCounts, sp2covMetric, avgScores, ReportType::Default);
+
+    if (par.minAvgScore > 0) {
+        const string classificationFileName = reporter->getClassificationFileName();
+        const string filteredClassificationFileName = classificationFileName + ".filtered";
+        reporter->filterClassificationFile(
+            classificationFileName,
+            filteredClassificationFileName,
+            avgScores,
+            par.minAvgScore
+        );
+
+        unordered_map<TaxID, unsigned int> filteredTaxCounts;
+        std::unordered_map<TaxID, double> filteredCladeScoreSums;
+        collectClassificationStats(filteredClassificationFileName, filteredTaxCounts, filteredCladeScoreSums);
+        unordered_map<TaxID, TaxonCounts> filteredCladeCounts =
+            taxonomy->getCladeCounts(filteredTaxCounts, parentToChildren);
+        std::unordered_map<TaxID, double> filteredAvgScores;
+        addAverageScoresToMap(filteredCladeScoreSums, filteredCladeCounts, filteredAvgScores);
+
+        unordered_map<TaxID, CovMetric> filteredSp2covMetric;
+        for (const auto &coverageEntry : sp2coverage_global) {
+            auto metricIt = sp2covMetric.find(coverageEntry.first);
+            if (metricIt != sp2covMetric.end()) {
+                filteredSp2covMetric.emplace(metricIt->first, metricIt->second);
+            }
+        }
+
+        reporter->setReportFileName(filteredReportFileName(classificationFileName));
+        reporter->writeReportFile(
+            processedReadCnt,
+            filteredCladeCounts,
+            filteredSp2covMetric,
+            filteredAvgScores,
+            ReportType::Default,
+            filteredKronaFileName(classificationFileName));
+    }
 
     std::cout << "Taxonomic classification completed." << std::endl;
 

@@ -1,6 +1,9 @@
 #include "Reporter.h"
 #include "taxonomyreport.cpp"
+#include <cerrno>
 #include <cstdio>
+#include <cstdlib>
+#include <limits>
 #include <type_traits>
 
 namespace {
@@ -48,6 +51,22 @@ inline void writeMetricOrDash(FILE *fp, double value) {
     } else {
         fprintf(fp, "\t-");
     }
+}
+
+inline bool parseTaxId(const std::string &value, TaxID &taxId) {
+    errno = 0;
+    char *parseEnd = nullptr;
+    const long long parsed = std::strtoll(value.c_str(), &parseEnd, 10);
+    if (errno == ERANGE
+        || parseEnd == value.c_str()
+        || *parseEnd != '\0'
+        || parsed < std::numeric_limits<TaxID>::min()
+        || parsed > std::numeric_limits<TaxID>::max()) {
+        return false;
+    }
+
+    taxId = static_cast<TaxID>(parsed);
+    return true;
 }
 
 bool isReadInClade(const char *line,
@@ -820,7 +839,6 @@ void Reporter::filterClassificationFile(
     const std::unordered_map<TaxID, double> &taxon2avgScore,
     double cutoff)
 {
-    (void) cutoff;
     std::ifstream inFile(inputFilePath);
     if (!inFile.is_open()) {
         std::cerr << "Error: Could not open input file " << inputFilePath << "\n";
@@ -836,9 +854,21 @@ void Reporter::filterClassificationFile(
     std::unordered_map<TaxID, TaxID> ex2inTaxId;
     taxonomy->getExternal2internalTaxID(ex2inTaxId);
     std::string line;
+    bool hasLineageColumn = false;
     while (std::getline(inFile, line)) {
         // 1. Pass the header or empty lines directly to the new file
-        if (line.empty() || line[0] == '#') {
+        if (line.empty()) {
+            outFile << line << "\n";
+            continue;
+        }
+        if (line[0] == '#') {
+            std::vector<std::string> headerColumns = TaxonomyWrapper::splitByDelimiter(line, "\t", 16);
+            for (const std::string &column : headerColumns) {
+                if (column == "lineage") {
+                    hasLineageColumn = true;
+                    break;
+                }
+            }
             outFile << line << "\n";
             continue;
         }
@@ -860,29 +890,45 @@ void Reporter::filterClassificationFile(
 
         // 3. Check if the read is currently classified
         if (columns[0] == "1") {
-            TaxID taxID = ex2inTaxId[std::stoull(columns[2])]; // Convert the string taxID to your integer type
+            TaxID externalTaxID = 0;
+            if (!parseTaxId(columns[2], externalTaxID)) {
+                outFile << line << "\n";
+                continue;
+            }
+
+            auto taxIdIt = ex2inTaxId.find(externalTaxID);
+            if (taxIdIt == ex2inTaxId.end()) {
+                outFile << line << "\n";
+                continue;
+            }
+
+            TaxID taxID = taxIdIt->second;
+            TaxID filterTaxID = taxID;
 
             TaxID speciesTaxID = taxonomy->getTaxIdAtRank(taxID, "species");
+            if (speciesTaxID != 0) {
+                filterTaxID = speciesTaxID;
+            }
 
-            auto evIt = sp2covMetric.find(speciesTaxID);
-            auto avgIt = taxon2avgScore.find(speciesTaxID);
+            auto evIt = sp2covMetric.find(filterTaxID);
+            auto avgIt = taxon2avgScore.find(filterTaxID);
             
             // 4. If the species is in the map AND its score is below the cutoff, rewrite it
             if ((evIt != sp2covMetric.end() && evIt->second.adjustedEvenness < 0.6) ||
-                (avgIt != taxon2avgScore.end() && avgIt->second < 0.2)) {
+                (avgIt != taxon2avgScore.end() && avgIt->second < cutoff)) {
                 // Reconstruct the line exactly as your original "unclassified" else-block did
                 outFile << "0\t"          // is_classified
                         << columns[1] << "\t" // name
                         << "0\t"          // taxID (forced to 0)
                         << columns[3] << "\t" // query_length
                         << columns[4] << "\t" // idScore
-                        << "-\t"          // subScore
                         << "-\t"          // eValue
-                        << "-\t";         // rank
+                        << "-";           // rank
 
-                // Check if lineage was printed (original format has > 9 columns if lineage exists)
-                if (columns.size() > 9) {
-                    outFile << "-\t";     // empty lineage
+                if (hasLineageColumn) {
+                    outFile << "\t-\t";   // empty lineage
+                } else {
+                    outFile << "\t";
                 }
                 
                 outFile << "-\n";         // empty taxID:match_count

@@ -813,6 +813,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&ACCESSION_LEVEL);
     classify.push_back(&TIE_RATIO);
     classify.push_back(&PRINT_LINEAGE);
+    classify.push_back(&MIN_AVG_SCORE);
     classify.push_back(&VALIDATE_INPUT);
     classify.push_back(&VALIDATE_DB);
     classify.push_back(&SYNCMER);

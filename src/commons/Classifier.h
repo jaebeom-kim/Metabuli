@@ -89,6 +89,11 @@ protected:
 
     void preciseModePreset(LocalParameters & par);
 
+    void collectClassificationStats(
+        const string &classificationFileName,
+        unordered_map<TaxID, unsigned int> &classificationCounts,
+        unordered_map<TaxID, double> &cladeScoreSums);
+
     void parseSp2GenomeSize() {
         std::string fileName = dbDir + "/species2genomeSize.tsv";
         ifstream infile(fileName);
