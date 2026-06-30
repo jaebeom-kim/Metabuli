@@ -209,6 +209,7 @@ par, cout, printColumnsIdx, cerr, names, nodes, merged)
 
             vector<Score2> tpOrFp;
             regex regex1("(GC[AF]_[0-9]+\\.[0-9]+)");
+            regex assemblyAccessionNoVersion("(GC[AF]_[0-9]+)");
             smatch assacc;
             size_t numberOfClassifications = 0;
             unordered_map<string, int> observed;
@@ -238,6 +239,12 @@ par, cout, printColumnsIdx, cerr, names, nodes, merged)
                     if (pos != string::npos) {
                         id = id.substr(0, pos);
                     }
+                } else if (par.testType == "gtdb-amgsim") {
+                    if (!regex_search(id, assacc, assemblyAccessionNoVersion)) {
+                        cerr << "Cannot parse GTDB-aMGSIM read ID: " << id << endl;
+                        continue;
+                    }
+                    id = assacc[0];
                 } else if (par.testType == "hiv" || par.testType == "hiv-ex") {
                     size_t pos = id.find('_');
                     id = id.substr(0, pos);
@@ -268,7 +275,7 @@ par, cout, printColumnsIdx, cerr, names, nodes, merged)
                 if (par.skipSecondary == 1) {
                     size_t pos = fullId.find('/');
                     fullId = fullId.substr(0, pos);
-                    if (par.testType != "gtdb") {
+                    if (par.testType != "gtdb" && par.testType != "gtdb-amgsim") {
                         cerr << "skipSecondary is only available for GTDB" << endl;
                         exit(1);
                     }
