@@ -322,12 +322,33 @@ LocalParameters::LocalParameters() :
                         typeid(int),
                         (void *) &useAllMatches,
                         "[0-1]"),
+        MAX_HDIST(MAX_HDIST_ID,
+                        "--max-hdist",
+                        "Use k-mer matches with Hamming distance <= this value",
+                        "Use all k-mer matches with Hamming distance <= this value (-1 disables)",
+                        typeid(int),
+                        (void *) &maxHdist,
+                        "^-?[0-9]+$"),
         TIE_BRAKER(TIE_BRAKER_ID,
                  "--priority-taxid",
                  "Favors these and child taxa instead of LCA in case of a tie. (Comma-separated list of tax IDs.)",
                  "Favors these and child taxa instead of LCA in case of a tie. (Comma-separated list of tax IDs.)",
                  typeid(std::string),
                  (void *) &priorityTaxa,
+                 "^.*$"),
+        TOP_SPECIES(TOP_SPECIES_ID,
+                 "--top-species",
+                 "Write top N species candidates per query to binary mapping output",
+                 "Write top N species candidates per query to binary mapping output",
+                 typeid(int),
+                 (void *) &topSpecies,
+                 "^[0-9]+$"),
+        MAPPING_OUTPUT(MAPPING_OUTPUT_ID,
+                 "--mapping-output",
+                 "Binary output path for per-query species candidates",
+                 "Binary output path for per-query species candidates",
+                 typeid(std::string),
+                 (void *) &mappingOutput,
                  "^.*$"),
         MIN_AVG_SCORE(MIN_AVG_SCORE_ID,
                 "--min-avg-score",
@@ -695,6 +716,7 @@ LocalParameters::LocalParameters() :
     ramUsage = defaultRamUsage();
     printLog = 0;
     matchPerKmer = 0;
+    maxHdist = -1;
     minSSMatch = 0;
     tieRatio = 0;
 
@@ -827,12 +849,41 @@ LocalParameters::LocalParameters() :
     classify.push_back(&MAX_E_VALUE);
     classify.push_back(&TIE_BRAKER);
     classify.push_back(&USE_ALL_MATCHES);
+    classify.push_back(&MAX_HDIST);
+    classify.push_back(&TOP_SPECIES);
+    classify.push_back(&MAPPING_OUTPUT);
     // classify.push_back(&PDM_KMER);
     // classify.push_back(&SCORE_MODE);
     
     classify.push_back(&DB_TOTAL_LENGTH);
     classify.push_back(&MAX_SHIFT);
     // classify.push_back(&EM);
+
+    //classify-candidates
+    classifyCandidates.push_back(&PARAM_THREADS);
+    classifyCandidates.push_back(&PRECISION_MODE);
+    classifyCandidates.push_back(&MIN_SCORE);
+    classifyCandidates.push_back(&MIN_SP_SCORE);
+    classifyCandidates.push_back(&MIN_AA_MATCH);
+    classifyCandidates.push_back(&MIN_AA_MATCH_EUK);
+    classifyCandidates.push_back(&TAXONOMY_PATH);
+    classifyCandidates.push_back(&ACCESSION_LEVEL);
+    classifyCandidates.push_back(&TIE_RATIO);
+    classifyCandidates.push_back(&PRINT_LINEAGE);
+    classifyCandidates.push_back(&MIN_AVG_SCORE);
+    classifyCandidates.push_back(&VALIDATE_DB);
+    classifyCandidates.push_back(&SYNCMER);
+    classifyCandidates.push_back(&SMER_LEN);
+    classifyCandidates.push_back(&PARAM_SUB_MAT);
+    classifyCandidates.push_back(&PRINT_LOG);
+    classifyCandidates.push_back(&PMD_KMER);
+    classifyCandidates.push_back(&DISABLE_TRIMMING);
+    classifyCandidates.push_back(&SCORE_MODE);
+    classifyCandidates.push_back(&MAX_E_VALUE);
+    classifyCandidates.push_back(&TIE_BRAKER);
+    classifyCandidates.push_back(&USE_ALL_MATCHES);
+    classifyCandidates.push_back(&DB_TOTAL_LENGTH);
+    classifyCandidates.push_back(&MAX_SHIFT);
 
     assignUniref.push_back(&PARAM_THREADS);
     assignUniref.push_back(&RAM_USAGE);

@@ -1,4 +1,5 @@
 #include "Classifier.h"
+#include "CandidateDBReader.h"
 #include "FileUtil.h"
 #include "QueryIndexer.h"
 #include "common.h"
@@ -341,6 +342,7 @@ void Classifier::classifyReads() {
     queryList.reserve(512 * 1024);
 
     reporter->openReadClassificationFile();
+    reporter->openSpeciesCandidateFile();
 
     bool complete = false;
     SeqEntry * savedSeq_1 = new SeqEntry();
@@ -407,6 +409,7 @@ void Classifier::classifyReads() {
 
                 // 5) Assign taxonomy
                 assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                reporter->writeSpeciesCandidates(queryList, processedReadCnt);
                 for (const Query &query : queryList) {
                     if (query.classification != 0) {
                         addScoreToClade(taxonomy, query.classification, query.idScore, cladeScoreSums);
@@ -442,6 +445,7 @@ void Classifier::classifyReads() {
     delete savedSeq_2;
     std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
     reporter->closeReadClassificationFile();
+    reporter->closeSpeciesCandidateFile();
 
     std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
     unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
@@ -486,6 +490,7 @@ void Classifier::classifyReadsWithPos() {
     queryList.reserve(512 * 1024);
 
     reporter->openReadClassificationFile();
+    reporter->openSpeciesCandidateFile();
 
     bool complete = false;
     SeqEntry * savedSeq_1 = new SeqEntry();
@@ -556,6 +561,7 @@ void Classifier::classifyReadsWithPos() {
 
                 // 5) Assign taxonomy
                 assignTaxonomy<MatchWithPos>(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+                reporter->writeSpeciesCandidates(queryList, processedReadCnt);
                 for (const Query &query : queryList) {
                     if (query.classification != 0) {
                         addScoreToClade(taxonomy, query.classification, query.idScore, cladeScoreSums);
@@ -591,6 +597,7 @@ void Classifier::classifyReadsWithPos() {
     delete savedSeq_2;
     std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;    
     reporter->closeReadClassificationFile();
+    reporter->closeSpeciesCandidateFile();
 
     parseSp2GenomeSize();
     std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
@@ -734,6 +741,131 @@ void Classifier::assignTaxonomy(const MatchType *matchList,
     }
     cout << double(time(nullptr) - beforeAnalyze) << " s" << endl;
 
+}
+
+template <typename MatchType>
+bool Classifier::assignTaxonomyFromCandidateDB(
+    const std::string &candidateDb,
+    std::vector<Query> &queryList,
+    const LocalParameters &par)
+{
+    time_t beforeAnalyze = time(nullptr);
+    std::cout << "Candidate DB analysis : " << std::flush;
+
+    CandidateDBReader candidateReader(candidateDb, par.threads);
+    if (!candidateReader.open(DBReader<unsigned int>::SORT_BY_ID)) {
+        std::cout << "failed" << std::endl;
+        return false;
+    }
+
+    const size_t entryCount = candidateReader.size();
+    queryList.clear();
+    queryList.resize(entryCount);
+
+    std::vector<uint8_t> priorityTaxonLookup = Taxonomer<MatchType>::makePriorityTaxonLookup(par, taxonomy);
+    TaxonomyWrapper *localTaxonomy = taxonomy;
+    const MetamerPattern *localMetamerPattern = metamerPattern;
+#ifdef OPENMP
+    const int localThreadCount = par.threads <= 0 ? 1 : par.threads;
+#endif
+
+    if (entryCount > 0) {
+#ifdef OPENMP
+#pragma omp parallel num_threads(localThreadCount) default(none), shared(candidateReader, queryList, par, priorityTaxonLookup, entryCount, localTaxonomy, localMetamerPattern)
+#endif
+        {
+            int threadIdx = 0;
+#ifdef OPENMP
+            threadIdx = omp_get_thread_num();
+#endif
+            Taxonomer<MatchType> taxonomer(par, localTaxonomy, localMetamerPattern, &priorityTaxonLookup);
+            CandidateDBEntry candidateEntry;
+
+#ifdef OPENMP
+#pragma omp for schedule(dynamic, 64)
+#endif
+            for (size_t i = 0; i < entryCount; ++i) {
+                Query query;
+                if (candidateReader.getByIndex(i, candidateEntry, threadIdx)) {
+                    taxonomer.chooseBestTaxonFromCandidates(candidateEntry, query);
+                } else {
+                    query.classification = 0;
+                    query.idScore = 0.0f;
+                    query.subScore = 0.0f;
+                    query.eValue = 1.0f;
+                    query.topSpeciesId = 0;
+                }
+                queryList[i] = std::move(query);
+            }
+        }
+    }
+
+    candidateReader.close();
+
+    for (size_t i = 0; i < entryCount; ++i) {
+        ++taxCounts[queryList[i].classification];
+    }
+
+    cout << double(time(nullptr) - beforeAnalyze) << " s" << endl;
+    return true;
+}
+
+bool Classifier::classifyCandidates(const std::string &candidateDb)
+{
+    std::vector<Query> queryList;
+    taxCounts.clear();
+
+    if (!assignTaxonomyFromCandidateDB<Match>(candidateDb, queryList, par)) {
+        return false;
+    }
+
+    const size_t processedReadCnt = queryList.size();
+    std::unordered_map<TaxID, double> cladeScoreSums;
+    for (const Query &query : queryList) {
+        if (query.classification != 0) {
+            addScoreToClade(taxonomy, query.classification, query.idScore, cladeScoreSums);
+        }
+    }
+
+    reporter->openReadClassificationFile();
+    reporter->writeReadClassification(queryList);
+    reporter->closeReadClassificationFile();
+
+    std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
+    unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
+    std::unordered_map<TaxID, double> avgScores;
+    addAverageScoresToMap(cladeScoreSums, cladeCounts, avgScores);
+    reporter->writeReportFile(processedReadCnt, cladeCounts, avgScores, ReportType::Default);
+
+    if (par.minAvgScore > 0) {
+        const string classificationFileName = reporter->getClassificationFileName();
+        const string filteredClassificationFileName = classificationFileName + ".filtered";
+        reporter->filterClassificationFile(
+            classificationFileName,
+            filteredClassificationFileName,
+            avgScores,
+            par.minAvgScore
+        );
+
+        unordered_map<TaxID, unsigned int> filteredTaxCounts;
+        std::unordered_map<TaxID, double> filteredCladeScoreSums;
+        collectClassificationStats(filteredClassificationFileName, filteredTaxCounts, filteredCladeScoreSums);
+        unordered_map<TaxID, TaxonCounts> filteredCladeCounts =
+            taxonomy->getCladeCounts(filteredTaxCounts, parentToChildren);
+        std::unordered_map<TaxID, double> filteredAvgScores;
+        addAverageScoresToMap(filteredCladeScoreSums, filteredCladeCounts, filteredAvgScores);
+
+        reporter->setReportFileName(filteredReportFileName(classificationFileName));
+        reporter->writeReportFile(
+            processedReadCnt,
+            filteredCladeCounts,
+            filteredAvgScores,
+            ReportType::Default,
+            filteredKronaFileName(classificationFileName));
+    }
+
+    std::cout << "Taxonomic classification completed." << std::endl;
+    return true;
 }
 
 void Classifier::em(size_t totalQueryCnt) {
@@ -1178,3 +1310,13 @@ void Classifier::rollUpCoverageMetrics(
         allMetrics[currentTaxID] = parentMetric;
     } 
 }
+
+template bool Classifier::assignTaxonomyFromCandidateDB<Match>(
+    const std::string &candidateDb,
+    std::vector<Query> &queryList,
+    const LocalParameters &par);
+
+template bool Classifier::assignTaxonomyFromCandidateDB<MatchWithPos>(
+    const std::string &candidateDb,
+    std::vector<Query> &queryList,
+    const LocalParameters &par);

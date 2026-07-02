@@ -9,6 +9,7 @@
 
 #include "TaxonomyWrapper.h"
 #include "LocalParameters.h"
+#include "CandidateDBReader.h"
 #include "Match.h"
 #include "common.h"
 #include "BitManipulateMacros.h"
@@ -204,6 +205,10 @@ public:
                          size_t end,
                          const MatchType *matchList,
                          vector<Query> & queryList);      
+
+    void chooseBestTaxonFromCandidates(
+        const CandidateDBEntry &candidateEntry,
+        Query &query);
 
     void filterRedundantMatches(const MatchType *matchList,
                                 const std::pair<size_t, size_t> & bestSpeciesRange,

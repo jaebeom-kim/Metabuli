@@ -118,6 +118,16 @@ std::vector<Command> metabuliCommands = {
                  {"DB dir", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::directory},
                  {"out dir", DbType::ACCESS_MODE_OUTPUT, DbType::NEED_DATA, &DbValidator::directory},
                  {"job ID", DbType::ACCESS_MODE_OUTPUT, DbType::NEED_DATA, &DbValidator::flatfile}}},
+        {"classify-candidates", classifyCandidates, &localPar.classifyCandidates, COMMAND_MAIN,
+                "Assign taxonomic labels from a species candidate DB",
+                nullptr,
+                "Jaebeom Kim <jbeom0731@gmail.com>",
+                "<i:candidate DB> <i:database directory> <o:output directory> <job ID> ",
+                CITATION_SPACEPHARER,
+                {{"candidate DB", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile},
+                 {"DB dir", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::directory},
+                 {"out dir", DbType::ACCESS_MODE_OUTPUT, DbType::NEED_DATA, &DbValidator::directory},
+                 {"job ID", DbType::ACCESS_MODE_OUTPUT, DbType::NEED_DATA, &DbValidator::flatfile}}},
         {"assign_uniref", assign_uniref, &localPar.assignUniref, COMMAND_EXPERT,
                 "Assign UniRef cluster labels to query protein sequences.",
                 nullptr,
@@ -146,6 +156,15 @@ std::vector<Command> metabuliCommands = {
                 {{"read-classification", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile},
                         {"Mapping file (Query ID to tax ID)", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile},
                         {"taxonomy dir", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA | DbType::VARIADIC, &DbValidator::directory}}},
+        {"evaluate-candidates", evaluateCandidates, &localPar.grade, COMMAND_EXPERT,
+                "Evaluate top-N species candidate DBs (only for benchmarking)",
+                nullptr,
+                "Jaebeom Kim <jbeom0731@gmail.com>",
+                "<i:Candidate DB list> <i:Answer sheet list> <i:Database directory>",
+                CITATION_SPACEPHARER,
+                {{"candidate DB list", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile},
+                        {"Mapping file (Query ID to tax ID)", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile},
+                        {"DB dir", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::directory}}},
         {"gradeByCladeSize", gradeByCladeSize, &localPar.grade, COMMAND_EXPERT,
                 "Grade the classification result (only for benchmarking)",
                 nullptr,
@@ -371,5 +390,3 @@ std::vector<DatabaseDownload> externalDownloads = {
                 {}
         }
 };
-
-

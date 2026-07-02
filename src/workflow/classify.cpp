@@ -29,6 +29,7 @@ void setClassifyDefaults(LocalParameters & par){
     par.maskMode = 0;
     par.maskProb = 0.9;
     par.matchPerKmer = 4;
+    par.maxHdist = -1;
     par.accessionLevel = 0;
     par.tieRatio = 0.99;
     par.printLineage = 0;
@@ -36,6 +37,8 @@ void setClassifyDefaults(LocalParameters & par){
     par.minAaMatchEuk = 16;
     par.priorityTaxa = "";
     par.minAvgScore = 0;
+    par.topSpecies = 0;
+    par.mappingOutput = "";
     // unexposed experimental parameters
     par.spaceMask = "";
     par.useAllMatches = 0;

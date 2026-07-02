@@ -23,6 +23,7 @@ public:
     }
 
     std::vector<MMseqsParameter*> classify;
+    std::vector<MMseqsParameter*> classifyCandidates;
     std::vector<MMseqsParameter*> groupGeneration;
     std::vector<MMseqsParameter*> extract;
     std::vector<MMseqsParameter*> filter;
@@ -98,7 +99,10 @@ public:
     PARAMETER(DB_TOTAL_LENGTH)
     PARAMETER(MAX_E_VALUE)
     PARAMETER(USE_ALL_MATCHES)
+    PARAMETER(MAX_HDIST)
     PARAMETER(TIE_BRAKER)
+    PARAMETER(TOP_SPECIES)
+    PARAMETER(MAPPING_OUTPUT)
 
     // classify || refine-report 
     PARAMETER(MIN_AVG_SCORE)
@@ -214,9 +218,12 @@ public:
     size_t dbTotalLength;
     double maxEValue;
     int useAllMatches;
+    int maxHdist;
     int minAaMatch;
     int minAaMatchEuk;
     std::string priorityTaxa;
+    int topSpecies;
+    std::string mappingOutput;
     float minAvgScore;
     int minCladeCount;
     float minCladeProportion;

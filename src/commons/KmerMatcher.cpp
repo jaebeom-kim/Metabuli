@@ -606,21 +606,35 @@ void KmerMatcher::filterCandidates(
         return;
     }
 
-    // Use only exact matches if any
-    bool hasExactMatch = false;
-    for (size_t i = 0; i < numCandidates; i++) {
-        if (qVal == candPtr[i].value) {
-            Kmer tKmer = candPtr[i];
-            tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
-            filteredMatches.emplace_back(qKmer, tKmer);
-            hasExactMatch = true;
-        } else if (hasExactMatch) {
-            break;
+    if (par.maxHdist >= 0) {
+        hammings.resize(numCandidates);
+        uint8_t* hamPtr = hammings.data();
+        metamerPattern->hammingDistSumBatch(qVal, candPtr, numCandidates, hamPtr);
+        for (size_t h = 0; h < numCandidates; h++) {
+            if (static_cast<int>(hamPtr[h]) <= par.maxHdist) {
+                Kmer tKmer = candPtr[h];
+                tKmer.tInfo.speciesId = taxId2speciesId[candPtr[h].id];
+                filteredMatches.emplace_back(qKmer, tKmer);
+            }
         }
-    }
-    if (hasExactMatch) {
         return;
     }
+
+    // Use only exact matches if any
+    // bool hasExactMatch = false;
+    // for (size_t i = 0; i < numCandidates; i++) {
+    //     if (qVal == candPtr[i].value) {
+    //         Kmer tKmer = candPtr[i];
+    //         tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
+    //         filteredMatches.emplace_back(qKmer, tKmer);
+    //         hasExactMatch = true;
+    //     } else if (hasExactMatch) {
+    //         break;
+    //     }
+    // }
+    // if (hasExactMatch) {
+    //     return;
+    // }
 
     // Calculate hamming distances
     hammings.resize(numCandidates);
@@ -634,7 +648,7 @@ void KmerMatcher::filterCandidates(
         }
     }
 
-    const uint8_t hDistCutoff = static_cast<uint8_t>(min(static_cast<int>(minDist) * 2, kmerLen - 1));
+    const uint8_t hDistCutoff = static_cast<uint8_t>(min(static_cast<int>(minDist + 1) * 2, kmerLen - 1));
     for (size_t h = 0; h < numCandidates; h++) {
         if (hamPtr[h] <= hDistCutoff) {
             Kmer tKmer = candPtr[h];
@@ -666,6 +680,21 @@ void KmerMatcher::filterCandidates(
             Kmer tKmer = candPtr[i];
             tKmer.tInfo.speciesId = taxId2speciesId[candPtr[i].id];
             filteredMatches.emplace_back(qKmer, tKmer, posId);
+        }
+        return;
+    }
+
+    if (par.maxHdist >= 0) {
+        hammings.resize(numCandidates);
+        uint8_t* hamPtr = hammings.data();
+        metamerPattern->hammingDistSumBatch(qVal, candPtr, numCandidates, hamPtr);
+        for (size_t h = 0; h < numCandidates; h++) {
+            if (static_cast<int>(hamPtr[h]) <= par.maxHdist) {
+                const uint16_t posId = static_cast<uint16_t>(candPtr[h].tInfo.pos);
+                Kmer tKmer = candPtr[h];
+                tKmer.tInfo.speciesId = taxId2speciesId[candPtr[h].id];
+                filteredMatches.emplace_back(qKmer, tKmer, posId);
+            }
         }
         return;
     }

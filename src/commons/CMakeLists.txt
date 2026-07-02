@@ -10,6 +10,10 @@ set(commons_source_files
         commons/printBinary.h
 		commons/Classifier.cpp
         commons/Classifier.h
+        commons/CandidateDBReader.cpp
+        commons/CandidateDBReader.h
+        commons/CandidateDBWriter.cpp
+        commons/CandidateDBWriter.h
         commons/ClassificationResultRefiner.cpp
         commons/ClassificationResultRefiner.h
         commons/BitManipulateMacros.h

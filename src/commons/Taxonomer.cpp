@@ -8,8 +8,13 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <numeric>
 #include <sys/types.h>
 #include <unordered_map>
+
+#ifdef OPENMP
+#include <omp.h>
+#endif
 
 template <typename MatchType>
 std::vector<uint8_t> Taxonomer<MatchType>::makePriorityTaxonLookup(
@@ -171,6 +176,147 @@ Taxonomer<MatchType>::~Taxonomer() {
     delete[] bestMatchTaxIdForQuotient;
     delete[] minHammingForQuotient;
     delete evaluer;
+}
+
+template <typename MatchType>
+void Taxonomer<MatchType>::chooseBestTaxonFromCandidates(
+    const CandidateDBEntry &candidateEntry,
+    Query &query)
+{
+    query = Query(static_cast<int>(candidateEntry.queryLength), 0, candidateEntry.queryName);
+    query.speciesCandidates = candidateEntry.candidates;
+    query.topSpeciesId = 0;
+
+    if (candidateEntry.candidates.empty()) {
+        query.classification = 0;
+        query.idScore = 0.0f;
+        query.subScore = 0.0f;
+        query.eValue = 1.0f;
+        return;
+    }
+
+    MatchScore bestSpScore;
+    size_t bestCandidateIdx = candidateEntry.candidates.size();
+    size_t meaningfulSpecies = 0;
+    for (size_t i = 0; i < candidateEntry.candidates.size(); ++i) {
+        const SpeciesCandidate &candidate = candidateEntry.candidates[i];
+        MatchScore score(candidate.idScore, candidate.subScore);
+        score.logE = candidate.logE;
+        if (score.idScore < par.minScore || (useEvalueFilter && score.logE > logMaxEValue)) {
+            continue;
+        }
+
+        if (score.idScore > 0.0f) {
+            meaningfulSpecies++;
+        }
+        if (score.isLargerThan(bestSpScore, par.scoreMode)) {
+            bestSpScore = score;
+            bestCandidateIdx = i;
+        }
+    }
+
+    if (meaningfulSpecies == 0 || bestCandidateIdx == candidateEntry.candidates.size()) {
+        query.classification = 0;
+        query.idScore = 0.0f;
+        query.subScore = 0.0f;
+        query.eValue = 1.0f;
+        return;
+    }
+
+    maxSpecies.clear();
+    tiedIndices.clear();
+
+    const float diff = 0.09f;
+    const float myTieRatio = (par.tieRatio - diff) + (bestSpScore.idScore * diff);
+    MatchScore tiedScore;
+    for (size_t i = 0; i < candidateEntry.candidates.size(); ++i) {
+        const SpeciesCandidate &candidate = candidateEntry.candidates[i];
+        MatchScore score(candidate.idScore, candidate.subScore);
+        score.logE = candidate.logE;
+        if (score.idScore < par.minScore || (useEvalueFilter && score.logE > logMaxEValue)) {
+            continue;
+        }
+
+        if (score.isLargerThan(bestSpScore * myTieRatio, par.scoreMode)) {
+            maxSpecies.push_back(candidate.speciesId);
+            tiedIndices.push_back(i);
+            tiedScore += score;
+        }
+    }
+
+    const std::vector<uint8_t> &priorityLookup = *priorityTaxonLookup;
+    if (maxSpecies.size() > 1 && !priorityLookup.empty()) {
+        tempPrioritySpecies.clear();
+        tempPriorityIndices.clear();
+        MatchScore priorityScore;
+
+        for (size_t i = 0; i < maxSpecies.size(); ++i) {
+            TaxID speciesId = maxSpecies[i];
+            if (speciesId >= 0
+                && static_cast<size_t>(speciesId) < priorityLookup.size()
+                && priorityLookup[speciesId] != 0) {
+                tempPrioritySpecies.push_back(maxSpecies[i]);
+                tempPriorityIndices.push_back(tiedIndices[i]);
+
+                const SpeciesCandidate &candidate = candidateEntry.candidates[tiedIndices[i]];
+                MatchScore score(candidate.idScore, candidate.subScore);
+                score.logE = candidate.logE;
+                priorityScore += score;
+            }
+        }
+
+        if (!tempPrioritySpecies.empty()) {
+            maxSpecies.assign(tempPrioritySpecies.begin(), tempPrioritySpecies.end());
+            tiedIndices.assign(tempPriorityIndices.begin(), tempPriorityIndices.end());
+            tiedScore = priorityScore;
+        }
+    }
+
+    if (maxSpecies.size() > 1) {
+        query.classification = taxonomy->LCA(maxSpecies)->taxId;
+        query.idScore = tiedScore.idScore / maxSpecies.size();
+        query.subScore = tiedScore.subScore / maxSpecies.size();
+        query.eValue = std::exp(bestSpScore.logE);
+        query.hammingDist = 0;
+        query.topSpeciesId = query.classification;
+        return;
+    }
+
+    if (maxSpecies.empty()) {
+        query.classification = 0;
+        query.idScore = 0.0f;
+        query.subScore = 0.0f;
+        query.eValue = 1.0f;
+        return;
+    }
+
+    const SpeciesCandidate &selectedCandidate = candidateEntry.candidates[tiedIndices[0]];
+    query.topSpeciesId = selectedCandidate.speciesId;
+    query.idScore = selectedCandidate.idScore;
+    query.subScore = selectedCandidate.subScore;
+    query.eValue = std::exp(selectedCandidate.logE);
+    query.hammingDist = 0;
+
+    taxCnt.clear();
+    for (const auto &taxCount : selectedCandidate.taxCnt) {
+        taxCnt[taxCount.first] = taxCount.second;
+        query.taxCnt[taxCount.first] = static_cast<int>(taxCount.second);
+    }
+
+    if (selectedCandidate.idScore < par.minSpScore) {
+        query.classification = taxonomy->taxonNode(
+            taxonomy->getTaxIdAtRank(selectedCandidate.speciesId, "species"))->parentTaxId;
+        return;
+    }
+
+    if (!par.em) {
+        query.classification = lowerRankClassification(
+            taxCnt,
+            selectedCandidate.speciesId,
+            static_cast<int>(candidateEntry.queryLength));
+    } else {
+        query.classification = selectedCandidate.speciesId;
+    }
 }
 
 template <typename MatchType>
@@ -509,6 +655,45 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
     if (meaningfulSpecies == 0) {
         bestScore.score = {0.0f, 0.0f};
         return bestScore;
+    }
+
+    if (par.topSpecies > 0) {
+        query.speciesCandidates.clear();
+        std::vector<size_t> candidateIndices(sp2score.size());
+        std::iota(candidateIndices.begin(), candidateIndices.end(), 0);
+        std::sort(candidateIndices.begin(), candidateIndices.end(),
+                  [this](size_t lhs, size_t rhs) {
+                      const MatchScore &lhsScore = sp2score[lhs].score;
+                      const MatchScore &rhsScore = sp2score[rhs].score;
+                      if (lhsScore.isLargerThan(rhsScore, par.scoreMode)) {
+                          return true;
+                      }
+                      if (rhsScore.isLargerThan(lhsScore, par.scoreMode)) {
+                          return false;
+                      }
+                      return sp2score[lhs].taxId < sp2score[rhs].taxId;
+                  });
+
+        const size_t candidateLimit = std::min(candidateIndices.size(), static_cast<size_t>(par.topSpecies));
+        query.speciesCandidates.reserve(candidateLimit);
+        for (size_t candidateIdx = 0; candidateIdx < candidateLimit; ++candidateIdx) {
+            const SpeciesScoreCandidate &candidate = sp2score[candidateIndices[candidateIdx]];
+            SpeciesCandidate storedCandidate;
+            storedCandidate.speciesId = candidate.taxId;
+            storedCandidate.idScore = candidate.score.idScore;
+            storedCandidate.subScore = candidate.score.subScore;
+            storedCandidate.logE = candidate.score.logE;
+
+            taxCnt.clear();
+            filterRedundantMatches(matchList, candidate.speciesRange, taxCnt, queryLength);
+            storedCandidate.taxCnt.reserve(taxCnt.size());
+            for (const auto &taxCount : taxCnt) {
+                storedCandidate.taxCnt.emplace_back(taxCount.first, taxCount.second);
+            }
+            std::sort(storedCandidate.taxCnt.begin(), storedCandidate.taxCnt.end());
+
+            query.speciesCandidates.push_back(std::move(storedCandidate));
+        }
     }
 
     // if (par.em && !sp2score.empty()) {

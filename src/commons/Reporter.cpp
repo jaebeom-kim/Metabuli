@@ -150,6 +150,11 @@ Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const 
             // Output file names
             reportFileName = outDir + + "/" + jobId + "_report.tsv";
             readClassificationFileName = outDir + "/" + jobId + "_classifications.tsv";
+            if (par.topSpecies > 0) {
+                speciesCandidateFileName = par.mappingOutput.empty()
+                    ? outDir + "/" + jobId + "_species_candidates"
+                    : par.mappingOutput;
+            }
             if (par.em) {
                 reportFileName_em            = outDir + "/" + jobId + "_EM_report.tsv";
                 reportFileName_em_reclassify = outDir + "/" + jobId + "_EM+reclassify_report.tsv";
@@ -159,6 +164,39 @@ Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const 
             }
         }
     }    
+}
+
+void Reporter::openSpeciesCandidateFile() {
+    if (speciesCandidateFileName.empty()) {
+        return;
+    }
+    delete speciesCandidateWriter;
+    speciesCandidateWriter = new CandidateDBWriter(
+        speciesCandidateFileName,
+        1,
+        0);
+    speciesCandidateWriter->open();
+}
+
+void Reporter::writeSpeciesCandidates(const vector<Query> & queryList, uint32_t offset) {
+    if (speciesCandidateWriter == nullptr || speciesCandidateWriter->isClosed()) {
+        return;
+    }
+
+    for (size_t i = 0; i < queryList.size(); ++i) {
+        const Query &query = queryList[i];
+        if (query.name.empty()) {
+            break;
+        }
+
+        speciesCandidateWriter->writeQuery(offset + static_cast<uint32_t>(i), query, 0);
+    }
+}
+
+void Reporter::closeSpeciesCandidateFile() {
+    if (speciesCandidateWriter != nullptr) {
+        speciesCandidateWriter->close();
+    }
 }
 
 void Reporter::openReadClassificationFile() {

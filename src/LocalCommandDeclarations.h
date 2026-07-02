@@ -5,7 +5,9 @@
 extern int build(int argc, const char **argv, const Command& command);
 extern int updateDB(int argc, const char **argv, const Command& command);
 extern int classify(int argc, const char **argv, const Command& command);
+extern int classifyCandidates(int argc, const char **argv, const Command& command);
 extern int grade(int argc, const char **argv, const Command& command);
+extern int evaluateCandidates(int argc, const char **argv, const Command& command);
 extern int gradeByCladeSize(int argc, const char **argv, const Command& command);
 extern int seqHeader2TaxId(int argc, const char **argv, const Command& command);
 extern int addToLibrary(int argc, const char **argv, const Command& command);

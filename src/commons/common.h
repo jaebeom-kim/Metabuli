@@ -45,6 +45,14 @@ struct MappingRes {
     float score; 
 };
 
+struct SpeciesCandidate {
+    TaxID speciesId = 0;
+    float idScore = 0.0f;
+    float subScore = 0.0f;
+    float logE = 0.0f;
+    std::vector<std::pair<TaxID, uint32_t>> taxCnt;
+};
+
 struct Assembly {
     std::string name;
     TaxID taxid;
@@ -125,12 +133,15 @@ struct Query {
     std::string name;
     std::map<TaxID,int> taxCnt; // 8 byte per element
     std::vector<std::pair<TaxID, float>> species2Score;
+    std::vector<SpeciesCandidate> speciesCandidates;
 
-    Query() = default;
+    Query()
+        : classification(0), idScore(0), subScore(0), eValue(-1), hammingDist(0),
+          queryLength(0), queryLength2(0), kmerCnt(0), kmerCnt2(0), topSpeciesId(0) {}
     Query(int queryLength, int kmerCnt, const std::string & name)
         : classification(0), idScore(0), subScore(0), eValue(-1), hammingDist(0),
           queryLength(queryLength), queryLength2(0), kmerCnt(kmerCnt), kmerCnt2(0),
-          name(name) {}
+          topSpeciesId(0), name(name) {}
 };
 
 struct ProteinQuery {

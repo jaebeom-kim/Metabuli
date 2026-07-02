@@ -1,5 +1,6 @@
 #ifndef METABULI_REPORTER_H
 #define METABULI_REPORTER_H
+#include "CandidateDBWriter.h"
 #include "common.h"
 #include "iostream"
 #include "fstream"
@@ -27,8 +28,10 @@ private:
     string reportFileName_em;
     string reportFileName_em_reclassify;   
     string reclassifyFileName;
+    string speciesCandidateFileName;
     
     ofstream readClassificationFile;
+    CandidateDBWriter *speciesCandidateWriter = nullptr;
     WriteBuffer<MappingRes> * mappingResBuffer = nullptr;
     bool isFirstTime = true;
     unordered_map<TaxID, TaxID> originalTaxIdCache;
@@ -43,6 +46,8 @@ public:
     Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const std::string &customReportFileName = "");
 
     ~Reporter() {
+        closeSpeciesCandidateFile();
+        delete speciesCandidateWriter;
         if (mappingResBuffer) {
             mappingResBuffer->flush();
             delete mappingResBuffer;
@@ -128,6 +133,9 @@ public:
     void openReadClassificationFile();
     void writeReadClassification(const vector<Query> & queryList, bool classifiedOnly = false);
     void closeReadClassificationFile();
+    void openSpeciesCandidateFile();
+    void writeSpeciesCandidates(const vector<Query> & queryList, uint32_t offset);
+    void closeSpeciesCandidateFile();
 
     void freeMappingWriteBuffer() {
         if (mappingResBuffer) {
@@ -204,6 +212,10 @@ public:
 
     std::string getMappingFileName() const {
         return mappingResFileName;
+    }
+
+    std::string getSpeciesCandidateFileName() const {
+        return speciesCandidateFileName;
     }
 };
 
