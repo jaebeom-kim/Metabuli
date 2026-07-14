@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -42,13 +43,16 @@ std::unordered_map<TaxID, uint64_t> loadGenomeSizes(const std::string &dbDir) {
         if (tab1 == std::string::npos) continue;
         const size_t tab2 = line.find('\t', tab1 + 1);
         if (tab2 == std::string::npos) continue;
-        try {
-            const TaxID spId = static_cast<TaxID>(std::stoul(line.substr(0, tab1)));
-            const uint64_t genomeSize = std::stoull(line.substr(tab2 + 1));
-            sp2genomeSize[spId] = genomeSize;
-        } catch (const std::exception &) {
-            continue; // skip malformed lines
-        }
+
+        // Exception-free parsing (the project is built with -fno-exceptions).
+        const std::string spIdStr = line.substr(0, tab1);
+        const std::string sizeStr = line.substr(tab2 + 1);
+        char *endPtr = nullptr;
+        const unsigned long long spId = std::strtoull(spIdStr.c_str(), &endPtr, 10);
+        if (endPtr == spIdStr.c_str()) continue; // no parseable species id
+        const unsigned long long genomeSize = std::strtoull(sizeStr.c_str(), &endPtr, 10);
+        if (endPtr == sizeStr.c_str()) continue; // no parseable genome size
+        sp2genomeSize[static_cast<TaxID>(spId)] = static_cast<uint64_t>(genomeSize);
     }
     return sp2genomeSize;
 }
