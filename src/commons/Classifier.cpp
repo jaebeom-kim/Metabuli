@@ -974,6 +974,21 @@ bool Classifier::assignTaxonomyFromCandidateDB(
                 }
                 queryList[i] = std::move(query);
             }
+
+            // Merge this thread's per-species coverage into the global map
+            // (parity with assignTaxonomy's MatchWithPos path).
+            if (par.storeKmerPos) {
+                for (auto& [spId, localArray] : taxonomer.sp2coverage) {
+                    #pragma omp critical(sp2coverage_merge)
+                    {
+                        sp2totalReadLength[spId] += taxonomer.sp2totalReadLength[spId];
+                        if (sp2coverage_global.find(spId) == sp2coverage_global.end()) {
+                            sp2coverage_global[spId].resize(65536, 0);
+                        }
+                        saturatingAddBins(sp2coverage_global[spId].data(), localArray.data(), 65536);
+                    }
+                }
+            }
         }
     }
 
@@ -1012,7 +1027,28 @@ bool Classifier::classifyCandidates(const std::string &candidateDb)
     unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxCounts, parentToChildren);
     std::unordered_map<TaxID, double> avgScores;
     addAverageScoresToMap(cladeScoreSums, cladeCounts, avgScores);
-    reporter->writeReportFile(processedReadCnt, cladeCounts, avgScores, ReportType::Default);
+
+    // When the candidate DB carries k-mer positions, emit genome coverage
+    // metrics in the report (parity with the position-aware classify path).
+    const bool withCoverage = par.storeKmerPos && !sp2coverage_global.empty();
+    if (withCoverage) {
+        parseSp2GenomeSize();
+        for (const auto& [spId, bins] : sp2coverage_global) {
+            auto countIt = cladeCounts.find(spId);
+            if (countIt == cladeCounts.end() || countIt->second.cladeCount == 0) {
+                continue;
+            }
+            sp2covMetric[spId] = calCovMetrics(
+                bins,
+                countIt->second.cladeCount,
+                sp2totalReadLength[spId],
+                sp2genomeSize[spId]);
+        }
+        rollUpCoverageMetrics(parentToChildren, cladeCounts, sp2covMetric, 1);
+        reporter->writeReportFile(processedReadCnt, cladeCounts, sp2covMetric, avgScores, ReportType::Default);
+    } else {
+        reporter->writeReportFile(processedReadCnt, cladeCounts, avgScores, ReportType::Default);
+    }
 
     if (par.minAvgScore > 0) {
         const string classificationFileName = reporter->getClassificationFileName();
@@ -1033,12 +1069,29 @@ bool Classifier::classifyCandidates(const std::string &candidateDb)
         addAverageScoresToMap(filteredCladeScoreSums, filteredCladeCounts, filteredAvgScores);
 
         reporter->setReportFileName(filteredReportFileName(classificationFileName));
-        reporter->writeReportFile(
-            processedReadCnt,
-            filteredCladeCounts,
-            filteredAvgScores,
-            ReportType::Default,
-            filteredKronaFileName(classificationFileName));
+        if (withCoverage) {
+            unordered_map<TaxID, CovMetric> filteredSp2covMetric;
+            for (const auto &coverageEntry : sp2coverage_global) {
+                auto metricIt = sp2covMetric.find(coverageEntry.first);
+                if (metricIt != sp2covMetric.end()) {
+                    filteredSp2covMetric.emplace(metricIt->first, metricIt->second);
+                }
+            }
+            reporter->writeReportFile(
+                processedReadCnt,
+                filteredCladeCounts,
+                filteredSp2covMetric,
+                filteredAvgScores,
+                ReportType::Default,
+                filteredKronaFileName(classificationFileName));
+        } else {
+            reporter->writeReportFile(
+                processedReadCnt,
+                filteredCladeCounts,
+                filteredAvgScores,
+                ReportType::Default,
+                filteredKronaFileName(classificationFileName));
+        }
     }
 
     std::cout << "Taxonomic classification completed." << std::endl;

@@ -297,6 +297,24 @@ void Taxonomer<MatchType>::chooseBestTaxonFromCandidates(
     query.eValue = std::exp(selectedCandidate.logE);
     query.hammingDist = 0;
 
+    // Aggregate genome coverage for the winning species using its stored k-mer
+    // positions (mirrors chooseBestTaxon's bin marking, giving classify-candidates
+    // coverage parity with the position-aware classify path). Only the single
+    // winner contributes; the LCA/empty branches above return without marking.
+    if (par.storeKmerPos) {
+        sp2totalReadLength[selectedCandidate.speciesId] += candidateEntry.queryLength;
+        std::vector<uint8_t> &speciesBins = sp2coverage[selectedCandidate.speciesId];
+        if (speciesBins.empty()) {
+            speciesBins.resize(65536, 0);
+        }
+        uint8_t *bins = speciesBins.data();
+        for (const uint16_t pos : selectedCandidate.kmerPositions) {
+            if (bins[pos] < 255) {
+                bins[pos]++;
+            }
+        }
+    }
+
     taxCnt.clear();
     for (const auto &taxCount : selectedCandidate.taxCnt) {
         taxCnt[taxCount.first] = taxCount.second;
