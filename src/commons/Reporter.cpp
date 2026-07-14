@@ -139,6 +139,10 @@ Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const 
         reportFileName = customReportFileName;
     } else {
         if (par.targetTaxId != 0) {return;}
+        if (par.candidateOnly) { // create-candidates module: only the candidate DB is written
+            speciesCandidateFileName = par.mappingOutput;
+            return;
+        }
         if (par.contamList == "") { // classify module
             if (par.seqMode == 2) {
                 outDir = par.filenames[3];

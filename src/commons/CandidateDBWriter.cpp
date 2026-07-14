@@ -4,7 +4,9 @@
 
 namespace {
 constexpr uint32_t CANDIDATE_RECORD_MAGIC = 0x444e4143; // CAND
-constexpr uint32_t CANDIDATE_RECORD_VERSION = 1;
+// v1: speciesId/idScore/subScore/logE/taxCnt per candidate.
+// v2: adds a per-candidate list of unique k-mer positions (posId bins).
+constexpr uint32_t CANDIDATE_RECORD_VERSION = 2;
 
 template <typename T>
 void appendPod(std::string &buffer, const T &value) {
@@ -102,6 +104,12 @@ void CandidateDBWriter::serializeQuery(const Query &query, std::string &buffer) 
         for (const auto &taxCount : candidate.taxCnt) {
             appendPod(buffer, taxCount.first);
             appendPod(buffer, taxCount.second);
+        }
+
+        const uint32_t posCount = static_cast<uint32_t>(candidate.kmerPositions.size());
+        appendPod(buffer, posCount);
+        for (const uint16_t pos : candidate.kmerPositions) {
+            appendPod(buffer, pos);
         }
     }
 }

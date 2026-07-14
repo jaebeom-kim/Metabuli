@@ -354,11 +354,11 @@ public:
     MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2, uint32_t count, bool fromR = false) const override;
     MatchScore calMatchScore(uint64_t kmer1, uint64_t kmer2) const override;
 
-    void printAA(uint64_t value) const override {
+    void printAA(uint64_t) const override {
         return;
     }
-    
-    void printDNA(uint64_t value) const override {
+
+    void printDNA(uint64_t) const override {
         return;
     }
 };
@@ -420,7 +420,7 @@ public:
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2, int count, bool fromR) const override;
     uint8_t hammingDistSum(uint64_t kmer1, uint64_t kmer2) const override;
 
-    MatchScore calMatchScore(uint64_t aa, uint64_t codon1, uint64_t codon2, uint32_t validPosMask) const override {
+    MatchScore calMatchScore(uint64_t, uint64_t, uint64_t, uint32_t) const override {
         cerr << "calMatchScore(aa, codon1, codon2) is not implemented for MultiCodePattern." << std::endl;
         exit(1);
     }

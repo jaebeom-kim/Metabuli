@@ -24,4 +24,5 @@ set(util_source_files
         util/create_common_kmer_list.cpp
         util/create_unique_kmer_list.cpp
         util/inspect_db.cpp
+        util/view-candidates.cpp
         PARENT_SCOPE)

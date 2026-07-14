@@ -31,6 +31,10 @@ add_executable(metabuli
         MetabuliBase.cpp)
 
 mmseqs_setup_derived_target(metabuli)
+# mmseqs forces -std=c++1y (C++14) via CMAKE_CXX_FLAGS; override it for this
+# target so the C++17 features used here (if constexpr, structured bindings) are
+# compiled as C++17 rather than warned about as extensions.
+target_compile_options(metabuli PRIVATE -std=c++17)
 target_link_libraries(metabuli version)
 target_link_libraries(metabuli prodigal)
 target_link_libraries(metabuli fasta_validator)

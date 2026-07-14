@@ -35,6 +35,16 @@ struct CovMetric {
     double macroCoverage;
 };
 
+// Compute genome-coverage metrics for one species from its per-bin hit counts.
+// `bins` is a genome-position histogram (posId -> count), `readCnt` the number of
+// reads contributing to it, `totalReadLength` their summed length, `genomeSize`
+// the species genome size. Shared by the classify and filter-candidates paths.
+CovMetric computeCoverageMetric(
+    const std::vector<uint8_t> &bins,
+    uint64_t readCnt,
+    uint64_t totalReadLength,
+    uint64_t genomeSize);
+
 
 struct MappingRes {
     MappingRes(uint32_t queryId, TaxID speicesId, float score) 
@@ -51,6 +61,10 @@ struct SpeciesCandidate {
     float subScore = 0.0f;
     float logE = 0.0f;
     std::vector<std::pair<TaxID, uint32_t>> taxCnt;
+    // Unique genome bins (k-mer positions, posId) this read touched for this
+    // species. Populated only when the DB stores k-mer positions. Used later to
+    // estimate per-species genome coverage from a candidate DB.
+    std::vector<uint16_t> kmerPositions;
 };
 
 struct Assembly {

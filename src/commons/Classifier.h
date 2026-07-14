@@ -123,6 +123,9 @@ protected:
 public:
     void classifyReads();
     void classifyReadsWithPos();
+    void generateCandidates();
+    template <typename MatchType>
+    void generateCandidatesImpl();
     bool classifyCandidates(const std::string &candidateDb);
 
     uint64_t calculateBufferSize(
@@ -135,6 +138,12 @@ public:
                         size_t numOfMatches,
                         std::vector<Query> & queryList,
                         const LocalParameters &par);
+
+    template <typename MatchType>
+    void collectCandidates(const MatchType *matchList,
+                           size_t numOfMatches,
+                           std::vector<Query> & queryList,
+                           const LocalParameters &par);
 
     template <typename MatchType>
     bool assignTaxonomyFromCandidateDB(

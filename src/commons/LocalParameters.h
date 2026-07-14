@@ -24,6 +24,9 @@ public:
 
     std::vector<MMseqsParameter*> classify;
     std::vector<MMseqsParameter*> classifyCandidates;
+    std::vector<MMseqsParameter*> createCandidates;
+    std::vector<MMseqsParameter*> filterCandidates;
+    std::vector<MMseqsParameter*> viewCandidates;
     std::vector<MMseqsParameter*> groupGeneration;
     std::vector<MMseqsParameter*> extract;
     std::vector<MMseqsParameter*> filter;
@@ -104,8 +107,11 @@ public:
     PARAMETER(TOP_SPECIES)
     PARAMETER(MAPPING_OUTPUT)
 
-    // classify || refine-report 
+    // classify || refine-report
     PARAMETER(MIN_AVG_SCORE)
+    // filter-candidates: coverage-based species filtering
+    PARAMETER(MIN_ADJ_EVENNESS)
+    PARAMETER(COV_USE_ALL_HITS)
     PARAMETER(MIN_CLADE_COUNT)
     PARAMETER(MIN_CLADE_PROPORTION)
     PARAMETER(PRINT_FILTERED_RESULTS)
@@ -224,7 +230,10 @@ public:
     std::string priorityTaxa;
     int topSpecies;
     std::string mappingOutput;
+    bool candidateOnly; // create-candidates: write species-candidate DB and skip classification
     float minAvgScore;
+    float minAdjEvenness;  // filter-candidates: remove species with adjustedEvenness below this
+    int covUseAllHits;     // filter-candidates: 1 = aggregate coverage over all candidate hits, 0 = top hit per read only
     int minCladeCount;
     float minCladeProportion;
     std::string outFilteredResults;

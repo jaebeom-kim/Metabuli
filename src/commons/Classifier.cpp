@@ -483,6 +483,183 @@ void Classifier::classifyReads() {
 
 }
 
+void Classifier::generateCandidates() {
+    // When the DB carries k-mer positions (par.storeKmerPos, set by
+    // loadDbParameters), match with MatchWithPos so each candidate can record the
+    // genome bins it touched; otherwise use the lighter position-less path.
+    if (par.storeKmerPos) {
+        std::cout << "Storing k-mer positions per candidate species." << std::endl;
+        generateCandidatesImpl<MatchWithPos>();
+    } else {
+        generateCandidatesImpl<Match>();
+    }
+}
+
+template <typename MatchType>
+void Classifier::generateCandidatesImpl() {
+    constexpr bool withPos = std::is_same<MatchType, MatchWithPos>::value;
+    Buffer<Kmer> queryKmerBuffer;
+    Buffer<MatchType> matchBuffer;
+    vector<Query> queryList;
+    queryList.reserve(512 * 1024);
+
+    reporter->openSpeciesCandidateFile();
+
+    bool complete = false;
+    SeqEntry * savedSeq_1 = new SeqEntry();
+    SeqEntry * savedSeq_2 = new SeqEntry();
+    uint64_t processedReadCnt = 0;
+
+    std::cout << "--------------------" << std::endl;
+    while (!complete) {
+        KSeqWrapper* kseq1 = KSeqFactory(par.filenames[0].c_str());
+        KSeqWrapper* kseq2 = par.seqMode == 2 ? KSeqFactory(par.filenames[1].c_str()) : nullptr;
+
+        // Move kseq to unprocessed reads
+        for (size_t i = 0; i < processedReadCnt; i++) {
+            kseq1->ReadEntry();
+            if (par.seqMode == 2) { kseq2->ReadEntry(); }
+        }
+
+        size_t queryKmerBufferSize = calculateBufferSize(queryList.size(), matchPerKmer, withPos ? 2 : 1);
+        queryKmerBuffer.reallocateMemory(queryKmerBufferSize);
+        matchBuffer.reallocateMemory(queryKmerBufferSize * matchPerKmer);
+
+        bool moreReads = true;
+        while (moreReads) {
+            queryList.clear();
+            queryKmerBuffer.init();
+            matchBuffer.startIndexOfReserve = 0;
+
+            // 1) Extract query k-mers
+            time_t start = time(nullptr);
+            std::cout << "Query k-mer extraction : " << std::flush;
+            uint64_t seqCnt = 0;
+            moreReads = kmerExtractor->extractQueryKmers(
+                    queryKmerBuffer,
+                    queryList,
+                    seqCnt,
+                    savedSeq_1,
+                    savedSeq_2,
+                    kseq1,
+                    kseq2);
+            std::cout << difftime(time(nullptr), start) << " s" << std::endl;
+
+            // 2) Sort k-mers
+            start = time(nullptr);
+            std::cout << "Query k-mer sorting    : " << std::flush;
+            SORT_PARALLEL(queryKmerBuffer.buffer, queryKmerBuffer.buffer + queryKmerBuffer.startIndexOfReserve, Kmer::compareQueryKmer);
+            std::cout << difftime(time(nullptr), start) << " s" << std::endl;
+
+            // 3) Match k-mers
+            bool searchComplete;
+            if constexpr (withPos) {
+                searchComplete = kmerMatcher->matchKmersWithPos(&queryKmerBuffer, &matchBuffer, dbDir);
+            } else {
+                searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer, dbDir);
+            }
+            if (searchComplete) {
+                std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
+
+                // 4) Sort matches
+                if constexpr (withPos) {
+                    SORT_PARALLEL(matchBuffer.buffer,
+                                  matchBuffer.buffer + matchBuffer.startIndexOfReserve,
+                                  MatchWithPos::compare);
+                } else {
+                    kmerMatcher->sortMatches(&matchBuffer);
+                }
+
+                // 5) Collect species candidates (no classification)
+                collectCandidates(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
+
+                // 6) Write the candidate DB
+                start = time(nullptr);
+                std::cout << "Writing candidates     : " << std::flush;
+                reporter->writeSpeciesCandidates(queryList, processedReadCnt);
+                processedReadCnt += seqCnt;
+                std::cout << difftime(time(nullptr), start) << " s" << std::endl;
+                std::cout << "Processed read count   : " << processedReadCnt << std::endl;
+            } else {
+                matchPerKmer *= 2;
+                moreReads = true;
+                std::cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << std::endl;
+                break;
+            }
+            std::cout << "--------------------" << std::endl;
+        }
+        delete kseq1;
+        if (par.seqMode == 2) {
+            delete kseq2;
+        }
+        if (!moreReads) {
+            complete = true;
+        }
+        std::cout << "--------------------" << std::endl;
+    }
+    delete savedSeq_1;
+    delete savedSeq_2;
+    std::cout << "Total k-mer match count: " << kmerMatcher->getTotalMatchCnt() << std::endl;
+    reporter->closeSpeciesCandidateFile();
+    std::cout << "Candidate DB written to: " << reporter->getSpeciesCandidateFileName() << std::endl;
+    std::cout << "Species-candidate DB generation completed." << std::endl;
+}
+
+template <typename MatchType>
+void Classifier::collectCandidates(const MatchType *matchList,
+                                   size_t numOfMatches,
+                                   std::vector<Query> &queryList,
+                                   const LocalParameters &par) {
+    time_t beforeAnalyze = time(nullptr);
+    std::cout << "K-mer match analysis   : " << std::flush;
+    size_t seqNum = queryList.size();
+    std::vector<MatchBlock> matchBlocks;
+    matchBlocks.reserve(std::min(seqNum, numOfMatches));
+    size_t matchIdx = 0;
+    uint32_t currentQuery;
+    if (par.printLog == 1) {
+#ifdef OPENMP
+        omp_set_num_threads(1);
+#endif
+    }
+    while (matchIdx < numOfMatches) {
+        currentQuery = matchList[matchIdx].qKmer.qInfo.sequenceID;
+        MatchBlock block;
+        block.id = currentQuery;
+        block.start = matchIdx;
+        while (matchIdx < numOfMatches && currentQuery == matchList[matchIdx].qKmer.qInfo.sequenceID) {
+            ++matchIdx;
+        }
+        block.end = matchIdx - 1;
+        matchBlocks.push_back(block);
+    }
+
+    std::vector<uint8_t> priorityTaxonLookup = Taxonomer<MatchType>::makePriorityTaxonLookup(par, taxonomy);
+
+    if (!matchBlocks.empty()) {
+#pragma omp parallel default(none), shared(matchBlocks, matchList, queryList, par, priorityTaxonLookup)
+        {
+            Taxonomer<MatchType> taxonomer(par, taxonomy, metamerPattern, &priorityTaxonLookup);
+            #pragma omp for schedule(guided, 8)
+            for (size_t i = 0; i < matchBlocks.size(); ++i) {
+                taxonomer.collectSpeciesCandidates(
+                                matchBlocks[i].id - 1,
+                                matchBlocks[i].start,
+                                matchBlocks[i].end,
+                                matchList,
+                                queryList);
+            }
+        }
+    }
+
+    if (par.printLog) {
+#ifdef OPENMP
+        omp_set_num_threads(par.threads);
+#endif
+    }
+    cout << double(time(nullptr) - beforeAnalyze) << " s" << endl;
+}
+
 void Classifier::classifyReadsWithPos() {
     Buffer<Kmer> queryKmerBuffer;
     Buffer<MatchWithPos> matchBuffer;
@@ -1171,80 +1348,13 @@ CovMetric Classifier::calCovMetrics(
     const std::vector<uint8_t>& bins,
     int readCnt,
     uint64_t totalReadLength,
-    uint64_t genomeSize) 
+    uint64_t genomeSize)
 {
-    uint64_t totalCount = 0;
-    double sum_c_log_c = 0.0;
-    int occupiedBins = 0;
-
-    // Macro-bin tracking
-    int occupiedMacroBins = 0;
-    bool macro_seen[256] = {false};
-
-    size_t binLimit = std::min(genomeSize + 1, static_cast<uint64_t>(65536));
-    for (size_t i = 1; i < binLimit; ++i) {
-        uint8_t count = bins[i];
-        if (count == 0) continue; // Skip empty bins
-
-        totalCount += count;
-        occupiedBins++;
-        sum_c_log_c += C_LOG2_C[count];
-
-        size_t macro_bin_idx = i >> 8; // Equivalent to i / 256
-        if (!macro_seen[macro_bin_idx]) {
-            macro_seen[macro_bin_idx] = true;
-            occupiedMacroBins++;
-        }
-    }
-
-    if (totalCount == 0) {
-        return {0.0, 0.0, 0.0, 0.0, 0.0};
-    }
-
-    double effective_bins = std::min(65535.0, static_cast<double>(genomeSize));
-    if (effective_bins <= 1.0) {
-        return {0.0, 0.0, 0.0, 0.0, 0.0};
-    }
-
-    // Calculate Macro-bin Coverage
-    double max_macro_bins = std::ceil(effective_bins / 256.0);
-    max_macro_bins = std::min(max_macro_bins, 256.0);
-    double macro_coverage = static_cast<double>(occupiedMacroBins) / max_macro_bins;
-    macro_coverage = std::min(1.0, macro_coverage);
-
-    // 3. Calculate Coverage (Breadth)
-    double coverage = static_cast<double>(occupiedBins) / effective_bins;
-    coverage = std::min(1.0, coverage); // Clamped just in case
-
-    // 4. Calculate Observed Shannon Entropy (H_obs)
-    double H_obs = std::log2(static_cast<double>(totalCount)) - (sum_c_log_c / totalCount);
-    H_obs = std::max(0.0, H_obs);
-    
-    // 5. Calculate Standard Evenness
-    // Normalized strictly against the maximum capacity of the genome
-    double max_H_standard = std::log2(effective_bins);
-    double evenness = (max_H_standard > 0.0001) ? std::min(1.0, H_obs / max_H_standard) : 0.0;
-
-    // 6. Calculate Expected Occupied Bins under random uniform distribution
-    double read_length = static_cast<double>(totalReadLength) / readCnt;
-    double bin_size_bp = static_cast<double>(genomeSize) / effective_bins;
-    double bins_per_read = 1.0 + (read_length / bin_size_bp);
-    double expected_occupied = effective_bins * (1.0 - std::exp(-(readCnt * bins_per_read) / effective_bins));
-
-    // 7. Calculate Expected Maximum Entropy (Poisson adjusted)
-    double expected_max_H = std::log2(std::max(1.0, expected_occupied));
-
-    // 8. Calculate Adjusted Evenness
-    double adjustedEvenness = 0.0;
-    if (expected_max_H >= 0.0001) {
-        adjustedEvenness = std::min(1.0, H_obs / expected_max_H);
-    }
-
-
-    double unified_score = std::pow(2.0, H_obs) / effective_bins;
-
-    // 9. Return the populated struct
-    return {evenness, coverage, adjustedEvenness, unified_score, macro_coverage};
+    return computeCoverageMetric(
+        bins,
+        static_cast<uint64_t>(readCnt < 0 ? 0 : readCnt),
+        totalReadLength,
+        genomeSize);
 }
 
 

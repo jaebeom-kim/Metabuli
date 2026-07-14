@@ -204,7 +204,15 @@ public:
                          size_t offset,
                          size_t end,
                          const MatchType *matchList,
-                         vector<Query> & queryList);      
+                         vector<Query> & queryList);
+
+    // Collect the top-N species candidates for a query (multi-mapping) without
+    // committing to a final classification or any lower-rank resolution.
+    void collectSpeciesCandidates(uint32_t currentQuery,
+                                  size_t offset,
+                                  size_t end,
+                                  const MatchType *matchList,
+                                  vector<Query> & queryList);
 
     void chooseBestTaxonFromCandidates(
         const CandidateDBEntry &candidateEntry,

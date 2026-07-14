@@ -9,6 +9,8 @@
 #include "Util.h"
 #include "sys/mman.h"
 #include <fcntl.h>
+#include <algorithm>
+#include <cmath>
 
 const std::string atcg =
     "................................................................"
@@ -23,7 +25,99 @@ const std::string iRCT =
     "................................................................";
 
 
-    
+CovMetric computeCoverageMetric(
+    const std::vector<uint8_t> &bins,
+    uint64_t readCnt,
+    uint64_t totalReadLength,
+    uint64_t genomeSize)
+{
+    // c * log2(c) lookup for c in [0, 255] (bins saturate at 255).
+    static const std::vector<double> C_LOG2_C = [] {
+        std::vector<double> table(256, 0.0);
+        for (int i = 1; i < 256; ++i) {
+            table[i] = i * std::log2(static_cast<double>(i));
+        }
+        return table;
+    }();
+
+    if (readCnt == 0) {
+        return {0.0, 0.0, 0.0, 0.0, 0.0};
+    }
+
+    uint64_t totalCount = 0;
+    double sum_c_log_c = 0.0;
+    int occupiedBins = 0;
+
+    // Macro-bin tracking
+    int occupiedMacroBins = 0;
+    bool macro_seen[256] = {false};
+
+    uint64_t binLimit64 = std::min<uint64_t>(genomeSize + 1, static_cast<uint64_t>(65536));
+    binLimit64 = std::min<uint64_t>(binLimit64, static_cast<uint64_t>(bins.size()));
+    const size_t binLimit = static_cast<size_t>(binLimit64);
+    for (size_t i = 1; i < binLimit; ++i) {
+        uint8_t count = bins[i];
+        if (count == 0) continue; // Skip empty bins
+
+        totalCount += count;
+        occupiedBins++;
+        sum_c_log_c += C_LOG2_C[count];
+
+        size_t macro_bin_idx = i >> 8; // Equivalent to i / 256
+        if (!macro_seen[macro_bin_idx]) {
+            macro_seen[macro_bin_idx] = true;
+            occupiedMacroBins++;
+        }
+    }
+
+    if (totalCount == 0) {
+        return {0.0, 0.0, 0.0, 0.0, 0.0};
+    }
+
+    double effective_bins = std::min(65535.0, static_cast<double>(genomeSize));
+    if (effective_bins <= 1.0) {
+        return {0.0, 0.0, 0.0, 0.0, 0.0};
+    }
+
+    // Macro-bin Coverage
+    double max_macro_bins = std::ceil(effective_bins / 256.0);
+    max_macro_bins = std::min(max_macro_bins, 256.0);
+    double macro_coverage = static_cast<double>(occupiedMacroBins) / max_macro_bins;
+    macro_coverage = std::min(1.0, macro_coverage);
+
+    // Coverage (breadth)
+    double coverage = static_cast<double>(occupiedBins) / effective_bins;
+    coverage = std::min(1.0, coverage);
+
+    // Observed Shannon entropy
+    double H_obs = std::log2(static_cast<double>(totalCount)) - (sum_c_log_c / totalCount);
+    H_obs = std::max(0.0, H_obs);
+
+    // Standard evenness (normalized against the genome's maximum capacity)
+    double max_H_standard = std::log2(effective_bins);
+    double evenness = (max_H_standard > 0.0001) ? std::min(1.0, H_obs / max_H_standard) : 0.0;
+
+    // Expected occupied bins under random uniform placement
+    double read_length = static_cast<double>(totalReadLength) / static_cast<double>(readCnt);
+    double bin_size_bp = static_cast<double>(genomeSize) / effective_bins;
+    double bins_per_read = 1.0 + (read_length / bin_size_bp);
+    double expected_occupied = effective_bins * (1.0 - std::exp(-(static_cast<double>(readCnt) * bins_per_read) / effective_bins));
+
+    // Expected maximum entropy (Poisson adjusted)
+    double expected_max_H = std::log2(std::max(1.0, expected_occupied));
+
+    // Adjusted evenness
+    double adjustedEvenness = 0.0;
+    if (expected_max_H >= 0.0001) {
+        adjustedEvenness = std::min(1.0, H_obs / expected_max_H);
+    }
+
+    double unified_score = std::pow(2.0, H_obs) / effective_bins;
+
+    return {evenness, coverage, adjustedEvenness, unified_score, macro_coverage};
+}
+
+
 void process_mem_usage(double &vm_usage, double &resident_set) {
   vm_usage = 0.0;
   resident_set = 0.0;

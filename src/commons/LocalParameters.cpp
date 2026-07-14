@@ -324,8 +324,8 @@ LocalParameters::LocalParameters() :
                         "[0-1]"),
         MAX_HDIST(MAX_HDIST_ID,
                         "--max-hdist",
-                        "Use k-mer matches with Hamming distance <= this value",
-                        "Use all k-mer matches with Hamming distance <= this value (-1 disables)",
+                        "Max. DNA Hamming dist. of a metamer match (-1 to disable)",
+                        "Max. DNA Hamming dist. of a metamer match (-1 to disable)",
                         typeid(int),
                         (void *) &maxHdist,
                         "^-?[0-9]+$"),
@@ -357,6 +357,20 @@ LocalParameters::LocalParameters() :
                 typeid(float),
                 (void *) &minAvgScore,
                 "^0(\\.[0-9]+)?|1(\\.0+)?$"),
+        MIN_ADJ_EVENNESS(MIN_ADJ_EVENNESS_ID,
+                "--min-adj-evenness",
+                "Min. adjusted evenness of genome coverage (filter-candidates)",
+                "filter-candidates: remove candidate species whose genome coverage has an adjusted evenness below this value (0.0-1.0). Requires a candidate DB built with k-mer positions.",
+                typeid(float),
+                (void *) &minAdjEvenness,
+                "^0(\\.[0-9]+)?|1(\\.0+)?$"),
+        COV_USE_ALL_HITS(COV_USE_ALL_HITS_ID,
+                "--cov-use-all-hits",
+                "Coverage from all candidate hits (filter-candidates)",
+                "filter-candidates: 1 = aggregate genome coverage from all candidate species per read; 0 = use only the top-scoring candidate per read.",
+                typeid(int),
+                (void *) &covUseAllHits,
+                "^[0-1]$"),
         MIN_CLADE_COUNT(MIN_CLADE_COUNT_ID,
                 "--min-clade-count",
                 "Min. read count for a clade",
@@ -702,6 +716,9 @@ LocalParameters::LocalParameters() :
                     "^[0-9]+$")
   {
     // Initialize the parameters
+    candidateOnly = false;
+    minAdjEvenness = 0.5f;
+    covUseAllHits = 1;
     // Superkingdom taxonomy id
     virusTaxId = 10239;
     bacteriaTaxId = 2;
@@ -884,6 +901,48 @@ LocalParameters::LocalParameters() :
     classifyCandidates.push_back(&USE_ALL_MATCHES);
     classifyCandidates.push_back(&DB_TOTAL_LENGTH);
     classifyCandidates.push_back(&MAX_SHIFT);
+
+    // create-candidates (generates the species-candidate DB only)
+    createCandidates.push_back(&PARAM_THREADS);
+    createCandidates.push_back(&SEQ_MODE);
+    createCandidates.push_back(&PRECISION_MODE);
+    createCandidates.push_back(&MIN_SCORE);
+    createCandidates.push_back(&MIN_SP_SCORE);
+    createCandidates.push_back(&MIN_AA_MATCH);
+    createCandidates.push_back(&MIN_AA_MATCH_EUK);
+    createCandidates.push_back(&TAXONOMY_PATH);
+    createCandidates.push_back(&PARAM_MASK_RESIDUES);
+    createCandidates.push_back(&PARAM_MASK_PROBABILTY);
+    createCandidates.push_back(&RAM_USAGE);
+    createCandidates.push_back(&MATCH_PER_KMER);
+    createCandidates.push_back(&ACCESSION_LEVEL);
+    createCandidates.push_back(&TIE_RATIO);
+    createCandidates.push_back(&MIN_AVG_SCORE);
+    createCandidates.push_back(&VALIDATE_INPUT);
+    createCandidates.push_back(&VALIDATE_DB);
+    createCandidates.push_back(&SYNCMER);
+    createCandidates.push_back(&SMER_LEN);
+    createCandidates.push_back(&PARAM_SUB_MAT);
+    createCandidates.push_back(&PRINT_LOG);
+    createCandidates.push_back(&PMD_KMER);
+    createCandidates.push_back(&DISABLE_TRIMMING);
+    createCandidates.push_back(&SCORE_MODE);
+    createCandidates.push_back(&MAX_E_VALUE);
+    createCandidates.push_back(&TIE_BRAKER);
+    createCandidates.push_back(&USE_ALL_MATCHES);
+    createCandidates.push_back(&MAX_HDIST);
+    createCandidates.push_back(&TOP_SPECIES);
+    createCandidates.push_back(&DB_TOTAL_LENGTH);
+    createCandidates.push_back(&MAX_SHIFT);
+
+    // filter-candidates (prune a species-candidate DB by average score and genome coverage)
+    filterCandidates.push_back(&PARAM_THREADS);
+    filterCandidates.push_back(&MIN_AVG_SCORE);
+    filterCandidates.push_back(&MIN_ADJ_EVENNESS);
+    filterCandidates.push_back(&COV_USE_ALL_HITS);
+
+    // view-candidates (dump a species-candidate DB to human-readable TSV)
+    viewCandidates.push_back(&PARAM_THREADS);
 
     assignUniref.push_back(&PARAM_THREADS);
     assignUniref.push_back(&RAM_USAGE);

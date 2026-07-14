@@ -6,7 +6,9 @@
 
 namespace {
 constexpr uint32_t CANDIDATE_RECORD_MAGIC = 0x444e4143; // CAND
-constexpr uint32_t CANDIDATE_RECORD_VERSION = 1;
+// v1: speciesId/idScore/subScore/logE/taxCnt per candidate.
+// v2: adds a per-candidate list of unique k-mer positions (posId bins).
+constexpr uint32_t CANDIDATE_RECORD_VERSION = 2;
 
 template <typename T>
 bool readPod(const char *data, size_t dataSize, size_t &offset, T &value) {
@@ -105,7 +107,7 @@ bool CandidateDBReader::deserializeEntry(
         return false;
     }
 
-    if (magic != CANDIDATE_RECORD_MAGIC || version != CANDIDATE_RECORD_VERSION) {
+    if (magic != CANDIDATE_RECORD_MAGIC || version < 1 || version > CANDIDATE_RECORD_VERSION) {
         return false;
     }
 
@@ -140,6 +142,22 @@ bool CandidateDBReader::deserializeEntry(
                 return false;
             }
             candidate.taxCnt.emplace_back(taxId, count);
+        }
+
+        // v2+ stores a per-candidate list of unique k-mer positions (posId bins).
+        if (version >= 2) {
+            uint32_t posCount = 0;
+            if (!readPod(data, dataSize, offset, posCount)) {
+                return false;
+            }
+            candidate.kmerPositions.reserve(posCount);
+            for (uint32_t posIdx = 0; posIdx < posCount; ++posIdx) {
+                uint16_t pos = 0;
+                if (!readPod(data, dataSize, offset, pos)) {
+                    return false;
+                }
+                candidate.kmerPositions.push_back(pos);
+            }
         }
         parsed.candidates.push_back(std::move(candidate));
     }
