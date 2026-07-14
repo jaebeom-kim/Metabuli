@@ -609,6 +609,13 @@ LocalParameters::LocalParameters() :
                           typeid(int),
                           (void *) &skipSecondary,
                           "[0-1]"),
+        TOP_HIT_ONLY(TOP_HIT_ONLY_ID,
+                          "--top-hit-only",
+                          "evaluate-candidates: score only the top candidate per read (0: use all candidates, 1: top hit only)",
+                          "evaluate-candidates: score only the top-scoring candidate per read instead of all candidates",
+                          typeid(int),
+                          (void *) &topHitOnly,
+                          "^[0-1]$"),
         PRINT_MODE(PRINT_MODE_ID,
                         "--print-mode",
                        "[1] Only filtered reads [2] Both filtered and removed reads",
@@ -1009,6 +1016,7 @@ LocalParameters::LocalParameters() :
     grade.push_back(&PRINT_COLUMNS);
     grade.push_back(&CLADE_RANK);
     grade.push_back(&SKIP_SECONDARY);
+    grade.push_back(&TOP_HIT_ONLY);
 
     // Apply thresholds
     applyThreshold.push_back(&MIN_SP_SCORE);

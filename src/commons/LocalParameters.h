@@ -159,6 +159,7 @@ public:
     PARAMETER(PRINT_COLUMNS)
     PARAMETER(CLADE_RANK)
     PARAMETER(SKIP_SECONDARY)
+    PARAMETER(TOP_HIT_ONLY)
 
     // Filter
     PARAMETER(PRINT_MODE)
@@ -272,6 +273,7 @@ public:
     int readIdCol;
     int taxidCol;
     int scoreCol;
+    int topHitOnly;  // evaluate-candidates: evaluate only the top-scoring candidate per read
     std::string cladeRank;
     int skipSecondary;
 

@@ -58,6 +58,7 @@ void setGradeDefault(LocalParameters & par){
     par.testRank = "";
     par.testType = "gtdb";
     par.skipSecondary = 0;
+    par.topHitOnly = 0;
 }
 
 int grade(int argc, const char **argv, const Command &command) {

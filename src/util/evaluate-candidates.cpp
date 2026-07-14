@@ -299,9 +299,13 @@ char compareCandidateSetAtRank(
         return '-';
     }
 
+    // Candidates are stored best-first, so --top-hit-only restricts scoring to
+    // the single top-scoring candidate per read.
+    const size_t limit = (par.topHitOnly && candidates.size() > 1) ? 1 : candidates.size();
+
     bool sawFalseCandidate = false;
-    for (const SpeciesCandidate &candidate : candidates) {
-        char p = probeCandidateAtRank(candidate.speciesId, target, taxonomy, par, rank);
+    for (size_t i = 0; i < limit; ++i) {
+        char p = probeCandidateAtRank(candidates[i].speciesId, target, taxonomy, par, rank);
         if (p == 'O') {
             return 'O';
         }
@@ -451,7 +455,7 @@ int evaluateCandidates(int argc, const char **argv, const Command &command) {
                         par,
                         rank);
                     updateCount(p, results[i].countsAtRanks[rank]);
-                    if (p == 'O') {
+                    if (p == 'O' && !par.topHitOnly) {
                         AlternativeCandidateHit altHit = findAlternativeTruePositiveCandidate(
                             entry.candidates,
                             answerIt->second,
