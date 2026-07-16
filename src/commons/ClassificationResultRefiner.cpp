@@ -516,12 +516,12 @@ int ClassificationResultRefiner::runRefineResult(const std::string &classifiedFi
 #pragma omp single
         {
 #ifdef OPENMP
-            resultChunk.resize(10000 * omp_get_num_threads());
-            upperRanks.resize(10000 * omp_get_num_threads());
+            int numThreads = omp_get_num_threads();
 #else
-            resultChunk.resize(10000);
-            upperRanks.resize(10000);
+            int numThreads = 1;
 #endif
+            resultChunk.resize(10000 * numThreads);
+            upperRanks.resize(10000 * numThreads);
             vector<string> chunk;
             string line;
             size_t chunkCnt = 0;
@@ -534,14 +534,14 @@ int ClassificationResultRefiner::runRefineResult(const std::string &classifiedFi
                     chunk.push_back(line);
                 }
 
-                if (chunkCnt > (size_t) 10 * omp_get_num_threads()) {
+                if (chunkCnt > (size_t) 10 * numThreads) {
 #pragma omp taskwait
                     for (const string &line : resultChunk) {
                         refinedFileAppend << line;
                     }
 
                     resultChunk.clear();
-                    resultChunk.resize(10000 * omp_get_num_threads());
+                    resultChunk.resize(10000 * numThreads);
 
                     if (createUpperRanksFile == 2) {
                         for (const string &line : upperRanks) {
@@ -551,7 +551,7 @@ int ClassificationResultRefiner::runRefineResult(const std::string &classifiedFi
                         }
 
                         upperRanks.clear();
-                        upperRanks.resize(10000 * omp_get_num_threads());
+                        upperRanks.resize(10000 * numThreads);
                     }
 
                     chunkCnt = 1;
