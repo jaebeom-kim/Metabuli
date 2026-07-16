@@ -24,6 +24,7 @@
 namespace {
 
 constexpr size_t COVERAGE_BIN_COUNT = 65536;
+constexpr size_t MAX_REPORT_ROWS = 50;
 
 // Load speciesId -> genome size from <dbDir>/species2genomeSize.tsv
 // (col0 = speciesId, col2 = genome size), matching Classifier::parseSp2GenomeSize.
@@ -57,72 +58,22 @@ std::unordered_map<TaxID, uint64_t> loadGenomeSizes(const std::string &dbDir) {
     return sp2genomeSize;
 }
 
-} // namespace
-
-// filter-candidates
+// -------- Filter method 0: average score + genome coverage (adjusted evenness) --------
 //
-// Reads a species-candidate DB (produced by "create-candidates") and writes a NEW
-// candidate DB with low-quality species removed. Two independent filters:
-//   1. --min-avg-score : drop species whose mean idScore across candidate reads is
-//      below the threshold.
-//   2. --min-adj-evenness : when the candidate DB stores k-mer positions, estimate
-//      per-species genome coverage and drop species whose adjusted evenness is below
-//      the threshold (default 0.5). --cov-use-all-hits controls whether coverage is
-//      aggregated from every candidate hit (default) or only the top hit per read.
-// The input DB is left untouched.
-int filterCandidates(int argc, const char **argv, const Command &command) {
-    LocalParameters &par = LocalParameters::getLocalInstance();
-    par.minAvgScore = 0.0f;
-    par.minAdjEvenness = 0.5f;
-    par.covUseAllHits = 1;
-    par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
-
-    const std::string inputDb = par.filenames[0];
-    const std::string dbDir = par.filenames[1];
-    const std::string outputDb = par.filenames[2];
+// Removes a candidate species if its mean idScore is below --min-avg-score, or (when
+// the DB stores k-mer positions and a genome size is known) if its per-species genome
+// coverage has an adjusted evenness below --min-adj-evenness.
+std::unordered_set<TaxID> filterByScoreAndCoverage(
+    CandidateDBReader &reader,
+    size_t entryCount,
+    const std::unordered_map<TaxID, uint64_t> &sp2genomeSize,
+    const LocalParameters &par)
+{
     const float minAvgScore = par.minAvgScore;
     const float minAdjEvenness = par.minAdjEvenness;
     const bool useAllHits = par.covUseAllHits != 0;
 
-    // Validate input candidate DB (data + index)
-    if (!FileUtil::fileExists(inputDb.c_str())) {
-        std::cerr << "Error: candidate DB " << inputDb << " is not found." << std::endl;
-        return 1;
-    }
-    const std::string inputIndex = inputDb + ".index";
-    if (!FileUtil::fileExists(inputIndex.c_str())) {
-        std::cerr << "Error: candidate DB index " << inputIndex << " is not found." << std::endl;
-        return 1;
-    }
-    if (!FileUtil::directoryExists(dbDir.c_str())) {
-        std::cerr << "Error: database directory " << dbDir << " is not found." << std::endl;
-        return 1;
-    }
-    if (inputDb == outputDb) {
-        std::cerr << "Error: output DB must differ from the input DB." << std::endl;
-        return 1;
-    }
-
-    // Make sure the output directory exists
-    const std::string outParent = FileUtil::dirName(outputDb);
-    if (!outParent.empty() && !FileUtil::directoryExists(outParent.c_str())) {
-        FileUtil::makeDir(outParent.c_str());
-    }
-
-    const std::unordered_map<TaxID, uint64_t> sp2genomeSize = loadGenomeSizes(dbDir);
-
-    const int threadCount = par.threads <= 0 ? 1 : par.threads;
-#ifdef OPENMP
-    omp_set_num_threads(threadCount);
-#endif
-
-    CandidateDBReader reader(inputDb, threadCount);
-    if (!reader.open(DBReader<unsigned int>::SORT_BY_ID)) {
-        std::cerr << "Error: failed to open candidate DB " << inputDb << std::endl;
-        return 1;
-    }
-    const size_t entryCount = reader.size();
-    std::cout << "Candidate DB entries   : " << entryCount << std::endl;
+    std::cout << "Filter method          : score + genome coverage" << std::endl;
     std::cout << "Min. average score     : " << minAvgScore
               << (minAvgScore <= 0.0f ? " (score filter disabled)" : "") << std::endl;
     std::cout << "Min. adjusted evenness : " << minAdjEvenness
@@ -138,33 +89,31 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     std::unordered_map<TaxID, uint64_t> sp2readCnt;
     std::unordered_map<TaxID, uint64_t> sp2readLen;
 
-    {
-        CandidateDBEntry entry;
-        for (size_t i = 0; i < entryCount; ++i) {
-            if (!reader.getByIndex(i, entry, 0)) {
-                continue;
-            }
-            for (size_t idx = 0; idx < entry.candidates.size(); ++idx) {
-                const SpeciesCandidate &candidate = entry.candidates[idx];
-                // Average score uses every candidate occurrence.
-                speciesScoreSum[candidate.speciesId] += candidate.idScore;
-                speciesScoreCount[candidate.speciesId] += 1;
+    CandidateDBEntry entry;
+    for (size_t i = 0; i < entryCount; ++i) {
+        if (!reader.getByIndex(i, entry, 0)) {
+            continue;
+        }
+        for (size_t idx = 0; idx < entry.candidates.size(); ++idx) {
+            const SpeciesCandidate &candidate = entry.candidates[idx];
+            // Average score uses every candidate occurrence.
+            speciesScoreSum[candidate.speciesId] += candidate.idScore;
+            speciesScoreCount[candidate.speciesId] += 1;
 
-                // Coverage uses all hits, or only the top-scoring hit (index 0),
-                // and only when this candidate carries k-mer positions.
-                if ((useAllHits || idx == 0) && !candidate.kmerPositions.empty()) {
-                    std::vector<uint8_t> &bins = sp2bins[candidate.speciesId];
-                    if (bins.empty()) {
-                        bins.resize(COVERAGE_BIN_COUNT, 0);
-                    }
-                    for (const uint16_t pos : candidate.kmerPositions) {
-                        if (bins[pos] < 255) {
-                            bins[pos]++;
-                        }
-                    }
-                    sp2readCnt[candidate.speciesId] += 1;
-                    sp2readLen[candidate.speciesId] += entry.queryLength;
+            // Coverage uses all hits, or only the top-scoring hit (index 0),
+            // and only when this candidate carries k-mer positions.
+            if ((useAllHits || idx == 0) && !candidate.kmerPositions.empty()) {
+                std::vector<uint8_t> &bins = sp2bins[candidate.speciesId];
+                if (bins.empty()) {
+                    bins.resize(COVERAGE_BIN_COUNT, 0);
                 }
+                for (const uint16_t pos : candidate.kmerPositions) {
+                    if (bins[pos] < 255) {
+                        bins[pos]++;
+                    }
+                }
+                sp2readCnt[candidate.speciesId] += 1;
+                sp2readLen[candidate.speciesId] += entry.queryLength;
             }
         }
     }
@@ -240,7 +189,6 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     std::cout << "Species kept               : " << keptSpecies.size() << std::endl;
 
     // Per-species report (capped to keep the log readable).
-    constexpr size_t MAX_REPORT_ROWS = 50;
     std::sort(decisions.begin(), decisions.end(),
               [](const SpeciesDecision &a, const SpeciesDecision &b) {
                   return a.readCnt > b.readCnt;
@@ -263,7 +211,211 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
         std::cout << "... (" << (decisions.size() - MAX_REPORT_ROWS) << " more species)" << std::endl;
     }
 
-    // --- Pass 2: write the filtered candidate DB ---
+    return keptSpecies;
+}
+
+// -------- Filter method 1: best-evidence (A) + uniqueness (B), combined conservatively (F) --------
+//
+// A (best-evidence): a real species has some reads that match it well even if the true
+//   species is absent, whereas a spurious species never does. Count reads whose idScore
+//   is >= --min-strong-score; require >= --min-strong-reads of them.
+// B (uniqueness): a homology "hitchhiker" is never the sole best explanation of a read.
+//   Count reads where the species is the unique top candidate (its score clearly beats
+//   the runner-up, i.e. runner-up < top * --tie-ratio); require >= --min-unique-reads.
+// F (conservative): keep the species if it passes EITHER criterion; remove only when it
+//   fails BOTH, so the filter errs toward keeping borderline-real species.
+std::unordered_set<TaxID> filterByEvidenceAndUniqueness(
+    CandidateDBReader &reader,
+    size_t entryCount,
+    const LocalParameters &par)
+{
+    const float minStrongScore = par.minStrongScore;
+    const uint64_t minStrongReads = par.minStrongReads < 0 ? 0 : static_cast<uint64_t>(par.minStrongReads);
+    const uint64_t minUniqueReads = par.minUniqueReads < 0 ? 0 : static_cast<uint64_t>(par.minUniqueReads);
+    const float tieRatio = par.tieRatio;
+
+    std::cout << "Filter method          : best-evidence + uniqueness" << std::endl;
+    std::cout << "Min. strong score      : " << minStrongScore << std::endl;
+    std::cout << "Min. strong reads      : " << minStrongReads << std::endl;
+    std::cout << "Min. unique-top reads  : " << minUniqueReads << std::endl;
+    std::cout << "Tie ratio (uniqueness) : " << tieRatio << std::endl;
+
+    struct EvidenceStats {
+        uint64_t occurrences = 0;   // number of reads this species is a candidate for
+        uint64_t strongReads = 0;   // reads with idScore >= minStrongScore
+        uint64_t uniqueTop = 0;     // reads where it is the unique top candidate
+        float maxScore = 0.0f;      // best idScore observed
+    };
+    std::unordered_map<TaxID, EvidenceStats> stats;
+
+    // --- Pass 1: per-species evidence and uniqueness counts ---
+    CandidateDBEntry entry;
+    for (size_t i = 0; i < entryCount; ++i) {
+        if (!reader.getByIndex(i, entry, 0)) {
+            continue;
+        }
+        const std::vector<SpeciesCandidate> &cands = entry.candidates;
+        if (cands.empty()) {
+            continue;
+        }
+
+        // Candidates are stored best-first: the read's top candidate is unique when
+        // the runner-up is clearly below it (not within the tie margin).
+        const float topScore = cands[0].idScore;
+        const float secondScore = (cands.size() > 1) ? cands[1].idScore : 0.0f;
+        const bool topIsUnique = (cands.size() == 1) || (secondScore < topScore * tieRatio);
+
+        for (size_t idx = 0; idx < cands.size(); ++idx) {
+            const SpeciesCandidate &candidate = cands[idx];
+            EvidenceStats &st = stats[candidate.speciesId];
+            st.occurrences += 1;
+            if (candidate.idScore > st.maxScore) {
+                st.maxScore = candidate.idScore;
+            }
+            if (candidate.idScore >= minStrongScore) {
+                st.strongReads += 1;
+            }
+            if (idx == 0 && topIsUnique) {
+                st.uniqueTop += 1;
+            }
+        }
+    }
+
+    // --- Decide which species survive (keep if it passes EITHER criterion) ---
+    struct SpeciesDecision {
+        TaxID spId;
+        uint64_t occurrences;
+        uint64_t strongReads;
+        uint64_t uniqueTop;
+        float maxScore;
+        bool passEvidence;
+        bool passUnique;
+    };
+
+    std::unordered_set<TaxID> keptSpecies;
+    keptSpecies.reserve(stats.size());
+    std::vector<SpeciesDecision> decisions;
+    decisions.reserve(stats.size());
+    size_t removedCnt = 0;
+
+    for (const auto &kv : stats) {
+        const EvidenceStats &st = kv.second;
+        const bool passEvidence = st.strongReads >= minStrongReads;
+        const bool passUnique = st.uniqueTop >= minUniqueReads;
+        const bool keep = passEvidence || passUnique;
+        if (keep) {
+            keptSpecies.insert(kv.first);
+        } else {
+            ++removedCnt;
+        }
+        decisions.push_back({kv.first, st.occurrences, st.strongReads, st.uniqueTop,
+                             st.maxScore, passEvidence, passUnique});
+    }
+
+    std::cout << "Distinct species       : " << stats.size() << std::endl;
+    std::cout << "Species removed        : " << removedCnt << std::endl;
+    std::cout << "Species kept           : " << keptSpecies.size() << std::endl;
+
+    std::sort(decisions.begin(), decisions.end(),
+              [](const SpeciesDecision &a, const SpeciesDecision &b) {
+                  return a.occurrences > b.occurrences;
+              });
+    std::cout << "species\treads\tstrongReads\tuniqueTop\tmaxScore\tdecision" << std::endl;
+    for (size_t r = 0; r < decisions.size() && r < MAX_REPORT_ROWS; ++r) {
+        const SpeciesDecision &d = decisions[r];
+        std::cout << d.spId << '\t' << d.occurrences << '\t' << d.strongReads << '\t'
+                  << d.uniqueTop << '\t' << d.maxScore << '\t';
+        if (d.passEvidence || d.passUnique) {
+            std::cout << "kept(" << (d.passEvidence ? "evidence" : "")
+                      << (d.passEvidence && d.passUnique ? "+" : "")
+                      << (d.passUnique ? "unique" : "") << ")";
+        } else {
+            std::cout << "removed";
+        }
+        std::cout << std::endl;
+    }
+    if (decisions.size() > MAX_REPORT_ROWS) {
+        std::cout << "... (" << (decisions.size() - MAX_REPORT_ROWS) << " more species)" << std::endl;
+    }
+
+    return keptSpecies;
+}
+
+} // namespace
+
+// filter-candidates
+//
+// Reads a species-candidate DB (produced by "create-candidates") and writes a NEW
+// candidate DB with low-quality species removed. --filter-method selects the strategy:
+//   0 (default): average score (--min-avg-score) + genome coverage adjusted evenness
+//                (--min-adj-evenness, needs a candidate DB with k-mer positions).
+//   1          : best-evidence (--min-strong-score/--min-strong-reads) + uniqueness
+//                (--min-unique-reads, --tie-ratio), kept if either passes.
+// The input DB is left untouched.
+int filterCandidates(int argc, const char **argv, const Command &command) {
+    LocalParameters &par = LocalParameters::getLocalInstance();
+    par.minAvgScore = 0.0f;
+    par.minAdjEvenness = 0.5f;
+    par.covUseAllHits = 1;
+    par.filterMethod = 0;
+    par.minStrongScore = 0.7f;
+    par.minStrongReads = 3;
+    par.minUniqueReads = 2;
+    par.tieRatio = 0.99;
+    par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
+
+    const std::string inputDb = par.filenames[0];
+    const std::string dbDir = par.filenames[1];
+    const std::string outputDb = par.filenames[2];
+
+    // Validate input candidate DB (data + index)
+    if (!FileUtil::fileExists(inputDb.c_str())) {
+        std::cerr << "Error: candidate DB " << inputDb << " is not found." << std::endl;
+        return 1;
+    }
+    const std::string inputIndex = inputDb + ".index";
+    if (!FileUtil::fileExists(inputIndex.c_str())) {
+        std::cerr << "Error: candidate DB index " << inputIndex << " is not found." << std::endl;
+        return 1;
+    }
+    if (!FileUtil::directoryExists(dbDir.c_str())) {
+        std::cerr << "Error: database directory " << dbDir << " is not found." << std::endl;
+        return 1;
+    }
+    if (inputDb == outputDb) {
+        std::cerr << "Error: output DB must differ from the input DB." << std::endl;
+        return 1;
+    }
+
+    // Make sure the output directory exists
+    const std::string outParent = FileUtil::dirName(outputDb);
+    if (!outParent.empty() && !FileUtil::directoryExists(outParent.c_str())) {
+        FileUtil::makeDir(outParent.c_str());
+    }
+
+    const int threadCount = par.threads <= 0 ? 1 : par.threads;
+#ifdef OPENMP
+    omp_set_num_threads(threadCount);
+#endif
+
+    CandidateDBReader reader(inputDb, threadCount);
+    if (!reader.open(DBReader<unsigned int>::SORT_BY_ID)) {
+        std::cerr << "Error: failed to open candidate DB " << inputDb << std::endl;
+        return 1;
+    }
+    const size_t entryCount = reader.size();
+    std::cout << "Candidate DB entries   : " << entryCount << std::endl;
+
+    // --- Select filter method and decide which species to keep ---
+    std::unordered_set<TaxID> keptSpecies;
+    if (par.filterMethod == 1) {
+        keptSpecies = filterByEvidenceAndUniqueness(reader, entryCount, par);
+    } else {
+        const std::unordered_map<TaxID, uint64_t> sp2genomeSize = loadGenomeSizes(dbDir);
+        keptSpecies = filterByScoreAndCoverage(reader, entryCount, sp2genomeSize, par);
+    }
+
+    // --- Pass 2: write the filtered candidate DB (method-agnostic) ---
     CandidateDBWriter writer(outputDb, static_cast<unsigned int>(threadCount), 0);
     writer.open();
 

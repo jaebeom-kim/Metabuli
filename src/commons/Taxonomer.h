@@ -122,6 +122,13 @@ private:
         size_t offset,
         Query & query);
 
+    // Materialize the top-N species candidate list (score, per-taxon match counts,
+    // and k-mer positions) into query.speciesCandidates. Consumes the sp2score and
+    // combinedMatchPaths state populated by a preceding getBestSpeciesMatches call.
+    void buildSpeciesCandidates(
+        const MatchType *matchList,
+        Query & query);
+
     MatchPath<MatchType> makeMatchPath(
         const MatchType * match
     );

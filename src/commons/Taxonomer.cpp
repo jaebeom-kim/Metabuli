@@ -463,16 +463,84 @@ void Taxonomer<MatchType>::collectSpeciesCandidates(
     const MatchType *matchList,
     vector<Query> & queryList)
 {
-    // getBestSpeciesMatches populates query.speciesCandidates with the top
-    // par.topSpecies species (score + per-taxon match counts). We deliberately
-    // skip the rest of chooseBestTaxon (redundant-match filtering, lower-rank
-    // classification, LCA resolution) so this is a pure multi-mapping step.
+    // Score every species (populates sp2score / combinedMatchPaths), then
+    // materialize the top-N candidate list. We deliberately skip the rest of
+    // chooseBestTaxon (redundant-match filtering, lower-rank classification, LCA
+    // resolution) so this is a pure multi-mapping step.
     std::pair<size_t, size_t> bestSpeciesRange;
     getBestSpeciesMatches(bestSpeciesRange,
                           matchList,
                           end,
                           offset,
                           queryList[currentQuery]);
+    buildSpeciesCandidates(matchList, queryList[currentQuery]);
+}
+
+template <typename MatchType>
+void Taxonomer<MatchType>::buildSpeciesCandidates(
+    const MatchType *matchList,
+    Query & query)
+{
+    query.speciesCandidates.clear();
+    if (par.topSpecies <= 0 || sp2score.empty()) {
+        return;
+    }
+
+    const int queryLength = query.queryLength + query.queryLength2;
+
+    // Rank the scored species best-first (ties broken by taxId for determinism).
+    std::vector<size_t> candidateIndices(sp2score.size());
+    std::iota(candidateIndices.begin(), candidateIndices.end(), 0);
+    std::sort(candidateIndices.begin(), candidateIndices.end(),
+              [this](size_t lhs, size_t rhs) {
+                  const MatchScore &lhsScore = sp2score[lhs].score;
+                  const MatchScore &rhsScore = sp2score[rhs].score;
+                  if (lhsScore.isLargerThan(rhsScore, par.scoreMode)) {
+                      return true;
+                  }
+                  if (rhsScore.isLargerThan(lhsScore, par.scoreMode)) {
+                      return false;
+                  }
+                  return sp2score[lhs].taxId < sp2score[rhs].taxId;
+              });
+
+    const size_t candidateLimit = std::min(candidateIndices.size(), static_cast<size_t>(par.topSpecies));
+    query.speciesCandidates.reserve(candidateLimit);
+    for (size_t candidateIdx = 0; candidateIdx < candidateLimit; ++candidateIdx) {
+        const SpeciesScoreCandidate &candidate = sp2score[candidateIndices[candidateIdx]];
+        SpeciesCandidate storedCandidate;
+        storedCandidate.speciesId = candidate.taxId;
+        storedCandidate.idScore = candidate.score.idScore;
+        storedCandidate.subScore = candidate.score.subScore;
+        storedCandidate.logE = candidate.score.logE;
+
+        taxCnt.clear();
+        filterRedundantMatches(matchList, candidate.speciesRange, taxCnt, queryLength);
+        storedCandidate.taxCnt.reserve(taxCnt.size());
+        for (const auto &taxCount : taxCnt) {
+            storedCandidate.taxCnt.emplace_back(taxCount.first, taxCount.second);
+        }
+        std::sort(storedCandidate.taxCnt.begin(), storedCandidate.taxCnt.end());
+
+        // Record the unique genome bins (posId) this read touched for this
+        // species (Option 2: one entry per bin per read, deduplicated). Only
+        // possible when matches carry positions (MatchWithPos) and the DB
+        // stores k-mer positions.
+        if constexpr (std::is_same<MatchType, MatchWithPos>::value) {
+            if (par.storeKmerPos) {
+                std::vector<uint16_t> &positions = storedCandidate.kmerPositions;
+                for (size_t p = candidate.matchPathRange.first; p < candidate.matchPathRange.second; ++p) {
+                    for (const MatchType *m : combinedMatchPaths[p].chain) {
+                        positions.push_back(m->posId);
+                    }
+                }
+                std::sort(positions.begin(), positions.end());
+                positions.erase(std::unique(positions.begin(), positions.end()), positions.end());
+            }
+        }
+
+        query.speciesCandidates.push_back(std::move(storedCandidate));
+    }
 }
 
 template <typename MatchType>
@@ -695,61 +763,8 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
         return bestScore;
     }
 
-    if (par.topSpecies > 0) {
-        query.speciesCandidates.clear();
-        std::vector<size_t> candidateIndices(sp2score.size());
-        std::iota(candidateIndices.begin(), candidateIndices.end(), 0);
-        std::sort(candidateIndices.begin(), candidateIndices.end(),
-                  [this](size_t lhs, size_t rhs) {
-                      const MatchScore &lhsScore = sp2score[lhs].score;
-                      const MatchScore &rhsScore = sp2score[rhs].score;
-                      if (lhsScore.isLargerThan(rhsScore, par.scoreMode)) {
-                          return true;
-                      }
-                      if (rhsScore.isLargerThan(lhsScore, par.scoreMode)) {
-                          return false;
-                      }
-                      return sp2score[lhs].taxId < sp2score[rhs].taxId;
-                  });
-
-        const size_t candidateLimit = std::min(candidateIndices.size(), static_cast<size_t>(par.topSpecies));
-        query.speciesCandidates.reserve(candidateLimit);
-        for (size_t candidateIdx = 0; candidateIdx < candidateLimit; ++candidateIdx) {
-            const SpeciesScoreCandidate &candidate = sp2score[candidateIndices[candidateIdx]];
-            SpeciesCandidate storedCandidate;
-            storedCandidate.speciesId = candidate.taxId;
-            storedCandidate.idScore = candidate.score.idScore;
-            storedCandidate.subScore = candidate.score.subScore;
-            storedCandidate.logE = candidate.score.logE;
-
-            taxCnt.clear();
-            filterRedundantMatches(matchList, candidate.speciesRange, taxCnt, queryLength);
-            storedCandidate.taxCnt.reserve(taxCnt.size());
-            for (const auto &taxCount : taxCnt) {
-                storedCandidate.taxCnt.emplace_back(taxCount.first, taxCount.second);
-            }
-            std::sort(storedCandidate.taxCnt.begin(), storedCandidate.taxCnt.end());
-
-            // Record the unique genome bins (posId) this read touched for this
-            // species (Option 2: one entry per bin per read, deduplicated). Only
-            // possible when matches carry positions (MatchWithPos) and the DB
-            // stores k-mer positions.
-            if constexpr (std::is_same<MatchType, MatchWithPos>::value) {
-                if (par.storeKmerPos) {
-                    std::vector<uint16_t> &positions = storedCandidate.kmerPositions;
-                    for (size_t p = candidate.matchPathRange.first; p < candidate.matchPathRange.second; ++p) {
-                        for (const MatchType *m : combinedMatchPaths[p].chain) {
-                            positions.push_back(m->posId);
-                        }
-                    }
-                    std::sort(positions.begin(), positions.end());
-                    positions.erase(std::unique(positions.begin(), positions.end()), positions.end());
-                }
-            }
-
-            query.speciesCandidates.push_back(std::move(storedCandidate));
-        }
-    }
+    // (Top-N candidate list construction lives in buildSpeciesCandidates, called
+    // by collectSpeciesCandidates, so this function stays scoring-only.)
 
     // if (par.em && !sp2score.empty()) {
     //     sort(sp2score.begin(), sp2score.end(),

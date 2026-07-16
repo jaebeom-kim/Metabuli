@@ -378,6 +378,34 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &covUseAllHits,
                 "^[0-1]$"),
+        FILTER_METHOD(FILTER_METHOD_ID,
+                "--filter-method",
+                "filter-candidates method (0: score+coverage, 1: evidence+uniqueness)",
+                "filter-candidates: 0 = average score + genome coverage adjusted evenness; 1 = best-evidence + uniqueness (kept if either passes).",
+                typeid(int),
+                (void *) &filterMethod,
+                "^[0-1]$"),
+        MIN_STRONG_SCORE(MIN_STRONG_SCORE_ID,
+                "--min-strong-score",
+                "filter-candidates (method 1): per-read score counted as strong evidence",
+                "filter-candidates (method 1): a candidate read counts as strong evidence when its idScore is >= this value (0.0-1.0).",
+                typeid(float),
+                (void *) &minStrongScore,
+                "^0(\\.[0-9]+)?|1(\\.0+)?$"),
+        MIN_STRONG_READS(MIN_STRONG_READS_ID,
+                "--min-strong-reads",
+                "filter-candidates (method 1): min strong reads to keep a species",
+                "filter-candidates (method 1): keep a species if it has at least this many strong-evidence reads.",
+                typeid(int),
+                (void *) &minStrongReads,
+                "^[0-9]+$"),
+        MIN_UNIQUE_READS(MIN_UNIQUE_READS_ID,
+                "--min-unique-reads",
+                "filter-candidates (method 1): min unique-top reads to keep a species",
+                "filter-candidates (method 1): keep a species if it is the unique top candidate for at least this many reads.",
+                typeid(int),
+                (void *) &minUniqueReads,
+                "^[0-9]+$"),
         MIN_CLADE_COUNT(MIN_CLADE_COUNT_ID,
                 "--min-clade-count",
                 "Min. read count for a clade",
@@ -951,11 +979,18 @@ LocalParameters::LocalParameters() :
     createCandidates.push_back(&MAX_SHIFT);
     createCandidates.push_back(&GAP_PENALTY);
 
-    // filter-candidates (prune a species-candidate DB by average score and genome coverage)
+    // filter-candidates (prune a species-candidate DB)
     filterCandidates.push_back(&PARAM_THREADS);
+    filterCandidates.push_back(&FILTER_METHOD);
+    // method 0: score + genome coverage
     filterCandidates.push_back(&MIN_AVG_SCORE);
     filterCandidates.push_back(&MIN_ADJ_EVENNESS);
     filterCandidates.push_back(&COV_USE_ALL_HITS);
+    // method 1: best-evidence + uniqueness
+    filterCandidates.push_back(&MIN_STRONG_SCORE);
+    filterCandidates.push_back(&MIN_STRONG_READS);
+    filterCandidates.push_back(&MIN_UNIQUE_READS);
+    filterCandidates.push_back(&TIE_RATIO);
 
     // view-candidates (dump a species-candidate DB to human-readable TSV)
     viewCandidates.push_back(&PARAM_THREADS);
