@@ -1504,11 +1504,13 @@ void Taxonomer<MatchType>::getSpacedMatchPaths(
         
         for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
             if (!connectedToNext[curIdx] && localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
-                float gapPenalty = 
-                    (localMatchPaths[curIdx].end - localMatchPaths[curIdx].start + 1) // spanned bases
-                    - localMatchPaths[curIdx].coveredPosCnt * 3; // AA-matched bases
-                localMatchPaths[curIdx].score.idScore = max(0.0f, localMatchPaths[curIdx].score.idScore - gapPenalty);
-                
+                if (par.gapPenalty) {
+                    float gapPenalty =
+                        (localMatchPaths[curIdx].end - localMatchPaths[curIdx].start + 1) // spanned bases
+                        - localMatchPaths[curIdx].coveredPosCnt * 3; // AA-matched bases
+                    localMatchPaths[curIdx].score.idScore = max(0.0f, localMatchPaths[curIdx].score.idScore - gapPenalty);
+                }
+
                 addTerminalMatchPath(curIdx, matchList, filteredMatchPaths);
             }
         }
@@ -1520,14 +1522,16 @@ void Taxonomer<MatchType>::getSpacedMatchPaths(
 
     for (size_t curIdx = curPosMatchStart; curIdx < curPosMatchEnd; ++curIdx) {
         if (localMatchPaths[curIdx].coveredPosCnt >= MIN_COVERED_POS) {
-            float gapPenalty = 
-                (localMatchPaths[curIdx].end - localMatchPaths[curIdx].start + 1) // spanned bases
-                - localMatchPaths[curIdx].coveredPosCnt * 3; // AA-matched bases
-            localMatchPaths[curIdx].score.idScore = max(0.0f, localMatchPaths[curIdx].score.idScore - gapPenalty);
-            
+            if (par.gapPenalty) {
+                float gapPenalty =
+                    (localMatchPaths[curIdx].end - localMatchPaths[curIdx].start + 1) // spanned bases
+                    - localMatchPaths[curIdx].coveredPosCnt * 3; // AA-matched bases
+                localMatchPaths[curIdx].score.idScore = max(0.0f, localMatchPaths[curIdx].score.idScore - gapPenalty);
+            }
+
             addTerminalMatchPath(curIdx, matchList, filteredMatchPaths);
         }
-    }    
+    }
 }
 
 template <typename MatchType>

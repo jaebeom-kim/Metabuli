@@ -94,6 +94,7 @@ public:
     PARAMETER(TIE_RATIO)
     PARAMETER(PRINT_LINEAGE)
     PARAMETER(MAX_SHIFT)
+    PARAMETER(GAP_PENALTY)
     PARAMETER(EM)
     PARAMETER(NEIGHBOR_KMERS)
     PARAMETER(PMD_KMER)
@@ -218,6 +219,7 @@ public:
     int neighborKmers;
     int printLineage;
     int maxShift;
+    int gapPenalty;
     bool em;
     int pmdKmer;
     int disableTrimming;

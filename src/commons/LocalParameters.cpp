@@ -266,6 +266,13 @@ LocalParameters::LocalParameters() :
                     typeid(int),
                     (void *) &maxShift,
                     "[1-9]"),
+        GAP_PENALTY(GAP_PENALTY_ID,
+                    "--gap-penalty",
+                    "Apply gap penalty when scoring spaced match paths (0: off, 1: on)",
+                    "Apply gap penalty when scoring spaced match paths (0: off, 1: on)",
+                    typeid(int),
+                    (void *) &gapPenalty,
+                    "[0-1]"),
         EM(EM_ID,
                 "--em",
                 "Use Expectation-Maximization for classification",
@@ -881,6 +888,7 @@ LocalParameters::LocalParameters() :
     
     classify.push_back(&DB_TOTAL_LENGTH);
     classify.push_back(&MAX_SHIFT);
+    classify.push_back(&GAP_PENALTY);
     // classify.push_back(&EM);
 
     //classify-candidates
@@ -941,6 +949,7 @@ LocalParameters::LocalParameters() :
     createCandidates.push_back(&TOP_SPECIES);
     createCandidates.push_back(&DB_TOTAL_LENGTH);
     createCandidates.push_back(&MAX_SHIFT);
+    createCandidates.push_back(&GAP_PENALTY);
 
     // filter-candidates (prune a species-candidate DB by average score and genome coverage)
     filterCandidates.push_back(&PARAM_THREADS);

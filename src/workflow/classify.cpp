@@ -15,6 +15,7 @@ void setClassifyDefaults(LocalParameters & par){
     par.kmerFormat = 1;
 
     par.maxShift = 1;
+    par.gapPenalty = 1;
     par.skipRedundancy = 0;
     par.validateInput = 0;
     par.validateDb = 0;
