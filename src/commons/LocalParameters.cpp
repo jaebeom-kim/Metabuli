@@ -161,6 +161,13 @@ LocalParameters::LocalParameters() :
                  typeid(int),
                  (void *) &seqMode,
                  "[1-3]"),
+        INTERLEAVED(INTERLEAVED_ID,
+                 "--interleaved",
+                 "Query file holds interleaved paired-end reads (implies paired-end)",
+                 "Query file holds interleaved paired-end reads (R1,R2,R1,R2,...); implies paired-end processing from a single file. 0: off, 1: on",
+                 typeid(int),
+                 (void *) &interleaved,
+                 "[0-1]"),
         PRECISION_MODE(PRECISION_MODE_ID,
                     "--precise",
                     "Use presets for precise mode. 1: short-read, 2: HiFi long-read.",
@@ -881,6 +888,7 @@ LocalParameters::LocalParameters() :
     //classify
     classify.push_back(&PARAM_THREADS);
     classify.push_back(&SEQ_MODE);
+    classify.push_back(&INTERLEAVED);
     classify.push_back(&PRECISION_MODE);
     classify.push_back(&MIN_SCORE);
     classify.push_back(&MIN_SP_SCORE);
@@ -948,6 +956,7 @@ LocalParameters::LocalParameters() :
     // create-candidates (generates the species-candidate DB only)
     createCandidates.push_back(&PARAM_THREADS);
     createCandidates.push_back(&SEQ_MODE);
+    createCandidates.push_back(&INTERLEAVED);
     createCandidates.push_back(&PRECISION_MODE);
     createCandidates.push_back(&MIN_SCORE);
     createCandidates.push_back(&MIN_SP_SCORE);
@@ -1004,6 +1013,7 @@ LocalParameters::LocalParameters() :
     // extract
     extract.push_back(&TAXONOMY_PATH);
     extract.push_back(&SEQ_MODE);
+    extract.push_back(&INTERLEAVED);
     extract.push_back(&TARGET_TAX_ID);
     extract.push_back(&EXCLUDE_TAXID);
     extract.push_back(&EXTRACT_MODE);

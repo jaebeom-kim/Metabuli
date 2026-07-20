@@ -22,6 +22,11 @@ int createCandidates(int argc, const char **argv, const Command &command) {
     par.topSpecies = 5; // default number of candidate species per read; overridable
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
 
+    // Interleaved paired-end reads: single file, paired processing.
+    if (par.interleaved) {
+        par.seqMode = 2;
+    }
+
     if (par.topSpecies <= 0) {
         std::cout << "Warning: --top-species must be >= 1 for create-candidates. Using 5." << std::endl;
         par.topSpecies = 5;
@@ -30,8 +35,8 @@ int createCandidates(int argc, const char **argv, const Command &command) {
     // Positional layout:
     //   --seq-mode 2 (paired) : <read_1> <read_2> <DB dir> <candidate DB>
     //   --seq-mode 1/3        : <read>            <DB dir> <candidate DB>
-    const int dbIdx = 1 + (par.seqMode == 2);
-    const int outIdx = 2 + (par.seqMode == 2);
+    const int dbIdx = 1 + par.pairedFileInput();
+    const int outIdx = 2 + par.pairedFileInput();
     const std::string dbDir = par.filenames[dbIdx];
     const std::string candidateDbOut = par.filenames[outIdx];
     par.mappingOutput = candidateDbOut;
@@ -42,7 +47,7 @@ int createCandidates(int argc, const char **argv, const Command &command) {
         std::cout << "       Allowed extensions are .fna, .fasta, .fa, .fq, .fastq, and their gzip versions (e.g., .fna.gz)" << std::endl;
         return 1;
     }
-    if (par.seqMode == 2) {
+    if (par.pairedFileInput()) {
         if (FileUtil::directoryExists(par.filenames[1].c_str())) {
             std::cout << "Error: " << par.filenames[1] << " is a directory. Please specify a query file name." << std::endl;
             std::cout << "       For '--seq-mode 2', please provide two query files." << std::endl;
@@ -56,7 +61,7 @@ int createCandidates(int argc, const char **argv, const Command &command) {
     }
 
     if (par.validateInput) {
-        const std::vector<std::string> queryFiles = par.seqMode == 2
+        const std::vector<std::string> queryFiles = par.pairedFileInput()
             ? std::vector<std::string>{par.filenames[0], par.filenames[1]}
             : std::vector<std::string>{par.filenames[0]};
         for (const std::string &queryFile : queryFiles) {

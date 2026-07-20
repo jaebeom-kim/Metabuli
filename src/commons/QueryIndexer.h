@@ -34,6 +34,7 @@ private:
     std::string queryPath_1;
     std::string queryPath_2;
     size_t seqMode;
+    bool interleaved;
     // size_t matchPerKmer;
     size_t maxRam;
     size_t threads;

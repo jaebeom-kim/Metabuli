@@ -24,7 +24,7 @@ KmerMatcher::KmerMatcher(
 {                        
     // Parameters
     threads = par.threads;
-    dbDir = par.filenames[1 + (par.seqMode == 2)];
+    dbDir = par.filenames[1 + par.pairedFileInput()];
     hammingMargin = par.hammingMargin;
     DNA_MASK = ~metamerPattern->dnaMask; // metamer & DNA_MASK -> AA part 
     AA_MASK = metamerPattern->dnaMask;   // metamer & AA_MASK  -> DNA part

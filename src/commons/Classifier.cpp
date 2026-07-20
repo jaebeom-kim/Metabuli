@@ -2,6 +2,7 @@
 #include "CandidateDBReader.h"
 #include "FileUtil.h"
 #include "QueryIndexer.h"
+#include "InterleavedKSeqWrapper.h"
 #include "common.h"
 
 #include <cerrno>
@@ -122,12 +123,12 @@ inline std::string filteredKronaFileName(const std::string &classificationFileNa
 }
 
 Classifier::Classifier(LocalParameters & par) : par(par) {
-    dbDir = par.filenames[1 + (par.seqMode == 2)];
+    dbDir = par.filenames[1 + par.pairedFileInput()];
     matchPerKmer = par.matchPerKmer;
-    loadDbParameters(par, par.filenames[1 + (par.seqMode == 2)]);
+    loadDbParameters(par, par.filenames[1 + par.pairedFileInput()]);
     kmerFormat = par.kmerFormat;
     if (par.dbTotalLength == 0) {
-        par.dbTotalLength = readDbSize(par.filenames[1 + (par.seqMode == 2)]);
+        par.dbTotalLength = readDbSize(par.filenames[1 + par.pairedFileInput()]);
     }
 
     cout << "Database name : " << par.dbName << endl;
@@ -352,8 +353,8 @@ void Classifier::classifyReads() {
 
     std::cout << "--------------------" << std::endl;
     while (!complete) {
-        KSeqWrapper* kseq1 = KSeqFactory(par.filenames[0].c_str());
-        KSeqWrapper* kseq2 = par.seqMode == 2 ? KSeqFactory(par.filenames[1].c_str()) : nullptr;
+        KSeqWrapper* kseq1 = createQueryKseqWrapper(par.filenames[0], par.filenames[0], par.interleaved, 0);
+        KSeqWrapper* kseq2 = par.seqMode == 2 ? createQueryKseqWrapper(par.filenames[0], par.filenames[1], par.interleaved, 1) : nullptr;
 
         // Move kseq to unprocessed reads
         for (size_t i = 0; i < processedReadCnt; i++) {
@@ -512,8 +513,8 @@ void Classifier::generateCandidatesImpl() {
 
     std::cout << "--------------------" << std::endl;
     while (!complete) {
-        KSeqWrapper* kseq1 = KSeqFactory(par.filenames[0].c_str());
-        KSeqWrapper* kseq2 = par.seqMode == 2 ? KSeqFactory(par.filenames[1].c_str()) : nullptr;
+        KSeqWrapper* kseq1 = createQueryKseqWrapper(par.filenames[0], par.filenames[0], par.interleaved, 0);
+        KSeqWrapper* kseq2 = par.seqMode == 2 ? createQueryKseqWrapper(par.filenames[0], par.filenames[1], par.interleaved, 1) : nullptr;
 
         // Move kseq to unprocessed reads
         for (size_t i = 0; i < processedReadCnt; i++) {
@@ -677,8 +678,8 @@ void Classifier::classifyReadsWithPos() {
 
     std::cout << "--------------------" << std::endl;
     while (!complete) {
-        KSeqWrapper* kseq1 = KSeqFactory(par.filenames[0].c_str());
-        KSeqWrapper* kseq2 = par.seqMode == 2 ? KSeqFactory(par.filenames[1].c_str()) : nullptr;
+        KSeqWrapper* kseq1 = createQueryKseqWrapper(par.filenames[0], par.filenames[0], par.interleaved, 0);
+        KSeqWrapper* kseq2 = par.seqMode == 2 ? createQueryKseqWrapper(par.filenames[0], par.filenames[1], par.interleaved, 1) : nullptr;
 
         // Move kseq to unprocessed reads
         for (size_t i = 0; i < processedReadCnt; i++) {

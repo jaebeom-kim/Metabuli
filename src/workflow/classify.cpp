@@ -16,6 +16,7 @@ void setClassifyDefaults(LocalParameters & par){
 
     par.maxShift = 1;
     par.gapPenalty = 1;
+    par.interleaved = 0;
     par.skipRedundancy = 0;
     par.validateInput = 0;
     par.validateDb = 0;
@@ -52,9 +53,15 @@ int classify(int argc, const char **argv, const Command& command) {
     LocalParameters & par = LocalParameters::getLocalInstance();
     setClassifyDefaults(par);
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
-    
+
+    // Interleaved paired-end reads live in a single file but are processed as
+    // paired-end; force paired processing while keeping the single-file layout.
+    if (par.interleaved) {
+        par.seqMode = 2;
+    }
+
     string dbDir;
-    if (par.seqMode == 2) {
+    if (par.pairedFileInput()) {
         dbDir = par.filenames[2];
         if (FileUtil::directoryExists(par.filenames[1].c_str())) {
             cout << "Error: " << par.filenames[1] << " is a directory. Please specify a query file name." << endl;

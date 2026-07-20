@@ -10,6 +10,7 @@ void setExtractDefaults(LocalParameters & par){
     par.taxonomyPath = "" ;
     par.outputDir = "";
     par.seqMode = 2;
+    par.interleaved = 0;
     par.targetTaxId = 0;
     par.excludeTaxid = "";
     par.extractMode = 0;
@@ -51,7 +52,12 @@ int extract(int argc, const char **argv, const Command& command) {
     setExtractDefaults(par);
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
 
-    if (par.seqMode == 2) {
+    // Interleaved paired-end reads: single file, paired processing.
+    if (par.interleaved) {
+        par.seqMode = 2;
+    }
+
+    if (par.pairedFileInput()) {
         // Check if the second argument is a directory
         if (FileUtil::directoryExists(par.filenames[2].c_str())) {
             cerr << "For '--seq-mode 2', please provide two query files." << endl;
@@ -83,8 +89,8 @@ int extract(int argc, const char **argv, const Command& command) {
 
     
 
-    string classificationFileName = par.filenames[1 + (par.seqMode == 2)];
-    string dbDir = par.filenames[2 + (par.seqMode == 2)];
+    string classificationFileName = par.filenames[1 + par.pairedFileInput()];
+    string dbDir = par.filenames[2 + par.pairedFileInput()];
     TaxID externalTaxID = par.targetTaxId;
     if (excludeMode) {
         if (par.excludeTaxid.find(',') != string::npos) {
@@ -153,21 +159,35 @@ int extract(int argc, const char **argv, const Command& command) {
     }
     string outputTaxIdSuffix = excludeMode ? "not_" + to_string(externalTaxID) : to_string(externalTaxID);
     string outFileName = outdirPath + baseName + "_" + outputTaxIdSuffix;
-    reporter.printSpecifiedReads(readIdxs, queryFileName, outFileName);
-    cout << "Extracted file  : " << outFileName << endl;
-    
-    if (par.seqMode == 2) {
-        cout << "Processing the second file ... " << endl;
-        queryFileName = par.filenames[1];
-        extractBaseNameAndExtension(queryFileName, outdirPath, baseName, extension);
-        if (!par.outputDir.empty()) {
-            outdirPath = par.outputDir + "/";
-        } else {
-            outdirPath = outdirPath + "/";
+    if (par.interleaved) {
+        // Interleaved input: readIdxs are pair indices. Expand them to physical
+        // record indices (2i, 2i+1) so both mates of each selected pair are
+        // written to a single interleaved output file.
+        vector<size_t> physicalIdxs;
+        physicalIdxs.reserve(readIdxs.size() * 2);
+        for (size_t idx : readIdxs) {
+            physicalIdxs.push_back(idx * 2);
+            physicalIdxs.push_back(idx * 2 + 1);
         }
-        outFileName = outdirPath + baseName + "_" + outputTaxIdSuffix;
+        reporter.printSpecifiedReads(physicalIdxs, queryFileName, outFileName);
+        cout << "Extracted file  : " << outFileName << endl;
+    } else {
         reporter.printSpecifiedReads(readIdxs, queryFileName, outFileName);
-        cout << "Extracted file 2: " << outFileName << endl;
+        cout << "Extracted file  : " << outFileName << endl;
+
+        if (par.pairedFileInput()) {
+            cout << "Processing the second file ... " << endl;
+            queryFileName = par.filenames[1];
+            extractBaseNameAndExtension(queryFileName, outdirPath, baseName, extension);
+            if (!par.outputDir.empty()) {
+                outdirPath = par.outputDir + "/";
+            } else {
+                outdirPath = outdirPath + "/";
+            }
+            outFileName = outdirPath + baseName + "_" + outputTaxIdSuffix;
+            reporter.printSpecifiedReads(readIdxs, queryFileName, outFileName);
+            cout << "Extracted file 2: " << outFileName << endl;
+        }
     }
 
     delete taxonomy;

@@ -1,8 +1,14 @@
 #include "QueryIndexer.h"
+#include "InterleavedKSeqWrapper.h"
 
 QueryIndexer::QueryIndexer(const LocalParameters & par) {
     seqMode = par.seqMode;
-    if (seqMode == 1 || seqMode == 3) {
+    interleaved = par.interleaved;
+    if (interleaved) {
+        // Single interleaved file holding both mates.
+        queryPath_1 = par.filenames[0];
+        queryPath_2 = par.filenames[0];
+    } else if (seqMode == 1 || seqMode == 3) {
         queryPath_1 = par.filenames[0];
         queryPath_2 = "";
     } else {
@@ -70,8 +76,8 @@ void QueryIndexer::indexQueryFile(size_t processedQueryNum) {
         querySplits.emplace_back(start, readNum_1, kmerCnt, seqCnt);
         delete kseq;
     } else {
-        KSeqWrapper* kseq_1 = KSeqFactory(queryPath_1.c_str());
-        KSeqWrapper* kseq_2 = KSeqFactory(queryPath_2.c_str());
+        KSeqWrapper* kseq_1 = createQueryKseqWrapper(queryPath_1, queryPath_1, interleaved, 0);
+        KSeqWrapper* kseq_2 = createQueryKseqWrapper(queryPath_1, queryPath_2, interleaved, 1);
         size_t seqPos1 = 0;
         size_t seqPos2 = 0;
         // Skip processed reads

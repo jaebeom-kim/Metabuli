@@ -15,6 +15,11 @@ public:
 
     LocalParameters();
     static int defaultRamUsage();
+
+    // True when the query is provided as two separate paired-end files.
+    // Interleaved input is still paired processing but comes from a single
+    // file, so it uses the single-file positional layout.
+    bool pairedFileInput() const { return seqMode == 2 && interleaved == 0; }
     static LocalParameters& getLocalInstance() {
         if (instance == NULL) {
             initParameterSingleton();
@@ -80,6 +85,7 @@ public:
 
     // Classify
     PARAMETER(SEQ_MODE)
+    PARAMETER(INTERLEAVED)
     PARAMETER(PRECISION_MODE)
     PARAMETER(MIN_SCORE)
     PARAMETER(HAMMING_MARGIN)
@@ -208,6 +214,7 @@ public:
 
     // Classify
     int seqMode;
+    int interleaved = 0;   // 1 = query file holds interleaved paired-end reads (implies paired processing)
     int precisionMode;
     float minScore;
     std::string spaceMask;

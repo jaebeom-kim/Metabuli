@@ -144,7 +144,7 @@ Reporter::Reporter(const LocalParameters &par, TaxonomyWrapper *taxonomy, const 
             return;
         }
         if (par.contamList == "") { // classify module
-            if (par.seqMode == 2) {
+            if (par.pairedFileInput()) {
                 outDir = par.filenames[3];
                 jobId = par.filenames[4];
             } else {
