@@ -119,6 +119,7 @@ public:
     // filter-candidates: coverage-based species filtering
     PARAMETER(MIN_ADJ_EVENNESS)
     PARAMETER(COV_USE_ALL_HITS)
+    PARAMETER(MIN_COUNT)
     // filter-candidates: filter method selection + best-evidence/uniqueness filter
     PARAMETER(FILTER_METHOD)
     PARAMETER(MIN_STRONG_SCORE)
@@ -249,6 +250,7 @@ public:
     float minAvgScore;
     float minAdjEvenness;  // filter-candidates: remove species with adjustedEvenness below this
     int covUseAllHits;     // filter-candidates: 1 = aggregate coverage over all candidate hits, 0 = top hit per read only
+    int minCount;          // filter-candidates (method 0): min top-hit reads to keep a species (0 = disabled)
     int filterMethod;      // filter-candidates: 0 = score+coverage, 1 = best-evidence+uniqueness
     float minStrongScore;  // filter-candidates (method 1): per-read idScore counted as strong evidence
     int minStrongReads;    // filter-candidates (method 1): min strong reads to keep a species

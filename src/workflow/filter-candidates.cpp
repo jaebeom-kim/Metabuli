@@ -58,11 +58,15 @@ std::unordered_map<TaxID, uint64_t> loadGenomeSizes(const std::string &dbDir) {
     return sp2genomeSize;
 }
 
-// -------- Filter method 0: average score + genome coverage (adjusted evenness) --------
+// -------- Filter method 0: average score + read count + genome coverage (adjusted evenness) --------
 //
-// Removes a candidate species if its mean idScore is below --min-avg-score, or (when
-// the DB stores k-mer positions and a genome size is known) if its per-species genome
-// coverage has an adjusted evenness below --min-adj-evenness.
+// Score and count use only each read's TOP hit (the species the read is assigned to),
+// so they match report.tsv's per-species avg_score rather than averaging over all
+// candidate occurrences (including reads the species only ranks second on). Removes a
+// candidate species if its mean top-hit idScore is below --min-avg-score, if it is the
+// top hit for fewer than --min-count reads, or (when the DB stores k-mer positions and a
+// genome size is known) if its per-species genome coverage has an adjusted evenness
+// below --min-adj-evenness.
 std::unordered_set<TaxID> filterByScoreAndCoverage(
     CandidateDBReader &reader,
     size_t entryCount,
@@ -71,11 +75,14 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
 {
     const float minAvgScore = par.minAvgScore;
     const float minAdjEvenness = par.minAdjEvenness;
+    const uint64_t minCount = par.minCount < 0 ? 0 : static_cast<uint64_t>(par.minCount);
     const bool useAllHits = par.covUseAllHits != 0;
 
-    std::cout << "Filter method          : score + genome coverage" << std::endl;
+    std::cout << "Filter method          : top-hit score + read count + genome coverage" << std::endl;
     std::cout << "Min. average score     : " << minAvgScore
               << (minAvgScore <= 0.0f ? " (score filter disabled)" : "") << std::endl;
+    std::cout << "Min. top-hit reads     : " << minCount
+              << (minCount == 0 ? " (count filter disabled)" : "") << std::endl;
     std::cout << "Min. adjusted evenness : " << minAdjEvenness
               << (minAdjEvenness <= 0.0f ? " (coverage filter disabled)" : "") << std::endl;
     std::cout << "Coverage aggregation   : " << (useAllHits ? "all candidate hits" : "top hit per read only") << std::endl;
@@ -96,9 +103,14 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
         }
         for (size_t idx = 0; idx < entry.candidates.size(); ++idx) {
             const SpeciesCandidate &candidate = entry.candidates[idx];
-            // Average score uses every candidate occurrence.
-            speciesScoreSum[candidate.speciesId] += candidate.idScore;
-            speciesScoreCount[candidate.speciesId] += 1;
+            // Average score and read count use only the read's top hit (index 0),
+            // i.e. the species this read is assigned to. This mirrors report.tsv's
+            // per-species avg_score and excludes reads the species only ranks
+            // behind a better match on.
+            if (idx == 0) {
+                speciesScoreSum[candidate.speciesId] += candidate.idScore;
+                speciesScoreCount[candidate.speciesId] += 1;
+            }
 
             // Coverage uses all hits, or only the top-scoring hit (index 0),
             // and only when this candidate carries k-mer positions.
@@ -119,14 +131,18 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     }
 
     // --- Decide which species survive ---
+    // Only species that are a read's top hit at least once appear in
+    // speciesScoreCount; a species that is never a top hit wins no reads and is
+    // dropped implicitly (it is never added to keptSpecies).
     struct SpeciesDecision {
         TaxID spId;
+        uint64_t topHitCount;   // reads where this species is the top hit
         double avgScore;
-        uint64_t readCnt;
         double coverage;
         double adjEvenness;
         bool coverageEvaluated;
         bool removeScore;
+        bool removeCount;
         bool removeEvenness;
     };
 
@@ -135,28 +151,29 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     std::vector<SpeciesDecision> decisions;
     decisions.reserve(speciesScoreCount.size());
     size_t removedByScore = 0;
+    size_t removedByCount = 0;
     size_t removedByEvenness = 0;
     size_t coverageEvaluated = 0;
     size_t coverageMissingGenomeSize = 0;
 
     for (const auto &kv : speciesScoreCount) {
         const TaxID spId = kv.first;
-        const double avgScore = speciesScoreSum[spId] / static_cast<double>(kv.second);
+        const uint64_t topHitCount = kv.second;
+        const double avgScore = speciesScoreSum[spId] / static_cast<double>(topHitCount);
 
         bool removeScore = (minAvgScore > 0.0f) && (avgScore < static_cast<double>(minAvgScore));
+        bool removeCount = (minCount > 0) && (topHitCount < minCount);
 
         bool removeEvenness = false;
         bool covEval = false;
         double coverage = 0.0;
         double adjEvenness = 0.0;
-        uint64_t readCnt = 0;
         const auto binIt = sp2bins.find(spId);
         if (binIt != sp2bins.end()) {
             const auto gsIt = sp2genomeSize.find(spId);
             if (gsIt != sp2genomeSize.end() && gsIt->second > 0) {
-                readCnt = sp2readCnt[spId];
                 const CovMetric metric = computeCoverageMetric(
-                    binIt->second, readCnt, sp2readLen[spId], gsIt->second);
+                    binIt->second, sp2readCnt[spId], sp2readLen[spId], gsIt->second);
                 covEval = true;
                 coverage = metric.coverage;
                 adjEvenness = metric.adjustedEvenness;
@@ -169,40 +186,45 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
             }
         }
 
+        // Report each species against the first criterion it fails (score, then
+        // count, then evenness); a species is kept only if it passes all three.
         if (removeScore) ++removedByScore;
+        else if (removeCount) ++removedByCount;
         else if (removeEvenness) ++removedByEvenness;
 
-        if (!removeScore && !removeEvenness) {
+        if (!removeScore && !removeCount && !removeEvenness) {
             keptSpecies.insert(spId);
         }
-        decisions.push_back({spId, avgScore, readCnt, coverage, adjEvenness,
-                             covEval, removeScore, removeEvenness});
+        decisions.push_back({spId, topHitCount, avgScore, coverage, adjEvenness,
+                             covEval, removeScore, removeCount, removeEvenness});
     }
 
-    std::cout << "Distinct species       : " << speciesScoreCount.size() << std::endl;
+    std::cout << "Distinct top-hit species   : " << speciesScoreCount.size() << std::endl;
     std::cout << "Coverage evaluated for : " << coverageEvaluated << " species" << std::endl;
     if (coverageMissingGenomeSize > 0) {
         std::cout << "Coverage skipped (no genome size) : " << coverageMissingGenomeSize << " species" << std::endl;
     }
     std::cout << "Species removed (score)    : " << removedByScore << std::endl;
+    std::cout << "Species removed (count)    : " << removedByCount << std::endl;
     std::cout << "Species removed (evenness) : " << removedByEvenness << std::endl;
     std::cout << "Species kept               : " << keptSpecies.size() << std::endl;
 
     // Per-species report (capped to keep the log readable).
     std::sort(decisions.begin(), decisions.end(),
               [](const SpeciesDecision &a, const SpeciesDecision &b) {
-                  return a.readCnt > b.readCnt;
+                  return a.topHitCount > b.topHitCount;
               });
-    std::cout << "species\treads\tavgScore\tcoverage\tadjEvenness\tdecision" << std::endl;
+    std::cout << "species\ttopHitReads\tavgScore\tcoverage\tadjEvenness\tdecision" << std::endl;
     for (size_t r = 0; r < decisions.size() && r < MAX_REPORT_ROWS; ++r) {
         const SpeciesDecision &d = decisions[r];
-        std::cout << d.spId << '\t' << d.readCnt << '\t' << d.avgScore << '\t';
+        std::cout << d.spId << '\t' << d.topHitCount << '\t' << d.avgScore << '\t';
         if (d.coverageEvaluated) {
             std::cout << d.coverage << '\t' << d.adjEvenness << '\t';
         } else {
             std::cout << "-\t-\t";
         }
         if (d.removeScore) std::cout << "removed(score)";
+        else if (d.removeCount) std::cout << "removed(count)";
         else if (d.removeEvenness) std::cout << "removed(evenness)";
         else std::cout << "kept";
         std::cout << std::endl;
@@ -357,6 +379,7 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     par.minAvgScore = 0.0f;
     par.minAdjEvenness = 0.5f;
     par.covUseAllHits = 1;
+    par.minCount = 0;
     par.filterMethod = 0;
     par.minStrongScore = 0.7f;
     par.minStrongReads = 3;

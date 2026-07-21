@@ -385,6 +385,13 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &covUseAllHits,
                 "^[0-1]$"),
+        MIN_COUNT(MIN_COUNT_ID,
+                "--min-count",
+                "Min. top-hit reads to keep a species (filter-candidates)",
+                "filter-candidates (method 0): remove candidate species with fewer than this many top-hit (winning) reads. 0 disables the count filter.",
+                typeid(int),
+                (void *) &minCount,
+                "^[0-9]+$"),
         FILTER_METHOD(FILTER_METHOD_ID,
                 "--filter-method",
                 "filter-candidates method (0: score+coverage, 1: evidence+uniqueness)",
@@ -932,27 +939,12 @@ LocalParameters::LocalParameters() :
     classifyCandidates.push_back(&PRECISION_MODE);
     classifyCandidates.push_back(&MIN_SCORE);
     classifyCandidates.push_back(&MIN_SP_SCORE);
-    classifyCandidates.push_back(&MIN_AA_MATCH);
-    classifyCandidates.push_back(&MIN_AA_MATCH_EUK);
-    classifyCandidates.push_back(&TAXONOMY_PATH);
-    classifyCandidates.push_back(&ACCESSION_LEVEL);
     classifyCandidates.push_back(&TIE_RATIO);
     classifyCandidates.push_back(&PRINT_LINEAGE);
-    classifyCandidates.push_back(&MIN_AVG_SCORE);
-    classifyCandidates.push_back(&VALIDATE_DB);
-    classifyCandidates.push_back(&SYNCMER);
-    classifyCandidates.push_back(&SMER_LEN);
-    classifyCandidates.push_back(&PARAM_SUB_MAT);
-    classifyCandidates.push_back(&PRINT_LOG);
-    classifyCandidates.push_back(&PMD_KMER);
-    classifyCandidates.push_back(&DISABLE_TRIMMING);
-    classifyCandidates.push_back(&SCORE_MODE);
     classifyCandidates.push_back(&MAX_E_VALUE);
     classifyCandidates.push_back(&TIE_BRAKER);
-    classifyCandidates.push_back(&USE_ALL_MATCHES);
     classifyCandidates.push_back(&DB_TOTAL_LENGTH);
-    classifyCandidates.push_back(&MAX_SHIFT);
-
+    
     // create-candidates (generates the species-candidate DB only)
     createCandidates.push_back(&PARAM_THREADS);
     createCandidates.push_back(&SEQ_MODE);
@@ -995,6 +987,7 @@ LocalParameters::LocalParameters() :
     filterCandidates.push_back(&MIN_AVG_SCORE);
     filterCandidates.push_back(&MIN_ADJ_EVENNESS);
     filterCandidates.push_back(&COV_USE_ALL_HITS);
+    filterCandidates.push_back(&MIN_COUNT);
     // method 1: best-evidence + uniqueness
     filterCandidates.push_back(&MIN_STRONG_SCORE);
     filterCandidates.push_back(&MIN_STRONG_READS);
