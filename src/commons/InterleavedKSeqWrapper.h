@@ -2,6 +2,7 @@
 #define METABULI_INTERLEAVED_KSEQ_WRAPPER_H
 
 #include "KSeqWrapper.h"
+#include "BamKSeqWrapper.h"
 #include <string>
 
 // Presents one interleaved paired-end file (records R1,R2,R1,R2,...) as a
@@ -57,14 +58,26 @@ private:
 
 // Factory for query readers. When interleaved, both mates are drawn from
 // file0 (file1 is ignored); otherwise the requested mate's own file is used.
+inline bool hasBamExtension(const std::string &path) {
+    const std::string suffix = ".bam";
+    return path.size() >= suffix.size()
+        && path.compare(path.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 inline KSeqWrapper *createQueryKseqWrapper(const std::string &file0,
                                            const std::string &file1,
                                            bool interleaved,
                                            int mate) {
+    const std::string &path = (mate == 0) ? file0 : file1;
+    // BAM input is single-end: read sequences straight out of the alignment
+    // records (see BamKSeqWrapper). Interleaved is not combined with BAM.
+    if (hasBamExtension(path)) {
+        return new BamKSeqWrapper(path.c_str());
+    }
     if (interleaved) {
         return new InterleavedKSeqWrapper(file0.c_str(), mate);
     }
-    return KSeqFactory((mate == 0 ? file0 : file1).c_str());
+    return KSeqFactory(path.c_str());
 }
 
 #endif // METABULI_INTERLEAVED_KSEQ_WRAPPER_H

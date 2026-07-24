@@ -59,6 +59,12 @@ int classify(int argc, const char **argv, const Command& command) {
     if (par.interleaved) {
         par.seqMode = 2;
     }
+    // BAM input is read as single-end (reads pulled from the alignment records).
+    // Only override the default paired mode; keep an explicit --seq-mode 1/3
+    // (e.g. 3 for a long-read BAM).
+    if (LocalUtil::isBam(par.filenames[0]) && par.seqMode == 2) {
+        par.seqMode = 1;
+    }
 
     string dbDir;
     if (par.pairedFileInput()) {

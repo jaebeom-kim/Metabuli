@@ -26,6 +26,11 @@ int createCandidates(int argc, const char **argv, const Command &command) {
     if (par.interleaved) {
         par.seqMode = 2;
     }
+    // BAM input is read as single-end (reads pulled from the alignment records).
+    // Only override the default paired mode; keep an explicit --seq-mode 1/3.
+    if (LocalUtil::isBam(par.filenames[0]) && par.seqMode == 2) {
+        par.seqMode = 1;
+    }
 
     if (par.topSpecies <= 0) {
         std::cout << "Warning: --top-species must be >= 1 for create-candidates. Using 5." << std::endl;

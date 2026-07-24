@@ -40,7 +40,8 @@ void QueryIndexer::indexQueryFile(size_t processedQueryNum) {
     readNum_2 = 0;
     // Read 1
     if (seqMode == 1 || seqMode == 3) {
-        KSeqWrapper* kseq = KSeqFactory(queryPath_1.c_str());
+        // BAM-aware, single-end (interleaved is irrelevant for one file).
+        KSeqWrapper* kseq = createQueryKseqWrapper(queryPath_1, "", false, 0);
         size_t seqPos = 0;
         
         // Skip processed reads

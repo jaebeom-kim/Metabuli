@@ -26,8 +26,13 @@ public:
                Util::endsWith(".fq.gz", queryPath) || Util::endsWith(".fastq.gz", queryPath); 
     }
 
+    static bool isBam(const std::string & queryPath) {
+        // BAM alignment file; reads are pulled straight from the records (single-end).
+        return Util::endsWith(".bam", queryPath);
+    }
+
     static bool isValidQueryFile(const std::string & queryPath) {
-        return isFasta(queryPath) || isFastq(queryPath);
+        return isFasta(queryPath) || isFastq(queryPath) || isBam(queryPath);
     }
 
     template<typename T>
