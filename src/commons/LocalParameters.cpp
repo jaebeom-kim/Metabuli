@@ -937,6 +937,7 @@ LocalParameters::LocalParameters() :
     //classify-candidates
     classifyCandidates.push_back(&PARAM_THREADS);
     classifyCandidates.push_back(&PRECISION_MODE);
+    classifyCandidates.push_back(&MIN_AVG_SCORE);
     classifyCandidates.push_back(&MIN_SCORE);
     classifyCandidates.push_back(&MIN_SP_SCORE);
     classifyCandidates.push_back(&TIE_RATIO);
