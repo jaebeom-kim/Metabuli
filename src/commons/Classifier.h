@@ -89,6 +89,13 @@ protected:
 
     void preciseModePreset(LocalParameters & par);
 
+    // Write the reads that ended up unclassified (classification == 0) to
+    // <outDir>/<jobId>_unclassified[.fna|.fq]. queryFiles holds the original
+    // read file(s) in the same order the reads were processed (one entry for
+    // single-end/interleaved, two for paired); interleaved expands each pair
+    // index to its two physical records.
+    void writeUnclassifiedReads(const std::vector<std::string> & queryFiles, bool interleaved);
+
     void collectClassificationStats(
         const string &classificationFileName,
         unordered_map<TaxID, unsigned int> &classificationCounts,

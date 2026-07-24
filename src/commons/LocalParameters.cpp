@@ -364,6 +364,20 @@ LocalParameters::LocalParameters() :
                  typeid(std::string),
                  (void *) &mappingOutput,
                  "^.*$"),
+        UNCLASSIFIED(UNCLASSIFIED_ID,
+                 "--unclassified",
+                 "Also write the reads left unclassified to <outDir>/<jobId>_unclassified",
+                 "Also write the reads left unclassified (classification == 0) to <outDir>/<jobId>_unclassified[.fna|.fq]. 0: off, 1: on",
+                 typeid(int),
+                 (void *) &unclassified,
+                 "^[0-1]$"),
+        QUERY_FILE(QUERY_FILE_ID,
+                 "--query-file",
+                 "Original query FASTA/Q for --unclassified (classify-candidates)",
+                 "Original query FASTA/Q read file(s) used to build the candidate DB, needed by --unclassified in classify-candidates. Comma-separate two files for paired-end.",
+                 typeid(std::string),
+                 (void *) &queryFile,
+                 "^.*$"),
         MIN_AVG_SCORE(MIN_AVG_SCORE_ID,
                 "--min-avg-score",
                 "Min. average score for classification",
@@ -926,6 +940,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&MAX_HDIST);
     classify.push_back(&TOP_SPECIES);
     classify.push_back(&MAPPING_OUTPUT);
+    classify.push_back(&UNCLASSIFIED);
     // classify.push_back(&PDM_KMER);
     // classify.push_back(&SCORE_MODE);
     
@@ -945,7 +960,9 @@ LocalParameters::LocalParameters() :
     classifyCandidates.push_back(&MAX_E_VALUE);
     classifyCandidates.push_back(&TIE_BRAKER);
     classifyCandidates.push_back(&DB_TOTAL_LENGTH);
-    
+    classifyCandidates.push_back(&UNCLASSIFIED);
+    classifyCandidates.push_back(&QUERY_FILE);
+
     // create-candidates (generates the species-candidate DB only)
     createCandidates.push_back(&PARAM_THREADS);
     createCandidates.push_back(&SEQ_MODE);

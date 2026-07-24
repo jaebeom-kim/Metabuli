@@ -113,6 +113,8 @@ public:
     PARAMETER(TIE_BRAKER)
     PARAMETER(TOP_SPECIES)
     PARAMETER(MAPPING_OUTPUT)
+    PARAMETER(UNCLASSIFIED)
+    PARAMETER(QUERY_FILE)
 
     // classify || refine-report
     PARAMETER(MIN_AVG_SCORE)
@@ -246,6 +248,8 @@ public:
     std::string priorityTaxa;
     int topSpecies;
     std::string mappingOutput;
+    int unclassified = 0;      // --unclassified: also write out the reads left unclassified
+    std::string queryFile;     // --query-file: original FASTA/Q read file(s) for --unclassified with classify-candidates
     bool candidateOnly; // create-candidates: write species-candidate DB and skip classification
     float minAvgScore;
     float minAdjEvenness;  // filter-candidates: remove species with adjustedEvenness below this

@@ -41,6 +41,9 @@ void setClassifyDefaults(LocalParameters & par){
     par.minAvgScore = 0;
     par.topSpecies = 0;
     par.mappingOutput = "";
+    par.unclassified = 0;
+    par.queryFile = "";
+    par.extractMode = 0; // used by printSpecifiedReads when writing unclassified reads
     // unexposed experimental parameters
     par.spaceMask = "";
     par.useAllMatches = 0;

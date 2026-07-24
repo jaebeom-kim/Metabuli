@@ -336,6 +336,49 @@ void Classifier::preciseModePreset(LocalParameters & par) {
 
 
 
+void Classifier::writeUnclassifiedReads(const std::vector<std::string> & queryFiles, bool interleaved) {
+    if (queryFiles.empty() || queryFiles[0].empty()) {
+        std::cout << "Warning: --unclassified requested but no query file is available; skipping." << std::endl;
+        return;
+    }
+    // printSpecifiedReads re-reads the query with KSeqFactory, which cannot read BAM.
+    for (const std::string & qf : queryFiles) {
+        if (hasBamExtension(qf)) {
+            std::cout << "Warning: --unclassified is not supported for BAM query input; skipping." << std::endl;
+            return;
+        }
+    }
+
+    // Read indices whose classification is 0 (unclassified) from the per-read
+    // classification file, in file (= query) order.
+    const std::string classFile = reporter->getClassificationFileName();
+    std::vector<size_t> unclassifiedIdxs;
+    reporter->getReadsClassifiedToClade(-1, classFile, unclassifiedIdxs);
+    std::cout << "Unclassified reads     : " << unclassifiedIdxs.size() << std::endl;
+
+    const std::string outBase = replaceSuffix(classFile, "_classifications.tsv", "_unclassified");
+    par.extractMode = 0; // let printSpecifiedReads choose FASTA/FASTQ by input type
+
+    if (interleaved) {
+        // Read indices are pair indices; expand to physical records (2i, 2i+1).
+        std::vector<size_t> physicalIdxs;
+        physicalIdxs.reserve(unclassifiedIdxs.size() * 2);
+        for (const size_t idx : unclassifiedIdxs) {
+            physicalIdxs.push_back(idx * 2);
+            physicalIdxs.push_back(idx * 2 + 1);
+        }
+        std::string outName = outBase;
+        reporter->printSpecifiedReads(physicalIdxs, queryFiles[0], outName);
+        std::cout << "Unclassified reads written to: " << outName << std::endl;
+    } else {
+        for (size_t k = 0; k < queryFiles.size(); ++k) {
+            std::string outName = (k == 0) ? outBase : (outBase + "_2");
+            reporter->printSpecifiedReads(unclassifiedIdxs, queryFiles[k], outName);
+            std::cout << "Unclassified reads written to: " << outName << std::endl;
+        }
+    }
+}
+
 void Classifier::classifyReads() {
     Buffer<Kmer> queryKmerBuffer;
     Buffer<Match> matchBuffer;
@@ -480,6 +523,16 @@ void Classifier::classifyReads() {
             ReportType::Default,
             filteredKronaFileName(classificationFileName));
     }
+
+    if (par.unclassified) {
+        std::vector<std::string> queryFiles;
+        queryFiles.push_back(par.filenames[0]);
+        if (par.pairedFileInput()) {
+            queryFiles.push_back(par.filenames[1]);
+        }
+        writeUnclassifiedReads(queryFiles, par.interleaved);
+    }
+
     std::cout << "Taxonomic classification completed." << std::endl;
 
 }
@@ -836,6 +889,15 @@ void Classifier::classifyReadsWithPos() {
             filteredKronaFileName(classificationFileName));
     }
 
+    if (par.unclassified) {
+        std::vector<std::string> queryFiles;
+        queryFiles.push_back(par.filenames[0]);
+        if (par.pairedFileInput()) {
+            queryFiles.push_back(par.filenames[1]);
+        }
+        writeUnclassifiedReads(queryFiles, par.interleaved);
+    }
+
     std::cout << "Taxonomic classification completed." << std::endl;
 
 }
@@ -1093,6 +1155,13 @@ bool Classifier::classifyCandidates(const std::string &candidateDb)
                 ReportType::Default,
                 filteredKronaFileName(classificationFileName));
         }
+    }
+
+    if (par.unclassified) {
+        // The candidate DB carries no sequences, so the original reads must be
+        // supplied via --query-file (comma-separated for paired-end).
+        std::vector<std::string> queryFiles = Util::split(par.queryFile, ",");
+        writeUnclassifiedReads(queryFiles, false);
     }
 
     std::cout << "Taxonomic classification completed." << std::endl;

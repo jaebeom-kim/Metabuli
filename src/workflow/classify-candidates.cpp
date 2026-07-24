@@ -31,6 +31,22 @@ int classifyCandidates(int argc, const char **argv, const Command& command) {
         FileUtil::makeDir(outDir.c_str());
     }
 
+    // --unclassified needs the original reads, which the candidate DB does not store.
+    if (par.unclassified) {
+        if (par.queryFile.empty()) {
+            std::cout << "Error: --unclassified requires --query-file for classify-candidates "
+                      << "(the original FASTA/Q read file(s) used to build the candidate DB; "
+                      << "comma-separate two files for paired-end)." << std::endl;
+            return 1;
+        }
+        for (const std::string &queryFile : Util::split(par.queryFile, ",")) {
+            if (!FileUtil::fileExists(queryFile.c_str())) {
+                std::cout << "Error: query file " << queryFile << " (from --query-file) is not found." << std::endl;
+                return 1;
+            }
+        }
+    }
+
     if (par.validateDb) {
         if (validateDatabase(dbDir) != 0) {
             std::cout << "Error: Database validation failed." << std::endl;
