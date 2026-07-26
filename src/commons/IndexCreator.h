@@ -162,6 +162,10 @@ protected:
     std::unordered_map<string, vector<CDSinfo>> cdsInfoMap;
     std::vector<AccessionBatch> accessionBatches;
     std::vector<SpeciesBatch> spBatches;
+    // Per-batch multiplier on the k-mer-count reservation estimate. Grown (x2)
+    // when a batch's actual k-mer count exceeds its reservation, so the batch is
+    // re-processed with more room instead of overrunning the shared buffer.
+    std::vector<float> batchEstimateScale;
     std::unordered_set<TaxID> taxIdSet;
     std::vector<std::string> fastaPaths;
     std::vector<std::string> unusedFastaPaths;

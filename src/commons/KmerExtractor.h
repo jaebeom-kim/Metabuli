@@ -180,18 +180,24 @@ public:
         int threadID
     );
 
+    // maxPos is the exclusive upper bound of the caller's reserved buffer
+    // region. If writing would reach it, extraction stops and returns -1
+    // (buffer overflow) instead of overrunning the shared buffer; the caller
+    // re-processes the batch with a larger reservation.
     int extractTargetKmers(
         const char *seq,
         Buffer<Kmer> &kmerBuffer,
         size_t &posToWrite,
+        size_t maxPos,
         int seqID,
         int taxIdAtRank,
         SequenceBlock block);
-    
+
     int extractTargetKmers(
         const char *seq,
         Buffer<Kmer> &kmerBuffer,
         size_t &posToWrite,
+        size_t maxPos,
         uint64_t posOffset,
         int seqID,
         SequenceBlock block,
@@ -204,12 +210,14 @@ public:
         uint32_t & idOffset,
         SeqEntry & savedSeq);
     
-    void extractKmer_dna2aa(
+    // Returns -1 (and stops) if writing would reach maxPos; 0 otherwise.
+    int extractKmer_dna2aa(
         const char *seq,
-        int seqLen, 
-        Buffer<Kmer> &kmerBuffer, 
+        int seqLen,
+        Buffer<Kmer> &kmerBuffer,
         size_t &posToWrite,
-        uint32_t seqId1, 
+        size_t maxPos,
+        uint32_t seqId1,
         uint32_t seqId2 = 0);
 
     bool extractUnirefKmers(

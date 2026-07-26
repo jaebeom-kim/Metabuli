@@ -862,11 +862,12 @@ void KmerExtractor::generatePMDNeighborKmers(
 
 }
 
-void KmerExtractor::extractKmer_dna2aa(
+int KmerExtractor::extractKmer_dna2aa(
     const char *seq,
-    int seqLen, 
-    Buffer<Kmer> &kmerBuffer, 
-    size_t &posToWrite, 
+    int seqLen,
+    Buffer<Kmer> &kmerBuffer,
+    size_t &posToWrite,
+    size_t maxPos,
     uint32_t seqId1, // eg. taxID
     uint32_t seqId2  // eg. speciesID
 ) {
@@ -907,18 +908,21 @@ void KmerExtractor::extractKmer_dna2aa(
         kmerScanners[threadID]->initScanner(seq, begin, end, isForward);
         Kmer kmer;
         while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
+            if (posToWrite >= maxPos) { return -1; } // reservation exhausted
             kmerBuffer.buffer[posToWrite++] = {kmer.value, static_cast<TaxID>(seqId1), static_cast<TaxID>(seqId2)};
         }
     }
+    return 0;
 }
 
 int KmerExtractor::extractTargetKmers(
     const char *seq,
     Buffer<Kmer> &kmerBuffer,
     size_t &posToWrite,
+    size_t maxPos,
     int taxId,
     int spTaxId,
-    SequenceBlock block) 
+    SequenceBlock block)
 {
 #ifdef OPENMP
     size_t threadID = omp_get_thread_num();
@@ -928,6 +932,7 @@ int KmerExtractor::extractTargetKmers(
     kmerScanners[threadID]->initScanner(seq, block.start, block.end, (block.strand > -1));
     Kmer kmer;
     while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
+        if (posToWrite >= maxPos) { return -1; } // reservation exhausted
         kmerBuffer.buffer[posToWrite++] = { kmer.value, taxId, spTaxId };
     }
     return 0;
@@ -937,10 +942,11 @@ int KmerExtractor::extractTargetKmers(
     const char *seq,
     Buffer<Kmer> &kmerBuffer,
     size_t &posToWrite,
+    size_t maxPos,
     uint64_t posOffset,
     int taxId,
     SequenceBlock block,
-    uint64_t scaleFactor) 
+    uint64_t scaleFactor)
 {
 #ifdef OPENMP
     size_t threadID = omp_get_thread_num();
@@ -950,6 +956,7 @@ int KmerExtractor::extractTargetKmers(
     kmerScanners[threadID]->initScanner(seq, block.start, block.end, (block.strand > -1));
     Kmer kmer;
     while ((kmer = kmerScanners[threadID]->next()).value != UINT64_MAX) {
+        if (posToWrite >= maxPos) { return -1; } // reservation exhausted
         if (scaleFactor == 0) {
             kmerBuffer.buffer[posToWrite++] = { kmer.value, taxId, 0 };
             // metamerPattern->printAA(kmer.value); cout << "\t"; metamerPattern->printDNA(kmer.value); cout << "\t" << 0 << endl;

@@ -295,8 +295,9 @@ void IndexCreator::createCommonKmerIndex() {
     fclose(taxidListFile);
 
     std::vector<std::atomic<bool>> batchChecker(accessionBatches.size());
+    batchEstimateScale.assign(accessionBatches.size(), 1.0f);
     size_t processedBatchCnt = 0;
-    
+
     vector<pair<size_t, size_t>> uniqKmerIdxRanges;
     while(processedBatchCnt < accessionBatches.size()) {
         // Extract target k-mers
@@ -390,6 +391,7 @@ void IndexCreator::createIndexWithPos() {
 
     // Process the splits until all are processed
     std::vector<std::atomic<bool>> batchChecker(spBatches.size());
+    batchEstimateScale.assign(spBatches.size(), 1.0f);
     size_t processedSpCnt = 0;
 
 #ifdef OPENMP
@@ -459,8 +461,9 @@ void IndexCreator::createIndex() {
 
     // Process the splits until all are processed
     std::vector<std::atomic<bool>> batchChecker(accessionBatches.size());
+    batchEstimateScale.assign(accessionBatches.size(), 1.0f);
     size_t processedBatchCnt = 0;
-    
+
     vector<pair<size_t, size_t>> uniqKmerIdxRanges;
 #ifdef OPENMP
     omp_set_num_threads(par.threads);
@@ -1342,18 +1345,28 @@ bool IndexCreator::extractKmerFromSixFrames(
                 totalLength += accessionBatches[batchIdx].lengths[p];
             }
 
+            const double estimateScale = batchEstimateScale[batchIdx];
             if (par.syncmer) {
                 estimatedKmerCnt = static_cast<size_t>(
-                    (totalLength * 2.5) / ((12 - par.smerLen + 1) / 2.0)
+                    ((totalLength * 2.5) / ((12 - par.smerLen + 1) / 2.0)) * estimateScale
                 );
             } else {
                 estimatedKmerCnt = static_cast<size_t>(
-                    totalLength * 2.5
+                    (totalLength * 2.5) * estimateScale
                 );
             }
-                
+
+            if (estimatedKmerCnt > kmerBuffer.bufferSize) {
+                cout << "K-mer reservation for a batch exceeds the buffer size even after "
+                     << "growing the estimate. Increase --ram. Stop processing." << endl;
+                exit(1);
+            }
+
             // Process current split if buffer has enough space.
             size_t posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
+            const size_t startPosToWrite = posToWrite;
+            const size_t maxPos = startPosToWrite + estimatedKmerCnt; // exclusive write bound
+            bool overflowed = false;
             if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
                 KSeqWrapper* kseq = KSeqFactory(fastaPaths[accessionBatches[batchIdx].whichFasta].c_str());
                 size_t seqCnt = 0;
@@ -1379,14 +1392,17 @@ bool IndexCreator::extractKmerFromSixFrames(
                             maskedSeq = e.sequence.s;
                         }
 
-                        kmerExtractor->extractKmer_dna2aa(
-                            maskedSeq,
-                            e.sequence.l,
-                            kmerBuffer,
-                            posToWrite,
-                            accessionBatches[batchIdx].taxIDs[idx],
-                            accessionBatches[batchIdx].speciesID);
-                            
+                        if (kmerExtractor->extractKmer_dna2aa(
+                                maskedSeq,
+                                e.sequence.l,
+                                kmerBuffer,
+                                posToWrite,
+                                maxPos,
+                                accessionBatches[batchIdx].taxIDs[idx],
+                                accessionBatches[batchIdx].speciesID) == -1) {
+                            overflowed = true;
+                        }
+
                         idx++;
                         if (par.maskMode) {
                             delete[] maskedSeq;
@@ -1398,11 +1414,21 @@ bool IndexCreator::extractKmerFromSixFrames(
                     seqCnt++;
                 }
                 delete kseq;
-                __sync_fetch_and_add(&processedBatchCnt, 1);
-                #pragma omp critical
-                {
-                    cout << processedBatchCnt << " batches processed out of " << accessionBatches.size() << endl;
-                        // cout << fastaPaths[accessionBatches[batchIdx].whichFasta] << " processed\n";
+                if (overflowed) {
+                    // Actual k-mer count exceeded the reservation: discard the
+                    // batch's partial writes, grow the estimate, and re-process
+                    // the batch in a later pass.
+                    memset(kmerBuffer.buffer + startPosToWrite, 0, estimatedKmerCnt * sizeof(Kmer));
+                    batchEstimateScale[batchIdx] *= 2.0f;
+                    batchChecker[batchIdx].store(false, std::memory_order_release);
+                    hasOverflow.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    __sync_fetch_and_add(&processedBatchCnt, 1);
+                    #pragma omp critical
+                    {
+                        cout << processedBatchCnt << " batches processed out of " << accessionBatches.size() << endl;
+                            // cout << fastaPaths[accessionBatches[batchIdx].whichFasta] << " processed\n";
+                    }
                 }
             } else {
                 batchChecker[batchIdx].store(false, std::memory_order_release);
@@ -1484,24 +1510,31 @@ size_t IndexCreator::fillTargetKmerBuffer2(
             
             intergenicKmers.clear();
 
-            // Estimate the number of k-mers to be extracted from current split
+            // Estimate the number of k-mers to be extracted from current split.
+            // batchEstimateScale[spIdx] is grown (x2) on a previous overflow so
+            // the reservation eventually covers the species' actual k-mer count.
             size_t totalLength = spBatches[spIdx].spTotalLength;
-            size_t estimatedKmerCnt = static_cast<size_t>((totalLength * 1.3) / 3.0);
+            const double estimateScale = batchEstimateScale[spIdx];
+            size_t estimatedKmerCnt = static_cast<size_t>(((totalLength * 1.3) / 3.0) * estimateScale);
             if (par.syncmer) {
                 estimatedKmerCnt = static_cast<size_t>(
-                    (totalLength * 1.3 / 3.0) / ((metamerPattern->windowSize - par.smerLen + 1) / 2.0)
+                    ((totalLength * 1.3 / 3.0) / ((metamerPattern->windowSize - par.smerLen + 1) / 2.0)) * estimateScale
                 );
-            } 
+            }
 
             if (estimatedKmerCnt > kmerBuffer.bufferSize) {
-                cout << "Estimated k-mer count for species " << spBatches[spIdx].speciesID << " exceeds buffer size. Stop processing." << endl;
+                cout << "K-mer reservation for species " << spBatches[spIdx].speciesID
+                     << " exceeds the buffer size even after growing the estimate. "
+                     << "Increase --ram. Stop processing." << endl;
                 exit(1);
             }
-                
-            
+
+
             // Process current species if buffer has enough space.
             posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
             size_t startPosToWrite = posToWrite;
+            const size_t maxPos = startPosToWrite + estimatedKmerCnt; // exclusive write bound
+            bool overflowed = false;
             if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
                 // Train Prodigal
                 ProdigalWrapper * prodigal = new ProdigalWrapper();
@@ -1564,17 +1597,18 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                                                 maskedSeq,
                                                 kmerBuffer,
                                                 posToWrite,
+                                                maxPos,
                                                 genomicPos,
                                                 taxId,
                                                 fragments[f],
                                                 scaleFactor);
                                 if (tempCheck == -1) {
-                                    cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
+                                    overflowed = true;
                                 }
                             }
                         } else {
                             // PREDICT GENES USING PRODIGAL
-                            orfNum = 0;                            
+                            orfNum = 0;
                             prodigal->getPredictedGenes((unsigned char *) e.sequence.s, e.sequence.l);
                             prodigal->removeCompletelyOverlappingGenes();
                             prodigal->getExtendedORFs(prodigal->finalGenes, prodigal->nodes, fragments,
@@ -1587,19 +1621,33 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                                                 maskedSeq,
                                                 kmerBuffer,
                                                 posToWrite,
+                                                maxPos,
                                                 genomicPos,
                                                 taxId,
                                                 fragments[orfCnt],
                                                 scaleFactor);
                                 if (tempCheck == -1) {
-                                    cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
+                                    overflowed = true;
                                 }
                             }
                         }
                         genomicPos += e.sequence.l;
-                    } 
+                    }
                     delete kseq; // End of processing each genome
-                }                
+                }
+
+                // The species produced more k-mers than reserved: discard its
+                // partial writes (tombstone the whole reservation so they are
+                // skipped by the writer), enlarge the estimate, and re-process
+                // this species in a later pass.
+                if (overflowed) {
+                    memset(kmerBuffer.buffer + startPosToWrite, 0, estimatedKmerCnt * sizeof(Kmer));
+                    batchEstimateScale[spIdx] *= 2.0f;
+                    batchChecker[spIdx].store(false, std::memory_order_release);
+                    hasOverflow.fetch_add(1, std::memory_order_relaxed);
+                    delete prodigal;
+                    continue;
+                }
 
                 // Sort the k-mers extracted from the current species
                 std::sort(kmerBuffer.buffer + startPosToWrite, kmerBuffer.buffer + posToWrite, Kmer::compareTargetKmerPerSpecies);
@@ -1807,21 +1855,33 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                 totalLength += accessionBatches[batchIdx].lengths[p];
             }
 
+            // batchEstimateScale[batchIdx] is grown (x2) on a previous overflow
+            // so the reservation eventually covers the actual k-mer count.
+            const double estimateScale = batchEstimateScale[batchIdx];
             if (par.syncmer) {
                 estimatedKmerCnt = static_cast<size_t>(
-                    (totalLength * 1.3 / 3.0) / ((metamerPattern->kmerLen - par.smerLen + 1) / 2.0)
+                    ((totalLength * 1.3 / 3.0) / ((metamerPattern->kmerLen - par.smerLen + 1) / 2.0)) * estimateScale
                 );
             } else {
                 estimatedKmerCnt = static_cast<size_t>(
-                    (totalLength * 1.3) / 3.0
+                    ((totalLength * 1.3) / 3.0) * estimateScale
                 );
             }
-                
+
+            if (estimatedKmerCnt > kmerBuffer.bufferSize) {
+                cout << "K-mer reservation for a batch exceeds the buffer size even after "
+                     << "growing the estimate. Increase --ram. Stop processing." << endl;
+                exit(1);
+            }
+
             ProdigalWrapper * prodigal = new ProdigalWrapper();
             trained = false;
 
             // Process current split if buffer has enough space.
             posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
+            const size_t startPosToWrite = posToWrite;          // reservation start
+            const size_t maxPos = startPosToWrite + estimatedKmerCnt; // exclusive write bound
+            bool overflowed = false;
             if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
                 KSeqWrapper* kseq = KSeqFactory(fastaPaths[accessionBatches[batchIdx].whichFasta].c_str());
                 size_t seqCnt = 0;
@@ -1866,12 +1926,13 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                             maskedSeq,
                                             kmerBuffer,
                                             posToWrite,
+                                            maxPos,
                                             accessionBatches[batchIdx].taxIDs[idx],
                                             accessionBatches[batchIdx].speciesID,
                                             {par.readingFrame-1, (int) e.sequence.l - 1, par.readingFrame < 3 ? 1 : -1});
                             if (tempCheck == -1) {
-                                cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
-                            }   
+                                overflowed = true;
+                            }
                         }
                         else if (cdsInfoMap.find(string(e.name.s)) != cdsInfoMap.end()) {
                             // USE PROVIDED CDS ANNOTATION
@@ -1889,11 +1950,12 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                 cds[cdsCnt].c_str(),
                                                 kmerBuffer,
                                                 posToWrite,
+                                                maxPos,
                                                 accessionBatches[batchIdx].taxIDs[idx],
                                                 accessionBatches[batchIdx].speciesID,
                                                 {0, (int) cds[cdsCnt].length() - 1, 1});
                                 if (tempCheck == -1) {
-                                    cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
+                                    overflowed = true;
                                 }
                             }
                             for (size_t nonCdsCnt = 0; nonCdsCnt < nonCds.size(); nonCdsCnt ++) {
@@ -1901,11 +1963,12 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                 nonCds[nonCdsCnt].c_str(),
                                                 kmerBuffer,
                                                 posToWrite,
+                                                maxPos,
                                                 accessionBatches[batchIdx].taxIDs[idx],
                                                 accessionBatches[batchIdx].speciesID,
                                                 {0, (int) cds[nonCdsCnt].length() - 1, 1});
                                 if (tempCheck == -1) {
-                                    cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
+                                    overflowed = true;
                                 }
                             }
                         } else {
@@ -1960,11 +2023,12 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                     maskedSeq,
                                                     kmerBuffer,
                                                     posToWrite,
+                                                    maxPos,
                                                     accessionBatches[batchIdx].taxIDs[idx],
                                                     accessionBatches[batchIdx].speciesID,
                                                     extendedORFs[orfCnt]);
                                     if (tempCheck == -1) {
-                                        cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
+                                        overflowed = true;
                                     }
                                 }
                             } else { // Reverse complement
@@ -1992,11 +2056,12 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                     maskedSeq,
                                                     kmerBuffer,
                                                     posToWrite,
+                                                    maxPos,
                                                     accessionBatches[batchIdx].taxIDs[idx],
                                                     accessionBatches[batchIdx].speciesID,
                                                     extendedORFs[orfCnt]);
                                     if (tempCheck == -1) {
-                                        cout << "ERROR: Buffer overflow " << e.name.s << e.sequence.l << endl;
+                                        overflowed = true;
                                     }
                                 }
                                 free(rcomp);  
@@ -2013,7 +2078,17 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                     seqCnt++;
                 }
                 delete kseq;
-                __sync_fetch_and_add(&processedBatchCnt, 1);
+                if (overflowed) {
+                    // Actual k-mer count exceeded the reservation: discard the
+                    // batch's partial writes (tombstone so the writer skips them),
+                    // grow the estimate, and re-process the batch in a later pass.
+                    memset(kmerBuffer.buffer + startPosToWrite, 0, estimatedKmerCnt * sizeof(Kmer));
+                    batchEstimateScale[batchIdx] *= 2.0f;
+                    batchChecker[batchIdx].store(false, std::memory_order_release);
+                    hasOverflow.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    __sync_fetch_and_add(&processedBatchCnt, 1);
+                }
                 // #pragma omp critical
                 // {
                 //     cout << processedBatchCnt << " batches processed out of " << accessionBatches.size() << endl;
