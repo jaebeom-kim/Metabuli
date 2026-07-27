@@ -1645,8 +1645,9 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                             orfNum = 0;
                             prodigal->getPredictedGenes((unsigned char *) e.sequence.s, e.sequence.l);
                             prodigal->removeCompletelyOverlappingGenes();
-                            prodigal->getExtendedORFs(prodigal->finalGenes, prodigal->nodes, fragments,
-                                                      prodigal->fng, e.sequence.l, orfNum, intergenicKmers, e.sequence.s);
+                            prodigal->getExtendedORFs_fixed(prodigal->finalGenes, prodigal->nodes, fragments,
+                                                            prodigal->fng, e.sequence.l, orfNum, intergenicKmers, e.sequence.s,
+                                                            metamerPattern->windowSize * 3);
                             // for (size_t f = 0; f < fragments.size(); f++) {
                             //     fragments[f].printSequenceBlock();
                             // }

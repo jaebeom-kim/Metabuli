@@ -74,9 +74,6 @@ public:
     void printGenes();
     ProdigalWrapper();
     ~ProdigalWrapper();
-    void getExtendedORFs(struct _gene *genes, struct _node *nodes, std::vector<SequenceBlock> &blocks, size_t numOfGene,
-            size_t length, size_t &numOfBlocks, std::vector<uint64_t> &intergenicKmerList, const char *seq);    
-
     void getExtendedORFs_fixed(struct _gene *genes, struct _node *nodes, std::vector<SequenceBlock> &blocks, size_t numOfGene,
             size_t length, size_t &numOfBlocks, std::vector<uint64_t> &intergenicKmerList, const char *seq, int windowSize = 24);    
 };
