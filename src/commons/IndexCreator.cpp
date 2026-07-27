@@ -1037,6 +1037,34 @@ void IndexCreator::getSpeciesBatches() {
                 }
             }
         }
+
+        // 3. Fallback: the ±10%-of-median window above can exclude every genome
+        // (e.g. an even number of genomes with dissimilar sizes), which would
+        // leave repGenomeFasta/repGenomeSize at their defaults (0). That
+        // silently makes the species use fastaPaths[0] (an unrelated genome) for
+        // Prodigal training and drops its genome-size/coverage signal. If nothing
+        // was selected, pick the most contiguous non-empty genome across all of
+        // the species' genomes (best N50, then L50, then longest).
+        if (currSpBatch.repGenomeSize == 0) {
+            uint64_t fbN50 = 0;
+            uint64_t fbL50 = UINT64_MAX;
+            uint64_t fbLen = 0;
+            for (size_t j = 0; j < currSpBatch.fastaBatches.size(); j++) {
+                const auto & currFASTA = currSpBatch.fastaBatches[j];
+                if (currFASTA.length == 0) {
+                    continue; // never pick an empty genome as the representative
+                }
+                if (currFASTA.n50 > fbN50
+                    || (currFASTA.n50 == fbN50 && currFASTA.l50 < fbL50)
+                    || (currFASTA.n50 == fbN50 && currFASTA.l50 == fbL50 && currFASTA.length > fbLen)) {
+                    fbN50 = currFASTA.n50;
+                    fbL50 = currFASTA.l50;
+                    fbLen = currFASTA.length;
+                    currSpBatch.repGenomeFasta = currFASTA.whichFasta;
+                    currSpBatch.repGenomeSize  = currFASTA.length;
+                }
+            }
+        }
     }
 
     if (unusedFastaPaths.size() > 0) {
