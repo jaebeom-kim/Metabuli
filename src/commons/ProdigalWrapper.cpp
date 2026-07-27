@@ -1,6 +1,7 @@
 #include "ProdigalWrapper.h"
 #include "SeqIterator.h"
 #include <iostream>
+#include <climits>
 ProdigalWrapper::~ProdigalWrapper() {
     for(size_t i = 0; i < NUM_META; i++){
         delete meta[i].tinf;
@@ -517,13 +518,30 @@ void ProdigalWrapper::printGenes() {
 void ProdigalWrapper::removeCompletelyOverlappingGenes() {
     fng = 0;
     if(ng == 0) return;
-    for(int i = 0; i < ng - 1; i++){
-        if(genes[i].begin >= genes[i+1].begin) {
-            continue;
+
+    // genes[] is sorted by 'end' ascending: add_genes() finalizes each gene at
+    // its higher-coordinate node, so for any j > i, genes[j].end >= genes[i].end.
+    // Therefore gene i is completely contained in some later gene iff some j > i
+    // has genes[j].begin <= genes[i].begin. Scan right-to-left tracking the
+    // minimum begin among all genes to the right; drop gene i when that minimum
+    // is <= genes[i].begin. This removes every fully contained gene (not only
+    // ones contained in the immediate successor) and leaves the survivors sorted
+    // by begin as well as by end, which is what getExtendedORFs_fixed() assumes.
+    std::vector<bool> keep(ng, true);
+    int minBeginToRight = INT_MAX;
+    for(int i = ng - 1; i >= 0; i--){
+        if(minBeginToRight <= genes[i].begin){
+            keep[i] = false;
         }
-        finalGenes[fng++] = genes[i];
+        if(genes[i].begin < minBeginToRight){
+            minBeginToRight = genes[i].begin;
+        }
     }
-    finalGenes[fng++] = genes[ng-1];
+    for(int i = 0; i < ng; i++){
+        if(keep[i]){
+            finalGenes[fng++] = genes[i];
+        }
+    }
 }
 
 _training * ProdigalWrapper::getTrainingInfo() { return & tinf; }
