@@ -401,7 +401,12 @@ void IndexCreator::createIndexWithPos() {
     while (processedSpCnt < spBatches.size()) {
         kmerBuffer.init();
 
-        fillTargetKmerBuffer2(kmerBuffer, batchChecker, processedSpCnt, par);
+        // If no species was processed this pass (all deferred because their
+        // k-mers overran the reservation), the buffer holds only tombstones;
+        // skip the sort/write and retry with the enlarged estimates.
+        if (fillTargetKmerBuffer2(kmerBuffer, batchChecker, processedSpCnt, par) == 0) {
+            continue;
+        }
 
         // Sort the k-mers
         time_t start = time(nullptr);
@@ -1514,7 +1519,8 @@ size_t IndexCreator::fillTargetKmerBuffer2(
     const LocalParameters &par) 
 {
     std::atomic<int> hasOverflow{0};
-#pragma omp parallel default(none), shared(kmerBuffer, batchChecker, processedSpCnt, hasOverflow, par, cout)
+    std::atomic<size_t> processedInThisRun{0};
+#pragma omp parallel default(none), shared(kmerBuffer, batchChecker, processedSpCnt, hasOverflow, processedInThisRun, par, cout)
     {
         ProbabilityMatrix probMatrix(*subMat);
         size_t posToWrite;
@@ -1671,6 +1677,13 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                 if (overflowed) {
                     memset(kmerBuffer.buffer + startPosToWrite, 0, estimatedKmerCnt * sizeof(Kmer));
                     batchEstimateScale[spIdx] *= 2.0f;
+                    #pragma omp critical
+                    {
+                        cout << "Species " << spBatches[spIdx].speciesID
+                             << ": extracted k-mers exceeded the reservation of " << estimatedKmerCnt
+                             << "; deferring and retrying with a x" << batchEstimateScale[spIdx]
+                             << " larger estimate." << endl;
+                    }
                     batchChecker[spIdx].store(false, std::memory_order_release);
                     hasOverflow.fetch_add(1, std::memory_order_relaxed);
                     delete prodigal;
@@ -1755,6 +1768,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                 // cout << "distinctDNAgroupCnt: " << distinctDNAgroupCnt << endl;
 
                 __sync_fetch_and_add(&processedSpCnt, 1);
+                processedInThisRun.fetch_add(1, std::memory_order_relaxed);
                 #pragma omp critical
                 {
                     cout << processedSpCnt << " batches processed out of " << spBatches.size() << endl;
@@ -1772,7 +1786,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
         }
     } // End of parallel region
 
-    return 0;
+    return processedInThisRun.load();
 }
 
 
