@@ -119,6 +119,12 @@ Taxonomer<MatchType>::Taxonomer(
         bitPerCodon = (static_cast<const SpacedPattern*>(metamerPattern))->bitPerCodon;
         bitPerAA = (static_cast<const SpacedPattern*>(metamerPattern))->bitPerAA;
     }
+
+    if (par.minAaMatch == kmerLen) {
+        minKmerMatchNum = 1;
+    } else {
+        minKmerMatchNum = 2;
+    }
     // if (par.syncmer) {
     //     dnaShift = (8 - par.smerLen) * 3;
     //     maxCodonShift = 8 - par.smerLen;
@@ -711,7 +717,7 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t>
             while ((i < end + 1) && currentSpecies == matchList[i].tKmer.tInfo.speciesId && curFrame == matchList[i].qKmer.qInfo.frame) {
                 i ++;
             }
-            if (i - frameStart > (par.minAaMatch - kmerLen)) {
+            if (i - frameStart >= static_cast<size_t>(minKmerMatchNum)) {
                 if (windowSize == kmerLen) {
                     getMatchPaths(matchList + frameStart, i - frameStart, matchPaths, currentSpecies);
                 } else {

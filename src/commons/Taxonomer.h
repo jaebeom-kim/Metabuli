@@ -74,6 +74,7 @@ private:
     // int smerLength;
     double logMaxEValue;
     bool useEvalueFilter = false;
+    int minKmerMatchNum;
 
     // vector<const Match *> speciesMatches;
 
