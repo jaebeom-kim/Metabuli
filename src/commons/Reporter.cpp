@@ -103,9 +103,10 @@ void getReadsByCladeMembership(TaxID cladeId,
                                vector<size_t> &readIdxs,
                                TaxonomyWrapper *taxonomy,
                                bool keepMatches) {
-    FILE *results = fopen(readClassificationFileName.c_str(), "r");
-    if (!results) {
-        perror("Failed to open read-by-read classification file");
+    std::ifstream results(readClassificationFileName);
+    if (!results.is_open()) {
+        std::cerr << "Failed to open read-by-read classification file: "
+                  << readClassificationFileName << std::endl;
         return;
     }
 
@@ -116,21 +117,24 @@ void getReadsByCladeMembership(TaxID cladeId,
         extern2internPtr = &extern2intern;
     }
 
-    char line[4096];
+    // Read whole lines (no fixed-size buffer). The taxID:match_count column can
+    // exceed several KB for reads with many matches; splitting such a line across
+    // reads would count it as multiple records and drift every later read index.
+    // Header/comment lines start with '#' and are skipped without advancing idx,
+    // so read indices stay aligned with the query file's record order.
+    std::string line;
     size_t idx = 0;
-    while (fgets(line, sizeof(line), results)) {
-        if (line[0] == '#') {
+    while (std::getline(results, line)) {
+        if (!line.empty() && line[0] == '#') {
             continue;
         }
 
-        const bool inClade = isReadInClade(line, cladeId, taxonomy, extern2internPtr);
+        const bool inClade = isReadInClade(line.c_str(), cladeId, taxonomy, extern2internPtr);
         if (inClade == keepMatches) {
             readIdxs.push_back(idx);
         }
         idx++;
     }
-
-    fclose(results);
 }
 }
 
