@@ -70,11 +70,24 @@ IndexCreator::IndexCreator(
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
 
-    if (!par.noMaskTaxa.empty()) { 
+    if (!par.noMaskTaxa.empty()) {
         vector<string> taxaNotToMaskStr = Util::split(par.noMaskTaxa, ",");
         for (const string &taxIdStr : taxaNotToMaskStr) {
             TaxID taxId = taxonomy->getInternalTaxID(stoi(taxIdStr));
             taxaNotToMask.push_back(taxId);
+        }
+    }
+
+    if (!par.skipProdigalTaxa.empty()) {
+        vector<string> skipProdigalStr = Util::split(par.skipProdigalTaxa, ",");
+        for (const string &taxIdStr : skipProdigalStr) {
+            TaxID taxId = taxonomy->getInternalTaxID(stoi(taxIdStr));
+            if (taxId <= 0) { // getInternalTaxID returns -1 for a taxon absent from the taxonomy
+                cout << "Warning: --skip-prodigal-taxa taxon " << taxIdStr
+                     << " is not in the taxonomy; ignoring." << endl;
+                continue;
+            }
+            taxaToSkipProdigal.push_back(taxId);
         }
     }
 
@@ -1570,23 +1583,32 @@ size_t IndexCreator::fillTargetKmerBuffer2(
             const size_t maxPos = startPosToWrite + estimatedKmerCnt; // exclusive write bound
             bool overflowed = false;
             if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
-                // Train Prodigal
-                ProdigalWrapper * prodigal = new ProdigalWrapper();
-                if (spBatches[spIdx].repGenomeSize < 100'000 || 
-                    ((taxonomy->getEukaryotaTaxID() != 0) && 
-                     (taxonomy->IsAncestor(spBatches[spIdx].speciesID, taxonomy->getEukaryotaTaxID()))
-                    )) {
-                    prodigal->is_meta = 1;
-                    prodigal->trainMeta(fastaPaths[spBatches[spIdx].repGenomeFasta]);
-                } else {
-                    prodigal->trainASpecies(fastaPaths[spBatches[spIdx].repGenomeFasta]);
-                }
+                // Skip gene prediction for user-specified clades (--skip-prodigal-taxa):
+                // their sequences are k-merized as a single whole-sequence block instead
+                // of predicted ORFs, which also avoids Prodigal training/allocation.
+                bool skipProdigal = !taxaToSkipProdigal.empty()
+                    && taxonomy->isAunderB(spBatches[spIdx].speciesID, taxaToSkipProdigal);
 
-                // Make intergenic k-mer list to guide ORF extension
-                makeIntergenicKmerList(
-                    fastaPaths[spBatches[spIdx].repGenomeFasta],
-                    intergenicKmers,
-                    prodigal);
+                // Train Prodigal (skipped for --skip-prodigal-taxa clades)
+                ProdigalWrapper * prodigal = nullptr;
+                if (!skipProdigal) {
+                    prodigal = new ProdigalWrapper();
+                    if (spBatches[spIdx].repGenomeSize < 100'000 ||
+                        ((taxonomy->getEukaryotaTaxID() != 0) &&
+                         (taxonomy->IsAncestor(spBatches[spIdx].speciesID, taxonomy->getEukaryotaTaxID()))
+                        )) {
+                        prodigal->is_meta = 1;
+                        prodigal->trainMeta(fastaPaths[spBatches[spIdx].repGenomeFasta]);
+                    } else {
+                        prodigal->trainASpecies(fastaPaths[spBatches[spIdx].repGenomeFasta]);
+                    }
+
+                    // Make intergenic k-mer list to guide ORF extension
+                    makeIntergenicKmerList(
+                        fastaPaths[spBatches[spIdx].repGenomeFasta],
+                        intergenicKmers,
+                        prodigal);
+                }
                 
                 // Extract k-mers from each fasta batch
                 const auto & fastaBatches = spBatches[spIdx].fastaBatches;
@@ -1657,6 +1679,18 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                                                 taxId,
                                                 fragments[f],
                                                 scaleFactor);
+                                if (tempCheck == -1) {
+                                    overflowed = true;
+                                }
+                            }
+                        } else if (skipProdigal) {
+                            // NO GENE PREDICTION: k-merize the whole sequence as a single
+                            // forward-frame block (bounded at length/3 k-mers).
+                            if (e.sequence.l > 0) {
+                                fragments.emplace_back(0, (int) e.sequence.l - 1, 1);
+                                tempCheck = kmerExtractor->extractTargetKmers(
+                                                maskedSeq, kmerBuffer, posToWrite, maxPos,
+                                                genomicPos, taxId, fragments[0], scaleFactor);
                                 if (tempCheck == -1) {
                                     overflowed = true;
                                 }
@@ -1939,7 +1973,13 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                 exit(1);
             }
 
-            ProdigalWrapper * prodigal = new ProdigalWrapper();
+            // Skip gene prediction for user-specified clades (--skip-prodigal-taxa):
+            // sequences are k-merized as a single whole-sequence block, and Prodigal
+            // is never trained or even allocated.
+            bool skipProdigal = !taxaToSkipProdigal.empty()
+                && taxonomy->isAunderB(accessionBatches[batchIdx].speciesID, taxaToSkipProdigal);
+
+            ProdigalWrapper * prodigal = skipProdigal ? nullptr : new ProdigalWrapper();
             trained = false;
 
             // Process current split if buffer has enough space.
@@ -2032,6 +2072,22 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                                 accessionBatches[batchIdx].taxIDs[idx],
                                                 accessionBatches[batchIdx].speciesID,
                                                 {0, (int) cds[nonCdsCnt].length() - 1, 1});
+                                if (tempCheck == -1) {
+                                    overflowed = true;
+                                }
+                            }
+                        } else if (skipProdigal) {
+                            // NO GENE PREDICTION: k-merize the whole sequence as a single
+                            // forward-frame block (bounded at length/3 k-mers).
+                            if (e.sequence.l > 0) {
+                                tempCheck = kmerExtractor->extractTargetKmers(
+                                                maskedSeq,
+                                                kmerBuffer,
+                                                posToWrite,
+                                                maxPos,
+                                                accessionBatches[batchIdx].taxIDs[idx],
+                                                accessionBatches[batchIdx].speciesID,
+                                                {0, (int) e.sequence.l - 1, 1});
                                 if (tempCheck == -1) {
                                     overflowed = true;
                                 }

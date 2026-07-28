@@ -140,6 +140,7 @@ protected:
     bool removeRedundancyInfo;
     unordered_map<TaxID, TaxID> taxId2speciesId;
     std::vector<TaxID> taxaNotToMask;
+    std::vector<TaxID> taxaToSkipProdigal;
 
     // Inputs
     TaxonomyWrapper * taxonomy = nullptr;

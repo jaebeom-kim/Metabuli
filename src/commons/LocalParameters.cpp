@@ -616,6 +616,13 @@ LocalParameters::LocalParameters() :
                 typeid(std::string),
                 (void *) &noMaskTaxa,
                 "^.*$"),
+        SKIP_PRODIGAL_TAXA(SKIP_PRODIGAL_TAXA_ID,
+                "--skip-prodigal-taxa",
+                "Comma-separated tax IDs (clades); sequences under them skip gene prediction and are k-merized as a single whole-sequence block",
+                "Comma-separated tax IDs (clades); sequences under them skip gene prediction and are k-merized as a single whole-sequence block",
+                typeid(std::string),
+                (void *) &skipProdigalTaxa,
+                "^.*$"),
         NEW_TAXA(NEW_TAXA_ID,
                 "--new-taxa",
                 "TSV file of new taxa to be added",
@@ -878,6 +885,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&STORE_KMER_POS);
     build.push_back(&REP_GENOME_LIST);
     build.push_back(&NO_MASK_TAXA);
+    build.push_back(&SKIP_PRODIGAL_TAXA);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
     createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);
@@ -905,6 +913,7 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&VALIDATE_INPUT);
     updateDB.push_back(&VALIDATE_DB);
     updateDB.push_back(&NO_MASK_TAXA);
+    updateDB.push_back(&SKIP_PRODIGAL_TAXA);
 
     //classify
     classify.push_back(&PARAM_THREADS);
