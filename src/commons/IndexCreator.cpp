@@ -968,7 +968,7 @@ void IndexCreator::getSpeciesBatches() {
             }
             uint32_t curFasta = accessionBatches[i].whichFasta;
             currSpBatch.fastaBatches.emplace_back(curFasta);
-            auto & fastaBatch = currSpBatch.fastaBatches.back();
+            FastaBatch &fastaBatch = currSpBatch.fastaBatches.back();
             fastaBatch.taxId = accessionBatches[i].taxIDs[0];
             
             // For each FASTA (Genome)
@@ -1012,7 +1012,7 @@ void IndexCreator::getSpeciesBatches() {
             const std::string & fileName = fastaPaths[currSpBatch.fastaBatches[j].whichFasta];
             smatch assacc;
             if (regex_search(fileName, assacc, regex1)) {
-                if (assacc[0] == repGenomeAssacc) {
+                if (assacc[0] == repGenomeAssacc && repGenomeAssacc != "") {
                     currSpBatch.repGenomeFasta = currSpBatch.fastaBatches[j].whichFasta;
                     currSpBatch.repGenomeSize  = currSpBatch.fastaBatches[j].length;
                 }
@@ -1591,10 +1591,20 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                 // Extract k-mers from each fasta batch
                 const auto & fastaBatches = spBatches[spIdx].fastaBatches;
                 for (size_t i = 0; i < fastaBatches.size(); i++) {
+                    // Map each sequence (by its 0-based order in the FASTA) to its own
+                    // leaf taxID, so a file holding several taxa/strains is labelled per
+                    // sequence instead of collapsing everything onto the first accession's
+                    // taxid. Sequences absent from the map belong to other species sharing
+                    // this file and are skipped below.
+                    std::unordered_map<uint32_t, TaxID> order2taxid;
+                    for (const auto & ab : fastaBatches[i].accessionBatches) {
+                        for (size_t k = 0; k < ab.orders.size(); k++) {
+                            order2taxid[ab.orders[k]] = ab.taxIDs[k];
+                        }
+                    }
+
                     KSeqWrapper* kseq = KSeqFactory(fastaPaths[fastaBatches[i].whichFasta].c_str());
-                    const auto & accessions = fastaBatches[i].accessionBatches;
-                    TaxID taxId = fastaBatches[i].taxId;
-                    
+
                     // Process each sequence
                     uint64_t genomicPos  = 0;
                     uint64_t scaleFactor = 0;
@@ -1606,8 +1616,19 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                         }
                     }
 
+                    uint32_t seqCnt = 0;
                     while (kseq->ReadEntry()) {
                         const KSeqWrapper::KSeqEntry & e = kseq->entry;
+
+                        // Only extract sequences belonging to this species; tag each with
+                        // its own leaf taxID. genomicPos advances only over extracted
+                        // sequences, so it stays within [0, repGenomeSize].
+                        auto taxIt = order2taxid.find(seqCnt);
+                        if (taxIt == order2taxid.end()) {
+                            seqCnt++;
+                            continue;
+                        }
+                        TaxID taxId = taxIt->second;
 
                         if (par.maskMode) {
                             if (e.sequence.l > maxSeqLen) {
@@ -1667,6 +1688,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                             }
                         }
                         genomicPos += e.sequence.l;
+                        seqCnt++;
                     }
                     delete kseq; // End of processing each genome
                 }
