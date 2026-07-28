@@ -2,6 +2,7 @@
 #include "Parameters.h"
 #include "FileUtil.h"
 #include "common.h"
+#include "TaxonomyWrapper.h"
 #include "CandidateDBReader.h"
 #include "DBReader.h"
 
@@ -22,7 +23,8 @@ int viewCandidates(int argc, const char **argv, const Command &command) {
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
 
     const std::string inputDb = par.filenames[0];
-    const std::string outputTsv = par.filenames[1];
+    const std::string dbDir = par.filenames[1];
+    const std::string outputTsv = par.filenames[2];
 
     if (!FileUtil::fileExists(inputDb.c_str())) {
         std::cerr << "Error: candidate DB " << inputDb << " is not found." << std::endl;
@@ -32,6 +34,14 @@ int viewCandidates(int argc, const char **argv, const Command &command) {
         std::cerr << "Error: candidate DB index " << inputDb << ".index is not found." << std::endl;
         return 1;
     }
+    if (!FileUtil::directoryExists(dbDir.c_str())) {
+        std::cerr << "Error: DB directory " << dbDir << " is not found." << std::endl;
+        return 1;
+    }
+
+    // Candidate DBs store INTERNAL taxonomy IDs; load the source DB's taxonomy so
+    // speciesId and the taxCnt taxIDs can be converted back to original (external) IDs.
+    TaxonomyWrapper *taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
 
     const std::string outParent = FileUtil::dirName(outputTsv);
     if (!outParent.empty() && !FileUtil::directoryExists(outParent.c_str())) {
@@ -76,7 +86,7 @@ int viewCandidates(int argc, const char **argv, const Command &command) {
             std::ostringstream taxCntStr;
             for (size_t t = 0; t < cand.taxCnt.size(); ++t) {
                 if (t != 0) taxCntStr << ';';
-                taxCntStr << cand.taxCnt[t].first << ':' << cand.taxCnt[t].second;
+                taxCntStr << taxonomy->getOriginalTaxID(cand.taxCnt[t].first) << ':' << cand.taxCnt[t].second;
             }
 
             std::ostringstream posStr;
@@ -86,7 +96,7 @@ int viewCandidates(int argc, const char **argv, const Command &command) {
             }
 
             out << entry.queryId << '\t' << entry.queryName << '\t' << entry.queryLength
-                << '\t' << numCandidates << '\t' << c << '\t' << cand.speciesId
+                << '\t' << numCandidates << '\t' << c << '\t' << taxonomy->getOriginalTaxID(cand.speciesId)
                 << '\t' << cand.idScore << '\t' << cand.subScore << '\t' << cand.logE
                 << '\t' << taxCntStr.str()
                 << '\t' << cand.kmerPositions.size() << '\t' << posStr.str() << '\n';
@@ -96,6 +106,7 @@ int viewCandidates(int argc, const char **argv, const Command &command) {
 
     reader.close();
     out.close();
+    delete taxonomy;
 
     std::cout << "Entries    : " << entryCount << std::endl;
     std::cout << "Candidates : " << candidateRows << std::endl;

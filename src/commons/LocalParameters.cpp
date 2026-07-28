@@ -1023,6 +1023,7 @@ LocalParameters::LocalParameters() :
 
     // view-candidates (dump a species-candidate DB to human-readable TSV)
     viewCandidates.push_back(&PARAM_THREADS);
+    viewCandidates.push_back(&TAXONOMY_PATH);
 
     assignUniref.push_back(&PARAM_THREADS);
     assignUniref.push_back(&RAM_USAGE);
