@@ -1421,6 +1421,12 @@ bool IndexCreator::extractKmerFromSixFrames(
                 KSeqWrapper* kseq = KSeqFactory(fastaPaths[accessionBatches[batchIdx].whichFasta].c_str());
                 size_t seqCnt = 0;
                 size_t idx = 0;
+                // Optionally drop short scaffolds/contigs of eukaryotic genomes
+                // (often contamination); only for species under Eukaryota and
+                // only when --min-euk-contig-len > 0.
+                const bool skipSmallEukScaffolds =
+                    (par.minEukContigLen > 0) && (taxonomy->getEukaryotaTaxID() != 0)
+                    && taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), accessionBatches[batchIdx].speciesID);
                 while (kseq->ReadEntry()) {
                     if (seqCnt == accessionBatches[batchIdx].orders[idx]) {
                         if (accessionBatches[batchIdx].taxIDs[idx] == 0) {
@@ -1431,6 +1437,16 @@ bool IndexCreator::extractKmerFromSixFrames(
                             }
                         }
                         const KSeqWrapper::KSeqEntry & e = kseq->entry;
+
+                        // Skip short eukaryotic scaffolds (likely contamination).
+                        if (skipSmallEukScaffolds && e.sequence.l < static_cast<uint64_t>(par.minEukContigLen)) {
+                            idx++;
+                            if (idx == accessionBatches[batchIdx].lengths.size()) {
+                                break;
+                            }
+                            seqCnt++;
+                            continue;
+                        }
 
                         // Mask low complexity regions
                         char *maskedSeq = nullptr;
@@ -1614,6 +1630,13 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                         prodigal);
                 }
                 
+                // Optionally drop short scaffolds/contigs of eukaryotic genomes
+                // (often contamination). Only for species under Eukaryota, and
+                // only when --min-euk-contig-len > 0.
+                const bool skipSmallEukScaffolds =
+                    (par.minEukContigLen > 0) && (taxonomy->getEukaryotaTaxID() != 0)
+                    && taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), spBatches[spIdx].speciesID);
+
                 // Extract k-mers from each fasta batch
                 const auto & fastaBatches = spBatches[spIdx].fastaBatches;
                 for (size_t i = 0; i < fastaBatches.size(); i++) {
@@ -1655,6 +1678,13 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                             continue;
                         }
                         TaxID taxId = taxIt->second;
+
+                        // Skip short eukaryotic scaffolds (likely contamination).
+                        if (skipSmallEukScaffolds && e.sequence.l < static_cast<uint64_t>(par.minEukContigLen)) {
+                            genomicPos += e.sequence.l;
+                            seqCnt++;
+                            continue;
+                        }
 
                         if (par.maskMode) {
                             if (e.sequence.l > maxSeqLen) {
@@ -1995,6 +2025,12 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                 KSeqWrapper* kseq = KSeqFactory(fastaPaths[accessionBatches[batchIdx].whichFasta].c_str());
                 size_t seqCnt = 0;
                 size_t idx = 0;
+                // Optionally drop short scaffolds/contigs of eukaryotic genomes
+                // (often contamination); only for species under Eukaryota and
+                // only when --min-euk-contig-len > 0.
+                const bool skipSmallEukScaffolds =
+                    (par.minEukContigLen > 0) && (taxonomy->getEukaryotaTaxID() != 0)
+                    && taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), accessionBatches[batchIdx].speciesID);
                 while (kseq->ReadEntry()) {
                     if (seqCnt == accessionBatches[batchIdx].orders[idx]) {
                         bool doMasking = par.maskMode;
@@ -2015,6 +2051,17 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                             }
                         }
                         const KSeqWrapper::KSeqEntry & e = kseq->entry;
+
+                        // Skip short eukaryotic scaffolds (likely contamination).
+                        if (skipSmallEukScaffolds && e.sequence.l < static_cast<uint64_t>(par.minEukContigLen)) {
+                            idx++;
+                            if (idx == accessionBatches[batchIdx].lengths.size()) {
+                                break;
+                            }
+                            seqCnt++;
+                            continue;
+                        }
+
                         // Mask low complexity regions
                         char *maskedSeq = nullptr;
                         if (doMasking) {

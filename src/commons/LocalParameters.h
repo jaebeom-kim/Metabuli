@@ -162,6 +162,7 @@ public:
     PARAMETER(REP_GENOME_LIST)
     PARAMETER(NO_MASK_TAXA)
     PARAMETER(SKIP_PRODIGAL_TAXA)
+    PARAMETER(MIN_EUK_CONTIG_LEN)
 
     // DB updated parameters
     PARAMETER(NEW_TAXA)
@@ -288,6 +289,7 @@ public:
     std::string repGenomeList;
     std::string noMaskTaxa;
     std::string skipProdigalTaxa;
+    int minEukContigLen;
 
     // DB updated parameters
     std::string newTaxa;

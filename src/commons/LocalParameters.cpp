@@ -623,6 +623,13 @@ LocalParameters::LocalParameters() :
                 typeid(std::string),
                 (void *) &skipProdigalTaxa,
                 "^.*$"),
+        MIN_EUK_CONTIG_LEN(MIN_EUK_CONTIG_LEN_ID,
+                "--min-euk-contig-len",
+                "Skip eukaryotic scaffolds shorter than this length (bp) during build (0: off)",
+                "During build, skip scaffolds/contigs shorter than this length (bp) from genomes under Eukaryota (0: off). Small eukaryotic scaffolds are frequently contamination.",
+                typeid(int),
+                (void *) &minEukContigLen,
+                "^[0-9]+$"),
         NEW_TAXA(NEW_TAXA_ID,
                 "--new-taxa",
                 "TSV file of new taxa to be added",
@@ -795,6 +802,7 @@ LocalParameters::LocalParameters() :
     // Initialize the parameters
     candidateOnly = false;
     minAdjEvenness = 0.5f;
+    minEukContigLen = 0;
     covUseAllHits = 1;
     // Superkingdom taxonomy id
     virusTaxId = 10239;
@@ -886,6 +894,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&REP_GENOME_LIST);
     build.push_back(&NO_MASK_TAXA);
     build.push_back(&SKIP_PRODIGAL_TAXA);
+    build.push_back(&MIN_EUK_CONTIG_LEN);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
     createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);
@@ -914,6 +923,7 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&VALIDATE_DB);
     updateDB.push_back(&NO_MASK_TAXA);
     updateDB.push_back(&SKIP_PRODIGAL_TAXA);
+    updateDB.push_back(&MIN_EUK_CONTIG_LEN);
 
     //classify
     classify.push_back(&PARAM_THREADS);
