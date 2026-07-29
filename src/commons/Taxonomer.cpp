@@ -120,6 +120,11 @@ Taxonomer<MatchType>::Taxonomer(
         bitPerAA = (static_cast<const SpacedPattern*>(metamerPattern))->bitPerAA;
     }
 
+    if (par.maxShift != 1) {
+        maxCodonShift = par.maxShift;
+        dnaShift = maxCodonShift * 3;
+    }
+
     if (par.minAaMatch == kmerLen) {
         minKmerMatchNum = 1;
     } else {
@@ -894,6 +899,14 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
     // 2. Add the matchPath with the highest score that is not overlapped with the matchPath in combinedMatchPaths
     // 3. Repeat 2 until no matchPath can be added
     sortMatchPath(matchPaths, matchPathStart);
+
+    // Print matchPaths
+    if (par.printLog) {
+        cout << "Sorted matchPaths: " << endl;
+        for (size_t i = matchPathStart; i < matchPaths.size(); i++) {
+            matchPaths[i].printMatchPath();
+        }
+    }
     MatchScore score;
     int spanLength = 0;
     for (size_t i = matchPathStart; i < matchPaths.size(); i++) {  
@@ -906,6 +919,10 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
                 par.dbTotalLength,
                 score.logP);
             combinedMatchPaths.push_back(std::move(matchPaths[i]));
+            if (par.printLog) {
+                cout << combinedMatchPaths.size() << " ";
+                combinedMatchPaths.back().printMatchPath();
+            }
         } else {
             bool isOverlapped = false;
             for (size_t j = combMatchPathStart; j < combinedMatchPaths.size(); j++) {
@@ -932,10 +949,14 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
                     }
                 } 
             }
-            if (!isOverlapped) {
+            if (!isOverlapped && ((matchPaths[i].end - matchPaths[i].start + 1) > 14)) {
                 score += matchPaths[i].score;     
                 spanLength += matchPaths[i].end - matchPaths[i].start + 1;      
                 combinedMatchPaths.push_back(std::move(matchPaths[i]));
+                if (par.printLog) {
+                    cout << combinedMatchPaths.size() << ": ";
+                    combinedMatchPaths.back().printMatchPath();
+                }
             }
         }
     }

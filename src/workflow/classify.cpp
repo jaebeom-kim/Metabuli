@@ -36,7 +36,7 @@ void setClassifyDefaults(LocalParameters & par){
     par.tieRatio = 0.99;
     par.printLineage = 0;
     par.minAaMatch = 11;
-    par.minAaMatchEuk = 16;
+    par.minAaMatchEuk = 11;
     par.priorityTaxa = "";
     par.minAvgScore = 0;
     par.topSpecies = 0;
