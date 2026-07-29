@@ -1168,16 +1168,18 @@ void IndexCreator::writeTargetFiles(
     WriteBuffer<uint16_t> posBuffer(posFileName, bufferSize);
     uint64_t lastKmer = 0;
 
-    // Find the first index of garbage k-mer (UINT64_MAX)
-    for (size_t checkN = kmerBuffer.startIndexOfReserve - 1; checkN != 0; checkN--){
-        if(kmerBuffer.buffer[checkN].value != UINT64_MAX){
-            kmerBuffer.startIndexOfReserve = checkN + 1;
-            break;
-        }
+    // Trim trailing garbage (UINT64_MAX) k-mers. Handles the all-garbage case
+    // (e.g. a species whose scaffolds were all filtered out): the reserved
+    // region is emptied so nothing is written, instead of dumping UINT64_MAX.
+    while (kmerBuffer.startIndexOfReserve > 0 &&
+           kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].value == UINT64_MAX) {
+        kmerBuffer.startIndexOfReserve--;
     }
 
-    // Find the first index of meaningful k-mer
-    size_t startIdx = 0;
+    // Find the first meaningful k-mer. Default to the end so that a buffer with
+    // no meaningful k-mers (e.g. every scaffold of a species was filtered out)
+    // writes nothing instead of dumping the empty reserved region.
+    size_t startIdx = kmerBuffer.startIndexOfReserve;
     for (size_t i = 0; i < kmerBuffer.startIndexOfReserve ; i++) {
         if(!kmerBuffer.buffer[i].isEmpty()){
             startIdx = i;
@@ -1266,16 +1268,18 @@ void IndexCreator::writeTargetFilesAndSplits(
     WriteBuffer<uint16_t> posBuffer(dbDir + "/kmerpos", bufferSize);
     WriteBuffer<uint32_t> infoBuffer(dbDir + "/info", bufferSize); 
 
-    // Find the first index of garbage k-mer (UINT64_MAX)
-    for (size_t checkN = kmerBuffer.startIndexOfReserve - 1; checkN != 0; checkN--){
-        if(kmerBuffer.buffer[checkN].value != UINT64_MAX){
-            kmerBuffer.startIndexOfReserve = checkN + 1;
-            break;
-        }
+    // Trim trailing garbage (UINT64_MAX) k-mers. Handles the all-garbage case
+    // (e.g. a species whose scaffolds were all filtered out): the reserved
+    // region is emptied so nothing is written, instead of dumping UINT64_MAX.
+    while (kmerBuffer.startIndexOfReserve > 0 &&
+           kmerBuffer.buffer[kmerBuffer.startIndexOfReserve - 1].value == UINT64_MAX) {
+        kmerBuffer.startIndexOfReserve--;
     }
 
-    // Find the first index of meaningful k-mer
-    size_t startIdx = 0;
+    // Find the first meaningful k-mer. Default to the end so that a buffer with
+    // no meaningful k-mers (e.g. every scaffold of a species was filtered out)
+    // writes nothing instead of dumping the empty reserved region.
+    size_t startIdx = kmerBuffer.startIndexOfReserve;
     for (size_t i = 0; i < kmerBuffer.startIndexOfReserve ; i++) {
         if(!kmerBuffer.buffer[i].isEmpty()){
             startIdx = i;
