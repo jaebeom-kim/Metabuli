@@ -1398,7 +1398,7 @@ bool IndexCreator::extractKmerFromSixFrames(
             const double estimateScale = batchEstimateScale[batchIdx];
             if (par.syncmer) {
                 estimatedKmerCnt = static_cast<size_t>(
-                    ((totalLength * 2.5) / ((12 - par.smerLen + 1) / 2.0)) * estimateScale
+                    ((totalLength * 2.5) / ((metamerPattern->kmerLen - par.smerLen + 1) / 2.0)) * estimateScale
                 );
             } else {
                 estimatedKmerCnt = static_cast<size_t>(
@@ -1585,7 +1585,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
             size_t estimatedKmerCnt = static_cast<size_t>(((totalLength * 1.3) / 3.0) * estimateScale);
             if (par.syncmer) {
                 estimatedKmerCnt = static_cast<size_t>(
-                    ((totalLength * 1.3 / 3.0) / ((metamerPattern->windowSize - par.smerLen + 1) / 2.0)) * estimateScale
+                    ((totalLength * 1.3 / 3.0) / ((metamerPattern->kmerLen - par.smerLen + 1) / 2.0)) * estimateScale
                 );
             }
 
