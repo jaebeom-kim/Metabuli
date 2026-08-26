@@ -130,10 +130,6 @@ Taxonomer<MatchType>::Taxonomer(
     } else {
         minKmerMatchNum = 2;
     }
-    // if (par.syncmer) {
-    //     dnaShift = (8 - par.smerLen) * 3;
-    //     maxCodonShift = 8 - par.smerLen;
-    // }
 
     if (par.seqMode == 1 || par.seqMode == 2) {
         denominator = 100;
@@ -679,11 +675,13 @@ TaxID Taxonomer<MatchType>::BFS(const unordered_map<TaxID, TaxonCounts> & cladeC
 }
 
 template <typename MatchType>
-TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(std::pair<size_t, size_t> & bestSpeciesRange,
-                                                       const MatchType *matchList,
-                                                       size_t end,
-                                                       size_t offset,
-                                                       Query & query) {
+TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(
+    std::pair<size_t, size_t> & bestSpeciesRange,
+    const MatchType *matchList,
+    size_t end,
+    size_t offset,
+    Query & query) 
+{
     matchPaths.clear();
     combinedMatchPaths.clear();
     pair<size_t, size_t> bestMatchPathRange;

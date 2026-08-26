@@ -164,7 +164,7 @@ LocalParameters::LocalParameters() :
         INTERLEAVED(INTERLEAVED_ID,
                  "--interleaved",
                  "Query file holds interleaved paired-end reads (implies paired-end)",
-                 "Query file holds interleaved paired-end reads (R1,R2,R1,R2,...); implies paired-end processing from a single file. 0: off, 1: on",
+                 "Query file holds interleaved paired-end reads (implies paired-end)",
                  typeid(int),
                  (void *) &interleaved,
                  "[0-1]"),
@@ -986,34 +986,24 @@ LocalParameters::LocalParameters() :
     createCandidates.push_back(&PARAM_THREADS);
     createCandidates.push_back(&SEQ_MODE);
     createCandidates.push_back(&INTERLEAVED);
-    createCandidates.push_back(&PRECISION_MODE);
-    createCandidates.push_back(&MIN_SCORE);
-    createCandidates.push_back(&MIN_SP_SCORE);
     createCandidates.push_back(&MIN_AA_MATCH);
     createCandidates.push_back(&MIN_AA_MATCH_EUK);
-    createCandidates.push_back(&TAXONOMY_PATH);
     createCandidates.push_back(&PARAM_MASK_RESIDUES);
     createCandidates.push_back(&PARAM_MASK_PROBABILTY);
     createCandidates.push_back(&RAM_USAGE);
     createCandidates.push_back(&MATCH_PER_KMER);
-    createCandidates.push_back(&ACCESSION_LEVEL);
-    createCandidates.push_back(&TIE_RATIO);
-    createCandidates.push_back(&MIN_AVG_SCORE);
     createCandidates.push_back(&VALIDATE_INPUT);
     createCandidates.push_back(&VALIDATE_DB);
     createCandidates.push_back(&SYNCMER);
     createCandidates.push_back(&SMER_LEN);
-    createCandidates.push_back(&PARAM_SUB_MAT);
     createCandidates.push_back(&PRINT_LOG);
     createCandidates.push_back(&PMD_KMER);
     createCandidates.push_back(&DISABLE_TRIMMING);
-    createCandidates.push_back(&SCORE_MODE);
+    // createCandidates.push_back(&SCORE_MODE);
     createCandidates.push_back(&MAX_E_VALUE);
-    createCandidates.push_back(&TIE_BRAKER);
     createCandidates.push_back(&USE_ALL_MATCHES);
     createCandidates.push_back(&MAX_HDIST);
     createCandidates.push_back(&TOP_SPECIES);
-    createCandidates.push_back(&DB_TOTAL_LENGTH);
     createCandidates.push_back(&MAX_SHIFT);
     createCandidates.push_back(&GAP_PENALTY);
 
