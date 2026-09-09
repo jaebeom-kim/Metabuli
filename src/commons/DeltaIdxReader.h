@@ -153,12 +153,21 @@ private:
     uint64_t packedCurrentWord = 0;
     uint8_t packedLane = 0;
     size_t packedReadCount = 0;
-    // Optional per-k-mer positions, read in lockstep with a plain (unpacked)
-    // info index. Populated only via the posFileName constructor; packed info
-    // and positions never coexist (position DBs are written unpacked).
+    // Optional per-k-mer positions, read in lockstep with the info index
+    // (whether that index is plain or packed). Populated only via the
+    // posFileName constructor.
     ReadBuffer<uint16_t> posBuffer;
     bool fileCompleted = false;
     bool valueBufferCompleted = false;
+
+    // Reads one position in lockstep with the info stream, refilling as needed.
+    // Positions are 1:1 with info IDs regardless of whether the info is packed.
+    inline uint16_t nextPos() {
+        if (unlikely(posBuffer.p == posBuffer.end)) {
+            posBuffer.loadBuffer();
+        }
+        return *posBuffer.p++;
+    }
 
     void fillValueBuffer() {
         // Format is chosen once per refill, not once per ID. This keeps legacy
@@ -191,15 +200,11 @@ private:
                 }
             }
 
-            if (hasPos && unlikely(posBuffer.p == posBuffer.end)) {
-                posBuffer.loadBuffer();
-            }
-
             valueBuffer[valueCnt].tInfo.taxId = *plainInfoBuffer->p++;
             valueBuffer[valueCnt].value = getNextMetamer();
 
             if (hasPos) {
-                valueBuffer[valueCnt].tInfo.pos = *posBuffer.p++;
+                valueBuffer[valueCnt].tInfo.pos = nextPos();
             }
         }
     }
@@ -225,6 +230,9 @@ private:
                 valueBuffer[valueCnt].tInfo.taxId =
                     static_cast<TaxID>((packedCurrentWord >> (packedLane * ID_BITS)) & ID_MASK);
                 valueBuffer[valueCnt].value = getNextMetamer();
+                if (hasPos) {
+                    valueBuffer[valueCnt].tInfo.pos = nextPos();
+                }
                 ++valueCnt;
                 ++packedLane;
                 ++packedReadCount;
@@ -248,6 +256,9 @@ private:
                 valueBuffer[valueCnt].tInfo.taxId =
                     static_cast<TaxID>((packedCurrentWord >> (packedLane * packedIdBits)) & packedIdMask);
                 valueBuffer[valueCnt].value = getNextMetamer();
+                if (hasPos) {
+                    valueBuffer[valueCnt].tInfo.pos = nextPos();
+                }
                 ++valueCnt;
                 ++packedLane;
                 ++packedReadCount;
@@ -405,8 +416,8 @@ public:
         valueCnt = 0;
         valueBuffer = new Kmer[valueBufferSize];
         hasPos = true;
-        // Position DBs are written unpacked, but honor packed metadata anyway so
-        // this stays correct if that ever changes.
+        // Position DBs pack their info index like any other DB; positions live
+        // in a separate file read in lockstep with the (plain or packed) IDs.
         infoIsPacked = infoMetadata.isPacked();
         if (infoIsPacked) {
             packedIdBits = infoMetadata.idBits;

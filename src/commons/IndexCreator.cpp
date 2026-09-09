@@ -512,7 +512,8 @@ void IndexCreator::createIndex() {
 
         // Write the target files
         if(processedBatchCnt == accessionBatches.size() && numOfFlush == 0 && !isUpdating) {
-            writeTargetFilesAndSplits(kmerBuffer, uniqKmerIdx, uniqKmerCnt, uniqKmerIdxRanges);
+            writeTargetFilesAndSplits(kmerBuffer, uniqKmerIdx, uniqKmerCnt, uniqKmerIdxRanges,
+                                      /*streamPackTaxIds=*/true);
         } else {
             writeTargetFiles(kmerBuffer, uniqKmerIdx, uniqKmerIdxRanges);
         }
@@ -1200,8 +1201,9 @@ void IndexCreator::writeTargetFilesAndSplits(
     Buffer<Kmer> & kmerBuffer,
     const size_t * uniqKmerIdx,
     size_t & uniqKmerCnt,
-    const vector<pair<size_t, size_t>> & uniqKmerIdxRanges)
-{    
+    const vector<pair<size_t, size_t>> & uniqKmerIdxRanges,
+    bool streamPackTaxIds)
+{
     // To make differential index splits
     uint64_t AAofTempSplitOffset = UINT64_MAX;
     size_t sizeOfSplit = uniqKmerCnt / (par.splitNum - 1);
@@ -1221,15 +1223,14 @@ void IndexCreator::writeTargetFilesAndSplits(
     uint64_t lastKmer = 0;
     WriteBuffer<uint16_t> diffBuffer(dbDir + "/diffIdx", bufferSize);
     
-    // Single-flush output is first written in the legacy uint32 layout. The
-    // finalization step may compact it once max ID and logical count are known.
-    WriteBuffer<uint32_t> infoBuffer(dbDir + "/info", bufferSize); 
-    uint32_t maxInfoId = 0;
+    // Tax-ID databases stream the info index in its final packed encoding (bit
+    // width chosen up front from the taxonomy); other callers write uint32 and
+    // let finalizeInfoIndex() repack from the observed max ID.
+    const uint8_t infoIdBits = streamPackTaxIds ? chooseInfoIdBits() : 32;
+    InfoWriter infoBuffer(dbDir + "/info", infoIdBits, bufferSize);
     for (size_t i = 0; i < uniqKmerIdxRanges.size(); i ++) {
         for (size_t j = uniqKmerIdxRanges[i].first; j < uniqKmerIdxRanges[i].second; j ++) {
-            uint32_t infoId = kmerBuffer.buffer[uniqKmerIdx[j]].id;
-            maxInfoId = std::max(maxInfoId, infoId);
-            infoBuffer.write(&infoId);
+            infoBuffer.write(kmerBuffer.buffer[uniqKmerIdx[j]].id);
             getDiffIdx(lastKmer, kmerBuffer.buffer[uniqKmerIdx[j]].value, diffBuffer);
             // Split files use logical ID offsets, so old and packed info files
             // share the same random-access contract.
@@ -1257,9 +1258,14 @@ void IndexCreator::writeTargetFilesAndSplits(
 
     const size_t finalInfoCount = infoBuffer.writeCnt;
     infoBuffer.close();
-    // Finalization replaces dbDir/info with packed storage unless disabled.
-    finalizeInfoIndex(dbDir + "/info", maxInfoId, finalInfoCount);
-    
+    if (streamPackTaxIds) {
+        // Already written in final encoding; just record the metadata.
+        recordInfoMetadata(infoIdBits, finalInfoCount);
+    } else {
+        // Repack the uint32 stream in place from the observed max ID.
+        finalizeInfoIndex(dbDir + "/info", infoBuffer.maxId, finalInfoCount);
+    }
+
     kmerBuffer.startIndexOfReserve = 0; // Reset the buffer for the next batch
 }
 
@@ -1277,7 +1283,10 @@ void IndexCreator::writeTargetFilesAndSplits(
     uint64_t lastKmer = 0;
     WriteBuffer<uint16_t> diffBuffer(dbDir + "/diffIdx", bufferSize);
     WriteBuffer<uint16_t> posBuffer(dbDir + "/kmerpos", bufferSize);
-    WriteBuffer<uint32_t> infoBuffer(dbDir + "/info", bufferSize); 
+    // Position databases stream their info index packed too; the reader walks
+    // packed tax IDs and positions in lockstep.
+    const uint8_t infoIdBits = chooseInfoIdBits();
+    InfoWriter infoBuffer(dbDir + "/info", infoIdBits, bufferSize);
 
     // Trim trailing garbage (UINT64_MAX) k-mers. Handles the all-garbage case
     // (e.g. a species whose scaffolds were all filtered out): the reserved
@@ -1312,7 +1321,7 @@ void IndexCreator::writeTargetFilesAndSplits(
     for (size_t i = startIdx; i < kmerBuffer.startIndexOfReserve ; i++) {
         uint16_t pos = static_cast<uint16_t>(kmerBuffer.buffer[i].tInfo.pos);
         posBuffer.write(&pos);
-        infoBuffer.write(&kmerBuffer.buffer[i].id);
+        infoBuffer.write(kmerBuffer.buffer[i].id);
         getDiffIdx(lastKmer, kmerBuffer.buffer[i].value, diffBuffer);
 
         // Write split info
@@ -1335,7 +1344,11 @@ void IndexCreator::writeTargetFilesAndSplits(
     fwrite(splitList, sizeof(DiffIdxSplit), par.splitNum, deltaIdxSplitFile);
     delete[] splitList;
     fclose(deltaIdxSplitFile);
-    
+
+    const size_t finalInfoCount = infoBuffer.writeCnt;
+    infoBuffer.close();
+    recordInfoMetadata(infoIdBits, finalInfoCount);
+
     kmerBuffer.startIndexOfReserve = 0; // Reset the buffer for the next batch
 }
 
@@ -2296,6 +2309,25 @@ void IndexCreator::writeInfoMetadata() {
         return;
     }
     InfoIndex::appendMetadata(paramterFileName, finalInfoMetadata);
+}
+
+uint8_t IndexCreator::chooseInfoIdBits() const {
+    if (par.packInfo == 0) {
+        return 32; // legacy raw uint32
+    }
+    // Internal tax IDs run 1..maxTaxID, so this width fits every ID the info
+    // index can hold without a second pass to measure the actual maximum.
+    return InfoIndex::chooseIdBits(static_cast<uint32_t>(taxonomy->getMaxTaxID()));
+}
+
+void IndexCreator::recordInfoMetadata(uint8_t idBits, size_t idCount) {
+    finalInfoMetadata.idBits = idBits;
+    finalInfoMetadata.idCount = idCount;
+    finalInfoMetadata.format = (idBits < 32) ? "packed_uint" : "uint32";
+    writeInfoMetadata();
+    cout << "Info index format    : " << finalInfoMetadata.format
+         << " (" << static_cast<int>(idBits)
+         << " bits, " << idCount << " IDs)" << endl;
 }
 
 void IndexCreator::finalizeInfoIndex(const std::string &infoFileName,

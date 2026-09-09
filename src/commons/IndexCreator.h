@@ -203,9 +203,10 @@ protected:
 
     void writeTargetFilesAndSplits(
         Buffer<Kmer> & kmerBuffer,
-        const size_t * uniqeKmerIdx, 
-        size_t & uniqKmerCnt, 
-        const vector<pair<size_t, size_t>> & uniqKmerIdxRanges);
+        const size_t * uniqeKmerIdx,
+        size_t & uniqKmerCnt,
+        const vector<pair<size_t, size_t>> & uniqKmerIdxRanges,
+        bool streamPackTaxIds = false);
 
     void writeTargetFilesAndSplits(
         Buffer<Kmer> & kmerBuffer);
@@ -213,6 +214,13 @@ protected:
     void writeDbParameters();
     void writeInfoMetadata();
     void finalizeInfoIndex(const std::string &infoFileName, uint32_t maxInfoId, size_t idCount);
+
+    // Bit width for the final info index, decided up front so tax-ID databases
+    // can stream packed straight to disk. Honors --pack-info 0 (stays uint32).
+    uint8_t chooseInfoIdBits() const;
+    // Record the info-index format in db.parameters after a streaming write
+    // (no repack pass needed, unlike finalizeInfoIndex).
+    void recordInfoMetadata(uint8_t idBits, size_t idCount);
 
     size_t fillTargetKmerBuffer(
         Buffer<Kmer> &kmerBuffer,                 
@@ -422,9 +430,14 @@ template <FilterMode M>
 void IndexCreator::mergeTargetFiles() {
     size_t bufferSize = 1024 * 1024 * 512;
     WriteBuffer<uint16_t> diffBuffer(mergedDeltaIdxFileName, bufferSize);
-    // Merge output is written as uint32 first. After the stream is complete,
-    // finalizeInfoIndex() either packs it or records the raw uint32 metadata.
-    WriteBuffer<uint32_t> infoBuffer(mergedInfoFileName, bufferSize);
+    // Tax-ID databases (DB_CREATION / DB_CREATION_POS) stream the info index in
+    // its final packed encoding, chosen up front from the taxonomy's max ID, so
+    // no unpacked file is written and repacked. Other modes write uint32 and let
+    // finalizeInfoIndex() repack afterwards from the observed max ID.
+    constexpr bool streamPackTaxIds =
+        (M == FilterMode::DB_CREATION || M == FilterMode::DB_CREATION_POS);
+    const uint8_t infoIdBits = streamPackTaxIds ? chooseInfoIdBits() : 32;
+    InfoWriter infoBuffer(mergedInfoFileName, infoIdBits, bufferSize);
     WriteBuffer<uint16_t> posBuffer(mergedPosFileName, bufferSize);
 
     // Prepare files to merge
@@ -479,9 +492,6 @@ void IndexCreator::mergeTargetFiles() {
     int remainingSplits = splitNum;
     vector<pair<size_t, size_t>> uniqKmerIdxRanges;
     uint64_t lastKmer = 0;
-    // Track the selected IDs that actually reach disk. If packing is enabled,
-    // this determines the smallest useful bit width for the final info file.
-    uint32_t maxInfoId = 0;
     // DB_CREATION_POS streams k-mers straight through without the uniq index,
     // so skip its large allocation in that mode.
     size_t * uniqKmerIdx = nullptr;
@@ -557,7 +567,7 @@ void IndexCreator::mergeTargetFiles() {
 
                 uint16_t pos = static_cast<uint16_t>(kmerBuffer.buffer[i].tInfo.pos);
                 posBuffer.write(&pos);
-                infoBuffer.write(&kmerBuffer.buffer[i].id);
+                infoBuffer.write(kmerBuffer.buffer[i].id);
                 getDiffIdx(lastKmer, kmerBuffer.buffer[i].value, diffBuffer);
                 if (AminoAcidPart(lastKmer) != AAofTempSplitOffset && splitCheck == 1) {
                     splitList[splitListIdx++] = {lastKmer, diffBuffer.writeCnt, infoBuffer.writeCnt};
@@ -578,9 +588,7 @@ void IndexCreator::mergeTargetFiles() {
 
             for (size_t i = 0; i < uniqKmerIdxRanges.size(); i ++) {
                 for (size_t j = uniqKmerIdxRanges[i].first; j < uniqKmerIdxRanges[i].second; j ++) {
-                    uint32_t infoId = kmerBuffer.buffer[uniqKmerIdx[j]].id;
-                    maxInfoId = std::max(maxInfoId, infoId);
-                    infoBuffer.write(&infoId);
+                    infoBuffer.write(kmerBuffer.buffer[uniqKmerIdx[j]].id);
                     getDiffIdx(lastKmer, kmerBuffer.buffer[uniqKmerIdx[j]].value, diffBuffer);
                     // Write split info
                     if (AminoAcidPart(lastKmer) != AAofTempSplitOffset && splitCheck == 1) {
@@ -611,12 +619,13 @@ void IndexCreator::mergeTargetFiles() {
     fclose(diffIdxSplitFile);
     const size_t finalInfoCount = infoBuffer.writeCnt;
     infoBuffer.close();
-    // Finalization happens only after close so optional packing can stream the
-    // complete uint32 file into a compact replacement. Position databases keep a
-    // plain uint32 info index (positions are read from the separate pos file in
-    // lockstep with unpacked IDs), so packing is skipped for them.
-    if constexpr (M != FilterMode::DB_CREATION_POS) {
-        finalizeInfoIndex(mergedInfoFileName, maxInfoId, finalInfoCount);
+    // Tax-ID databases already wrote the final packed encoding, so only the
+    // metadata needs recording. Other modes still repack the uint32 stream from
+    // the observed max ID.
+    if constexpr (streamPackTaxIds) {
+        recordInfoMetadata(infoIdBits, finalInfoCount);
+    } else {
+        finalizeInfoIndex(mergedInfoFileName, infoBuffer.maxId, finalInfoCount);
     }
     // for(int i = 0; i < par.splitNum; i++) {
     //     cout<<splitList[i].ADkmer<< " "<<splitList[i].diffIdxOffset<< " "<<splitList[i].infoIdxOffset<<endl;

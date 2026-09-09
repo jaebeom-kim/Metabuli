@@ -241,6 +241,56 @@ public:
     }
 };
 
+// Streams the final info index to disk in its chosen physical encoding, so the
+// database never has to write a full uint32 file and then repack it. The bit
+// width is fixed up front (from the taxonomy's max internal ID). idBits == 32
+// keeps the legacy raw-uint32 layout; idBits < 32 packs on the fly.
+class InfoWriter {
+private:
+    const uint8_t idBits;
+    std::unique_ptr<WriteBuffer<uint32_t>> plain;
+    std::unique_ptr<InfoIndexWriter> packed;
+
+public:
+    size_t writeCnt = 0;   // logical IDs written (drives split offsets/idCount)
+    uint32_t maxId = 0;    // largest ID seen; used when a caller must repack
+
+    InfoWriter(const std::string &fileName, uint8_t idBits, size_t bufferSize)
+        : idBits(idBits) {
+        if (idBits < 32) {
+            // uint64 words hold multiple IDs, so halve the element budget to
+            // keep roughly the same byte footprint as the uint32 buffer.
+            packed = std::make_unique<InfoIndexWriter>(
+                fileName, idBits, std::max<size_t>(1, bufferSize / 2));
+        } else {
+            plain = std::make_unique<WriteBuffer<uint32_t>>(fileName, bufferSize);
+        }
+    }
+
+    inline void write(uint32_t id) {
+        if (id > maxId) {
+            maxId = id;
+        }
+        if (packed) {
+            packed->write(id);
+        } else {
+            plain->write(&id);
+        }
+        ++writeCnt;
+    }
+
+    void close() {
+        if (packed) {
+            packed->close();
+        } else if (plain) {
+            plain->close();
+        }
+    }
+
+    bool isPacked() const { return static_cast<bool>(packed); }
+    uint8_t getIdBits() const { return idBits; }
+};
+
 class InfoIndexReader {
 private:
     InfoIndexMetadata metadata;
