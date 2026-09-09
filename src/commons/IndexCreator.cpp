@@ -878,6 +878,12 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
             if (it == external2internalTaxID.end() || observedAccessionsVec[i].taxID == 0) {
                 cout << "TaxID is not found for accession " << observedAccessionsVec[i].accession << " " << observedAccessionsVec[i].taxID << endl;
                 unmappedAccessions.push_back(observedAccessionsVec[i].accession);
+                // Mark as unmapped so downstream (acc2taxid.map writing,
+                // getAccessionBatches, k-mer extraction) skips it instead of
+                // treating the leftover external taxID as an internal one. The
+                // external ID would otherwise be passed to getOriginalTaxID(),
+                // which aborts when it exceeds maxTaxID ("<id> isn't used.").
+                observedAccessionsVec[i].taxID = 0;
                 continue;
             }
             curId = it->second;
