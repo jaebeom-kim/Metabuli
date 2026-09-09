@@ -82,6 +82,21 @@ public:
         return maxTaxID;
     }
 
+    // Largest internal tax ID that can appear in the info index. Equals
+    // maxTaxID unless renumberWritableFirst() has compacted the writable set
+    // into the low ID range, in which case the info index can pack tighter.
+    TaxID getWritableMaxTaxID() const {
+        return writableMaxTaxID > 0 ? writableMaxTaxID : maxTaxID;
+    }
+
+    // Relabel internal tax IDs so every ID in `writableInternalIds` (the tax IDs
+    // that can reach the info index: observed taxa and their ancestors up to
+    // their species representative) gets a small value, while root stays at 1.
+    // Lets the info index pack to fewer bits with no read-time translation.
+    // Only E/L/H/M-independent state is touched (node labels, D,
+    // internal2orgTaxId), so the LCA sparse table is NOT rebuilt.
+    void renumberWritableFirst(const std::unordered_set<TaxID> & writableInternalIds);
+
     TaxID getEukaryotaTaxID() const {
         return eukaryotaTaxID;
     }
@@ -277,7 +292,10 @@ public:
 
 protected:
     TaxID eukaryotaTaxID;
-    int *internal2orgTaxId; 
+    // 0 until renumberWritableFirst() runs; then the largest internal ID that
+    // can appear in the info index (see getWritableMaxTaxID()).
+    TaxID writableMaxTaxID = 0;
+    int *internal2orgTaxId;
     bool useInternalTaxID;
     size_t loadNodes(std::vector<TaxonNode> &tmpNodes,
                      const std::string &nodesFile,

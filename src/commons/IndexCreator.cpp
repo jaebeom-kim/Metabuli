@@ -816,6 +816,55 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
         taxonomy = newTaxonomy;
     }
 
+    // Compact the internal tax-ID numbering so that IDs which can reach the info
+    // index (observed taxa and their ancestors up to the species representative)
+    // get small values. This lets the info index pack to fewer bits with no
+    // read-time translation. Fresh, non-accession-level builds only; updateDB
+    // must keep the existing DB's numbering, and accession-level is left on the
+    // maxTaxID sizing for now.
+    if (par.packInfo != 0 && par.accessionLevel == 0 && !isUpdating) {
+        std::unordered_map<TaxID, TaxID> ext2int;
+        taxonomy->getExternal2internalTaxID(ext2int);
+        std::unordered_set<TaxID> writable;
+        for (const auto & acc : observedAccessionsVec) {
+            TaxID orig = acc.taxID; // still external here
+            if (orig == 0) {
+                continue;
+            }
+            if (old2merged.count(orig)) {
+                orig = old2merged[orig];
+            }
+            auto it = ext2int.find(orig);
+            if (it == ext2int.end()) {
+                continue;
+            }
+            TaxID node = it->second; // current internal ID
+            // getTaxIdAtRank walks past "no rank" ancestors to the nearest node
+            // at or above species, so species-less leaves resolve to whatever the
+            // reduction will actually group them by (genus/family/...).
+            TaxID sp = taxonomy->getTaxIdAtRank(node, "species");
+            int steps = 0;
+            while (node > 1 && node <= taxonomy->getMaxTaxID()) {
+                writable.insert(node);
+                if (node == sp) {
+                    break;
+                }
+                TaxID parent = taxonomy->taxonNode(node)->parentTaxId;
+                if (parent == node) {
+                    break;
+                }
+                node = parent;
+                if (++steps > 512) {
+                    break;
+                }
+            }
+            if (sp > 1) {
+                writable.insert(sp);
+            }
+        }
+        taxonomy->renumberWritableFirst(writable);
+    }
+
     // Second, convert external taxIDs to internal taxIDs
     cout << "Converting external taxIDs to internal taxIDs" << endl;
     vector<std::string> unmappedAccessions;
@@ -2315,9 +2364,11 @@ uint8_t IndexCreator::chooseInfoIdBits() const {
     if (par.packInfo == 0) {
         return 32; // legacy raw uint32
     }
-    // Internal tax IDs run 1..maxTaxID, so this width fits every ID the info
-    // index can hold without a second pass to measure the actual maximum.
-    return InfoIndex::chooseIdBits(static_cast<uint32_t>(taxonomy->getMaxTaxID()));
+    // Only IDs up to the writable maximum can reach the info index (after
+    // renumberWritableFirst() compacts the writable set into the low range this
+    // is much smaller than maxTaxID; otherwise it equals maxTaxID). Either way
+    // it fits every ID the info index can hold, with no measuring pass.
+    return InfoIndex::chooseIdBits(static_cast<uint32_t>(taxonomy->getWritableMaxTaxID()));
 }
 
 void IndexCreator::recordInfoMetadata(uint8_t idBits, size_t idCount) {

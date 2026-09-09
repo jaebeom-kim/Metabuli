@@ -497,6 +497,64 @@ TaxID TaxonomyWrapper::getTaxIdAtRank(int taxId, const std::string & rank) const
     return curNode->taxId;
 }
 
+void TaxonomyWrapper::renumberWritableFirst(const std::unordered_set<TaxID> & writableInternalIds) {
+    if (!useInternalTaxID || maxTaxID < 1) {
+        return;
+    }
+
+    // Build a permutation old internal ID -> new internal ID over [0..maxTaxID].
+    // ID 0 (unused sentinel) and 1 (root) are kept fixed, because the code base
+    // assumes root == 1 (e.g. getTaxIdAtRank, NcbiTaxonomy::ROOT_TAXID).
+    std::vector<TaxID> perm(maxTaxID + 1, 0);
+    perm[0] = 0;
+    perm[1] = 1;
+
+    // Writable IDs (excluding the fixed 0/1) take the low range [2 .. K+1].
+    TaxID next = 2;
+    for (TaxID old = 2; old <= maxTaxID; ++old) {
+        if (writableInternalIds.count(old)) {
+            perm[old] = next++;
+        }
+    }
+    const TaxID writableMax = next - 1; // largest ID that can reach the info file
+
+    // Everything else fills the remaining high range.
+    for (TaxID old = 2; old <= maxTaxID; ++old) {
+        if (!writableInternalIds.count(old)) {
+            perm[old] = next++;
+        }
+    }
+
+    // Relabel node tax IDs and parent links. The node array order (and thus the
+    // Euler tour E/L/H/M) is unchanged, so the LCA structures stay valid.
+    for (size_t i = 0; i < maxNodes; ++i) {
+        taxonNodes[i].taxId = perm[taxonNodes[i].taxId];
+        taxonNodes[i].parentTaxId = perm[taxonNodes[i].parentTaxId];
+    }
+
+    // Permute D (taxID -> node ID) rather than rebuilding it, so merged-node
+    // aliases (which point several tax IDs at one node) are preserved.
+    std::vector<int> newD(maxTaxID + 1, -1);
+    for (TaxID old = 0; old <= maxTaxID; ++old) {
+        newD[perm[old]] = D[old];
+    }
+    std::copy(newD.begin(), newD.end(), D);
+
+    // Permute internal -> original map the same way.
+    std::vector<int> newI2O(maxTaxID + 1, 0);
+    for (TaxID old = 0; old <= maxTaxID; ++old) {
+        newI2O[perm[old]] = internal2orgTaxId[old];
+    }
+    std::copy(newI2O.begin(), newI2O.end(), internal2orgTaxId);
+
+    // Remap the cached Eukaryota ID (not serialized, but used during build).
+    if (eukaryotaTaxID > 0 && eukaryotaTaxID <= maxTaxID) {
+        eukaryotaTaxID = perm[eukaryotaTaxID];
+    }
+
+    writableMaxTaxID = writableMax;
+}
+
 void TaxonomyWrapper::createTaxIdListAtRank(std::vector<int> &taxIdList, std::vector<int> &taxIdListAtRank,
                                          const std::string &rank) {
     size_t sizeOfList = taxIdList.size();
