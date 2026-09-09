@@ -87,9 +87,8 @@ int accession2taxid(const std::string & assemblyList, const std::string & assacc
         string path = assemblies[i];
         smatch match;
         string assemblyID;
-        while (regex_search(path, match, regex1)) {
+        if (regex_search(path, match, regex1)) {
             assemblyID = match[0];
-            path = match.suffix().str();
         }
         size_t pos = assemblyID.find('.');
         if (pos != string::npos) { assemblyID = assemblyID.substr(0, pos); }
