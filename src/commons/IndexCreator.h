@@ -34,6 +34,7 @@
 #include "GeneticCode.h"
 #include "KmerExtractor.h"
 #include "DeltaIdxReader.h"
+#include "InfoIndex.h"
 #include "UnirefTree.h"
 #include "MetamerPattern.h"
 
@@ -181,6 +182,7 @@ protected:
     std::string mergedInfoFileName;
     std::string mergedPosFileName;
     std::string deltaIdxSplitFileName;
+    InfoIndexMetadata finalInfoMetadata;
     struct Split{
         Split(size_t offset, size_t end) : offset(offset), end(end) {}
         size_t offset;
@@ -209,6 +211,8 @@ protected:
         Buffer<Kmer> & kmerBuffer);
 
     void writeDbParameters();
+    void writeInfoMetadata();
+    void finalizeInfoIndex(const std::string &infoFileName, uint32_t maxInfoId, size_t idCount);
 
     size_t fillTargetKmerBuffer(
         Buffer<Kmer> &kmerBuffer,                 
@@ -418,6 +422,8 @@ template <FilterMode M>
 void IndexCreator::mergeTargetFiles() {
     size_t bufferSize = 1024 * 1024 * 512;
     WriteBuffer<uint16_t> diffBuffer(mergedDeltaIdxFileName, bufferSize);
+    // Merge output is written as uint32 first. After the stream is complete,
+    // finalizeInfoIndex() either packs it or records the raw uint32 metadata.
     WriteBuffer<uint32_t> infoBuffer(mergedInfoFileName, bufferSize);
     WriteBuffer<uint16_t> posBuffer(mergedPosFileName, bufferSize);
 
@@ -473,12 +479,15 @@ void IndexCreator::mergeTargetFiles() {
     int remainingSplits = splitNum;
     vector<pair<size_t, size_t>> uniqKmerIdxRanges;
     uint64_t lastKmer = 0;
-
+    // Track the selected IDs that actually reach disk. If packing is enabled,
+    // this determines the smallest useful bit width for the final info file.
+    uint32_t maxInfoId = 0;
+    // DB_CREATION_POS streams k-mers straight through without the uniq index,
+    // so skip its large allocation in that mode.
     size_t * uniqKmerIdx = nullptr;
     if (M != FilterMode::DB_CREATION_POS) {
         uniqKmerIdx = new size_t[kmerBuffer.bufferSize];
     }
-
     vector<size_t> splitToProcess;
     while (remainingSplits > 0) {
         kmerBuffer.init();
@@ -545,7 +554,7 @@ void IndexCreator::mergeTargetFiles() {
                 if (kmerBuffer.buffer[i].value == UINT64_MAX) {
                     break;
                 }
-                
+
                 uint16_t pos = static_cast<uint16_t>(kmerBuffer.buffer[i].tInfo.pos);
                 posBuffer.write(&pos);
                 infoBuffer.write(&kmerBuffer.buffer[i].id);
@@ -569,7 +578,9 @@ void IndexCreator::mergeTargetFiles() {
 
             for (size_t i = 0; i < uniqKmerIdxRanges.size(); i ++) {
                 for (size_t j = uniqKmerIdxRanges[i].first; j < uniqKmerIdxRanges[i].second; j ++) {
-                    infoBuffer.write(&kmerBuffer.buffer[uniqKmerIdx[j]].id);
+                    uint32_t infoId = kmerBuffer.buffer[uniqKmerIdx[j]].id;
+                    maxInfoId = std::max(maxInfoId, infoId);
+                    infoBuffer.write(&infoId);
                     getDiffIdx(lastKmer, kmerBuffer.buffer[uniqKmerIdx[j]].value, diffBuffer);
                     // Write split info
                     if (AminoAcidPart(lastKmer) != AAofTempSplitOffset && splitCheck == 1) {
@@ -598,11 +609,20 @@ void IndexCreator::mergeTargetFiles() {
     FILE * diffIdxSplitFile = fopen(deltaIdxSplitFileName.c_str(), "wb");
     fwrite(splitList, sizeof(DiffIdxSplit), par.splitNum, diffIdxSplitFile);
     fclose(diffIdxSplitFile);
+    const size_t finalInfoCount = infoBuffer.writeCnt;
+    infoBuffer.close();
+    // Finalization happens only after close so optional packing can stream the
+    // complete uint32 file into a compact replacement. Position databases keep a
+    // plain uint32 info index (positions are read from the separate pos file in
+    // lockstep with unpacked IDs), so packing is skipped for them.
+    if constexpr (M != FilterMode::DB_CREATION_POS) {
+        finalizeInfoIndex(mergedInfoFileName, maxInfoId, finalInfoCount);
+    }
     // for(int i = 0; i < par.splitNum; i++) {
     //     cout<<splitList[i].ADkmer<< " "<<splitList[i].diffIdxOffset<< " "<<splitList[i].infoIdxOffset<<endl;
     // }
     cout<<"DB creation completed"<<endl;
-    cout<<"Total k-mer count   : " << infoBuffer.writeCnt <<endl;
+    cout<<"Total k-mer count   : " << finalInfoCount <<endl;
 
     cout<<"DB files you need   : " << endl;
     cout<<mergedDeltaIdxFileName<<endl;

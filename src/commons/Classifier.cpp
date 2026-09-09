@@ -335,7 +335,6 @@ void Classifier::preciseModePreset(LocalParameters & par) {
 }
 
 
-
 void Classifier::writeUnclassifiedReads(const std::vector<std::string> & queryFiles, bool interleaved) {
     if (queryFiles.empty() || queryFiles[0].empty()) {
         std::cout << "Warning: --unclassified requested but no query file is available; skipping." << std::endl;

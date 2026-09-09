@@ -55,6 +55,7 @@ public:
     std::vector<MMseqsParameter*> createnewtaxalist;
     std::vector<MMseqsParameter*> classifiedRefiner;
     std::vector<MMseqsParameter*> validateDatabase;
+    std::vector<MMseqsParameter*> compactInfoIndex;
     std::vector<MMseqsParameter*> makeBenchmarkSet;
     std::vector<MMseqsParameter*> buildUnirefDb;
     std::vector<MMseqsParameter*> buildUnirefTree;
@@ -163,6 +164,7 @@ public:
     PARAMETER(NO_MASK_TAXA)
     PARAMETER(SKIP_PRODIGAL_TAXA)
     PARAMETER(MIN_EUK_CONTIG_LEN)
+    PARAMETER(PACK_INFO)
 
     // DB updated parameters
     PARAMETER(NEW_TAXA)
@@ -290,6 +292,7 @@ public:
     std::string noMaskTaxa;
     std::string skipProdigalTaxa;
     int minEukContigLen;
+    int packInfo;
 
     // DB updated parameters
     std::string newTaxa;
