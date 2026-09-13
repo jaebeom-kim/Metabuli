@@ -61,12 +61,15 @@ std::unordered_map<TaxID, uint64_t> loadGenomeSizes(const std::string &dbDir) {
 // -------- Filter method 0: iterative top-hit average score + read count + genome coverage --------
 //
 // Iterative because removing a species reshuffles which species is each read's top hit.
-// Each round assigns every read to its best surviving candidate and scores species over
-// the reads they currently win (matching report.tsv's per-species avg_score, not an
-// average over all candidate occurrences). A species is dropped when it wins no reads,
-// when its mean top-hit idScore is below --min-avg-score, or when it is the top hit for
-// fewer than --min-count reads; reads whose winner is dropped are rescued onto their
-// next-best survivor. The loop repeats to a fixpoint. Coverage/evenness
+// Each round assigns every read to its best surviving candidate -- plus any survivor
+// whose idScore ties with it within --tie-ratio -- and scores each species over the
+// reads it wins or ties for the top (not an average over all candidate occurrences).
+// Crediting near-ties keeps a real species from being dropped when it narrowly loses
+// reads to a near-identical sibling; --tie-ratio 1.0 restores strict top-hit-only
+// scoring. A species is dropped when no read counts toward it, when its mean idScore
+// over those reads is below --min-avg-score, or when it counts for fewer than
+// --min-count reads; reads whose winner is dropped are rescued onto their next-best
+// survivor. The loop repeats to a fixpoint. Coverage/evenness
 // (--min-adj-evenness, needs k-mer positions + genome sizes) is a coarser outer gate:
 // after score+count converge it is evaluated once on the survivors, and if it removes
 // any species the score+count loop is re-converged. Kept species therefore satisfy all
@@ -81,6 +84,7 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     const float minAdjEvenness = par.minAdjEvenness;
     const uint64_t minCount = par.minCount < 0 ? 0 : static_cast<uint64_t>(par.minCount);
     const bool useAllHits = par.covUseAllHits != 0;
+    const float tieRatio = par.tieRatio; // credit near-ties within this margin (1.0 = strict top hit)
 
     std::cout << "Filter method          : top-hit score + read count + genome coverage" << std::endl;
     std::cout << "Min. average score     : " << minAvgScore
@@ -89,6 +93,8 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
               << (minCount == 0 ? " (count filter disabled)" : "") << std::endl;
     std::cout << "Min. adjusted evenness : " << minAdjEvenness
               << (minAdjEvenness <= 0.0f ? " (coverage filter disabled)" : "") << std::endl;
+    std::cout << "Score tie ratio        : " << tieRatio
+              << (tieRatio >= 1.0f ? " (top hit per read only)" : " (credit hits within margin of the top)") << std::endl;
     std::cout << "Coverage aggregation   : " << (useAllHits ? "all candidate hits" : "top hit per read only") << std::endl;
 
     // --- Load each read's candidate (speciesId, idScore) list once, best-first ---
@@ -128,13 +134,24 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
             speciesScoreSum.clear();
             speciesScoreCount.clear();
             for (const std::vector<std::pair<TaxID, float>> &r : reads) {
+                float bestScore = -1.0f;
                 for (const std::pair<TaxID, float> &hit : r) {
-                    if (alive.count(hit.first) != 0) {
-                        // First surviving candidate = this read's top hit.
-                        speciesScoreSum[hit.first] += hit.second;
-                        speciesScoreCount[hit.first] += 1;
+                    if (alive.count(hit.first) == 0) {
+                        continue; // dropped species do not contribute
+                    }
+                    if (bestScore < 0.0f) {
+                        bestScore = hit.second; // best-first: first survivor is the top hit
+                    } else if (hit.second <= bestScore * tieRatio) {
+                        // best-first: this and all later survivors are outside the tie
+                        // margin. With tieRatio == 1.0 this triggers on the second
+                        // survivor, i.e. strict top-hit-only scoring.
                         break;
                     }
+                    // Credit the top hit plus any near-tie above the margin, so a real
+                    // species is not dropped for narrowly losing reads to a
+                    // near-identical sibling.
+                    speciesScoreSum[hit.first] += hit.second;
+                    speciesScoreCount[hit.first] += 1;
                 }
             }
 
