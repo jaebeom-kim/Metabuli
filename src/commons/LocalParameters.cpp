@@ -420,6 +420,13 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &minUniqueCount,
                 "^[0-9]+$"),
+        DROP_EMPTIED(DROP_EMPTIED_ID,
+                "--drop-emptied",
+                "Drop reads whose candidates are all filtered out (filter-candidates)",
+                "filter-candidates: 1 = a read whose candidate species are all removed becomes unclassified. 0 (default) = keep such a read at its higher-rank LCA when it had >=2 tied species, and discard it only when it was uniquely mapped to a single removed species (preserves higher-rank recall).",
+                typeid(int),
+                (void *) &dropEmptied,
+                "^[0-1]$"),
         FILTER_METHOD(FILTER_METHOD_ID,
                 "--filter-method",
                 "filter-candidates method (0: score+coverage, 1: evidence+uniqueness)",
@@ -1041,6 +1048,7 @@ LocalParameters::LocalParameters() :
     filterCandidates.push_back(&MIN_COUNT);
     filterCandidates.push_back(&MIN_UNIQUE_RATIO);
     filterCandidates.push_back(&MIN_UNIQUE_COUNT);
+    filterCandidates.push_back(&DROP_EMPTIED);
     // method 1: best-evidence + uniqueness
     filterCandidates.push_back(&MIN_STRONG_SCORE);
     filterCandidates.push_back(&MIN_STRONG_READS);

@@ -58,6 +58,33 @@ std::unordered_map<TaxID, uint64_t> loadGenomeSizes(const std::string &dbDir) {
     return sp2genomeSize;
 }
 
+// Number of distinct species in a read's tie set: the top candidate plus any
+// candidate within its tie margin. Mirrors chooseBestTaxonFromCandidates
+// (score-dependent myTieRatio), so we can predict whether classify-candidates
+// would resolve the read to a single species (size 1) or an LCA of >=2 species.
+// Approximation: uses idScore only (not subScore/priority taxa), so callers
+// should use the same --tie-ratio / --min-score they pass to classify-candidates.
+size_t tieSetDistinctSpecies(const std::vector<SpeciesCandidate> &cands,
+                             float tieRatio, float minScore) {
+    float best = -1.0f;
+    for (const SpeciesCandidate &c : cands) {          // candidates are best-first
+        if (c.idScore >= minScore) { best = c.idScore; break; }
+    }
+    if (best < 0.0f) {
+        return 0;
+    }
+    const float diff = 0.09f;
+    const float myTieRatio = (tieRatio - diff) + (best * diff);
+    const float threshold = best * myTieRatio;
+    std::unordered_set<TaxID> tied;
+    for (const SpeciesCandidate &c : cands) {
+        if (c.idScore < minScore) continue;
+        if (c.idScore >= threshold) tied.insert(c.speciesId);
+        else break;                                    // best-first: the rest are lower
+    }
+    return tied.size();
+}
+
 // -------- Filter method 0: iterative top-hit average score + read count + genome coverage --------
 //
 // Iterative because removing a species reshuffles which species is each read's top hit.
@@ -478,6 +505,7 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     par.minCount = 0;
     par.minUniqueRatio = 0.0f;
     par.minUniqueCount = 10;
+    par.dropEmptied = 0;
     par.filterMethod = 0;
     par.minStrongScore = 0.7f;
     par.minStrongReads = 3;
@@ -540,14 +568,26 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     CandidateDBWriter writer(outputDb, static_cast<unsigned int>(threadCount), 0);
     writer.open();
 
+    // How to handle a read whose candidate species are all removed:
+    //   dropEmptied == 1 : leave it empty -> unclassified (blunt, loses higher-rank recall)
+    //   dropEmptied == 0 : keep it at its higher-rank LCA if it had >=2 tied species
+    //                      (rescue), but discard it if it was uniquely mapped to a single
+    //                      removed species (no honest fallback -> unclassified).
+    const bool dropEmptied = par.dropEmptied != 0;
+    const float tieRatio = par.tieRatio;
+    const float minScore = par.minScore;
+
     std::atomic<size_t> keptCandidateCnt{0};
     std::atomic<size_t> removedCandidateCnt{0};
-    std::atomic<size_t> emptiedQueryCnt{0};
+    std::atomic<size_t> resolvedQueryCnt{0};  // >=1 kept candidate -> resolves among kept
+    std::atomic<size_t> rescuedQueryCnt{0};   // all removed but kept at higher-rank LCA
+    std::atomic<size_t> discardedQueryCnt{0}; // all removed, no fallback -> unclassified
 
     if (entryCount > 0) {
 #ifdef OPENMP
 #pragma omp parallel default(none) shared(reader, writer, entryCount, keptSpecies, \
-        keptCandidateCnt, removedCandidateCnt, emptiedQueryCnt)
+        keptCandidateCnt, removedCandidateCnt, resolvedQueryCnt, rescuedQueryCnt, \
+        discardedQueryCnt, dropEmptied, tieRatio, minScore)
 #endif
         {
             int threadIdx = 0;
@@ -555,9 +595,8 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
             threadIdx = omp_get_thread_num();
 #endif
             CandidateDBEntry entry;
-            size_t keptLocal = 0;
-            size_t removedLocal = 0;
-            size_t emptiedLocal = 0;
+            size_t keptLocal = 0, removedLocal = 0;
+            size_t resolvedLocal = 0, rescuedLocal = 0, discardedLocal = 0;
 
 #ifdef OPENMP
 #pragma omp for schedule(dynamic, 64)
@@ -572,17 +611,41 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
                 query.name = entry.queryName;
                 query.queryLength = static_cast<int>(entry.queryLength);
                 query.queryLength2 = 0;
-                query.speciesCandidates.reserve(entry.candidates.size());
-                for (SpeciesCandidate &candidate : entry.candidates) {
-                    if (keptSpecies.count(candidate.speciesId) != 0) {
-                        query.speciesCandidates.push_back(std::move(candidate));
-                        ++keptLocal;
-                    } else {
-                        ++removedLocal;
-                    }
+
+                bool anyKept = false;
+                for (const SpeciesCandidate &c : entry.candidates) {
+                    if (keptSpecies.count(c.speciesId) != 0) { anyKept = true; break; }
                 }
-                if (query.speciesCandidates.empty()) {
-                    ++emptiedLocal;
+
+                if (anyKept) {
+                    // Case 1: keep the surviving candidates; the read resolves among them.
+                    query.speciesCandidates.reserve(entry.candidates.size());
+                    for (SpeciesCandidate &c : entry.candidates) {
+                        if (keptSpecies.count(c.speciesId) != 0) {
+                            query.speciesCandidates.push_back(std::move(c));
+                            ++keptLocal;
+                        } else {
+                            ++removedLocal;
+                        }
+                    }
+                    ++resolvedLocal;
+                } else {
+                    // Every candidate was removed.
+                    removedLocal += entry.candidates.size();
+                    bool rescue = false;
+                    if (!dropEmptied && !entry.candidates.empty()) {
+                        // Case 2 only when >=2 tied species would form a real higher-rank
+                        // LCA; a unique hit to one removed species (Case 3) is discarded.
+                        rescue = tieSetDistinctSpecies(entry.candidates, tieRatio, minScore) >= 2;
+                    }
+                    if (rescue) {
+                        query.speciesCandidates = std::move(entry.candidates);
+                        keptLocal += query.speciesCandidates.size();
+                        removedLocal -= query.speciesCandidates.size(); // written after all, not dropped
+                        ++rescuedLocal;
+                    } else {
+                        ++discardedLocal; // Case 3 (or --drop-emptied): unclassified
+                    }
                 }
 
                 writer.writeQuery(entry.queryId, query, threadIdx);
@@ -590,7 +653,9 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
 
             keptCandidateCnt += keptLocal;
             removedCandidateCnt += removedLocal;
-            emptiedQueryCnt += emptiedLocal;
+            resolvedQueryCnt += resolvedLocal;
+            rescuedQueryCnt += rescuedLocal;
+            discardedQueryCnt += discardedLocal;
         }
     }
 
@@ -599,7 +664,11 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
 
     std::cout << "Candidates kept        : " << keptCandidateCnt.load() << std::endl;
     std::cout << "Candidates removed     : " << removedCandidateCnt.load() << std::endl;
-    std::cout << "Queries left empty     : " << emptiedQueryCnt.load() << std::endl;
+    std::cout << "Reads resolved to kept : " << resolvedQueryCnt.load() << std::endl;
+    std::cout << "Reads kept at LCA      : " << rescuedQueryCnt.load()
+              << (dropEmptied ? " (disabled by --drop-emptied)" : " (>=2 tied removed species)") << std::endl;
+    std::cout << "Reads discarded        : " << discardedQueryCnt.load()
+              << " (uniquely mapped to a removed species)" << std::endl;
     std::cout << "Filtered candidate DB written to: " << outputDb << std::endl;
     return 0;
 }

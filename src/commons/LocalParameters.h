@@ -125,6 +125,7 @@ public:
     PARAMETER(MIN_COUNT)
     PARAMETER(MIN_UNIQUE_RATIO)
     PARAMETER(MIN_UNIQUE_COUNT)
+    PARAMETER(DROP_EMPTIED)
     // filter-candidates: filter method selection + best-evidence/uniqueness filter
     PARAMETER(FILTER_METHOD)
     PARAMETER(MIN_STRONG_SCORE)
@@ -263,6 +264,7 @@ public:
     int minCount;          // filter-candidates (method 0): min top-hit reads to keep a species (0 = disabled)
     float minUniqueRatio;  // filter-candidates (method 0): min unique-top fraction (uniqueTop/topReads) to keep a species (0 = disabled)
     int minUniqueCount;    // filter-candidates (method 0): min top-hit reads before the --min-unique-ratio gate is applied (thin species are exempt)
+    int dropEmptied;       // filter-candidates: 1 = drop every read whose candidates are all removed; 0 (default) = keep multi-species reads at their higher-rank LCA, discard only reads uniquely mapped to a removed species
     int filterMethod;      // filter-candidates: 0 = score+coverage, 1 = best-evidence+uniqueness
     float minStrongScore;  // filter-candidates (method 1): per-read idScore counted as strong evidence
     int minStrongReads;    // filter-candidates (method 1): min strong reads to keep a species
