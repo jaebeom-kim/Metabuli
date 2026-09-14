@@ -71,7 +71,9 @@ std::unordered_map<TaxID, uint64_t> loadGenomeSizes(const std::string &dbDir) {
 // reads, or when its unique-top fraction (reads it wins as the sole top / reads it
 // wins) is below --min-unique-ratio -- which removes genome-subset "shadow" species
 // that are only ever tied with a true species and would otherwise force genus-level
-// LCAs. All active gates are conjunctive (AND). Reads whose winner is dropped are
+// LCAs. The uniqueness gate is applied only to species with at least
+// --min-unique-count top hits, since the fraction is unreliable on thin evidence.
+// All active gates are conjunctive (AND). Reads whose winner is dropped are
 // rescued onto their next-best survivor. The loop repeats to a fixpoint. Coverage/evenness
 // (--min-adj-evenness, needs k-mer positions + genome sizes) is a coarser outer gate:
 // after score+count converge it is evaluated once on the survivors, and if it removes
@@ -89,6 +91,7 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     const bool useAllHits = par.covUseAllHits != 0;
     const float tieRatio = par.tieRatio; // credit near-ties within this margin (1.0 = strict top hit)
     const float minUniqueRatio = par.minUniqueRatio; // min unique-top fraction (0 = disabled)
+    const uint64_t minUniqueCount = par.minUniqueCount < 0 ? 0 : static_cast<uint64_t>(par.minUniqueCount); // min top hits before the ratio gate applies
 
     std::cout << "Filter method          : top-hit score + read count + genome coverage" << std::endl;
     std::cout << "Min. average score     : " << minAvgScore
@@ -97,6 +100,10 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
               << (minCount == 0 ? " (count filter disabled)" : "") << std::endl;
     std::cout << "Min. unique-top ratio  : " << minUniqueRatio
               << (minUniqueRatio <= 0.0f ? " (uniqueness filter disabled)" : "") << std::endl;
+    if (minUniqueRatio > 0.0f) {
+        std::cout << "Min. reads for uniq gate: " << minUniqueCount
+                  << " (species with fewer top hits are exempt)" << std::endl;
+    }
     std::cout << "Min. adjusted evenness : " << minAdjEvenness
               << (minAdjEvenness <= 0.0f ? " (coverage filter disabled)" : "") << std::endl;
     std::cout << "Score tie ratio        : " << tieRatio
@@ -194,7 +201,9 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
                     ++removedByCount;
                     continue;
                 }
-                if (minUniqueRatio > 0.0f) {
+                // Only judge uniqueness with enough top hits; the unique fraction is
+                // unreliable on thin evidence, so species with fewer are exempt.
+                if (minUniqueRatio > 0.0f && c >= minUniqueCount) {
                     const auto uIt = speciesUniqueCount.find(sp);
                     const uint64_t u = (uIt == speciesUniqueCount.end()) ? 0 : uIt->second;
                     const double uniqueFraction = static_cast<double>(u) / static_cast<double>(c);
@@ -468,6 +477,7 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     par.covUseAllHits = 1;
     par.minCount = 0;
     par.minUniqueRatio = 0.0f;
+    par.minUniqueCount = 10;
     par.filterMethod = 0;
     par.minStrongScore = 0.7f;
     par.minStrongReads = 3;

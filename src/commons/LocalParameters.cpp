@@ -413,6 +413,13 @@ LocalParameters::LocalParameters() :
                 typeid(float),
                 (void *) &minUniqueRatio,
                 "^0(\\.[0-9]+)?$|^1(\\.0+)?$"),
+        MIN_UNIQUE_COUNT(MIN_UNIQUE_COUNT_ID,
+                "--min-unique-count",
+                "Min. top-hit reads before --min-unique-ratio applies (filter-candidates)",
+                "filter-candidates (method 0): only apply the --min-unique-ratio gate to species with at least this many top-hit reads. Species with fewer top hits are exempt (the unique fraction is unreliable on thin evidence) and decided by the other gates.",
+                typeid(int),
+                (void *) &minUniqueCount,
+                "^[0-9]+$"),
         FILTER_METHOD(FILTER_METHOD_ID,
                 "--filter-method",
                 "filter-candidates method (0: score+coverage, 1: evidence+uniqueness)",
@@ -1033,6 +1040,7 @@ LocalParameters::LocalParameters() :
     filterCandidates.push_back(&COV_USE_ALL_HITS);
     filterCandidates.push_back(&MIN_COUNT);
     filterCandidates.push_back(&MIN_UNIQUE_RATIO);
+    filterCandidates.push_back(&MIN_UNIQUE_COUNT);
     // method 1: best-evidence + uniqueness
     filterCandidates.push_back(&MIN_STRONG_SCORE);
     filterCandidates.push_back(&MIN_STRONG_READS);
