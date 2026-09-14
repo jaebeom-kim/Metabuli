@@ -67,9 +67,12 @@ std::unordered_map<TaxID, uint64_t> loadGenomeSizes(const std::string &dbDir) {
 // Crediting near-ties keeps a real species from being dropped when it narrowly loses
 // reads to a near-identical sibling; --tie-ratio 1.0 restores strict top-hit-only
 // scoring. A species is dropped when no read counts toward it, when its mean idScore
-// over those reads is below --min-avg-score, or when it counts for fewer than
-// --min-count reads; reads whose winner is dropped are rescued onto their next-best
-// survivor. The loop repeats to a fixpoint. Coverage/evenness
+// over those reads is below --min-avg-score, when it counts for fewer than --min-count
+// reads, or when its unique-top fraction (reads it wins as the sole top / reads it
+// wins) is below --min-unique-ratio -- which removes genome-subset "shadow" species
+// that are only ever tied with a true species and would otherwise force genus-level
+// LCAs. All active gates are conjunctive (AND). Reads whose winner is dropped are
+// rescued onto their next-best survivor. The loop repeats to a fixpoint. Coverage/evenness
 // (--min-adj-evenness, needs k-mer positions + genome sizes) is a coarser outer gate:
 // after score+count converge it is evaluated once on the survivors, and if it removes
 // any species the score+count loop is re-converged. Kept species therefore satisfy all
@@ -85,12 +88,15 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     const uint64_t minCount = par.minCount < 0 ? 0 : static_cast<uint64_t>(par.minCount);
     const bool useAllHits = par.covUseAllHits != 0;
     const float tieRatio = par.tieRatio; // credit near-ties within this margin (1.0 = strict top hit)
+    const float minUniqueRatio = par.minUniqueRatio; // min unique-top fraction (0 = disabled)
 
     std::cout << "Filter method          : top-hit score + read count + genome coverage" << std::endl;
     std::cout << "Min. average score     : " << minAvgScore
               << (minAvgScore <= 0.0f ? " (score filter disabled)" : "") << std::endl;
     std::cout << "Min. top-hit reads     : " << minCount
               << (minCount == 0 ? " (count filter disabled)" : "") << std::endl;
+    std::cout << "Min. unique-top ratio  : " << minUniqueRatio
+              << (minUniqueRatio <= 0.0f ? " (uniqueness filter disabled)" : "") << std::endl;
     std::cout << "Min. adjusted evenness : " << minAdjEvenness
               << (minAdjEvenness <= 0.0f ? " (coverage filter disabled)" : "") << std::endl;
     std::cout << "Score tie ratio        : " << tieRatio
@@ -121,7 +127,8 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     // Per-species score/count from the most recent assignment (kept for reporting).
     std::unordered_map<TaxID, double> speciesScoreSum;
     std::unordered_map<TaxID, uint64_t> speciesScoreCount;
-    size_t removedByScore = 0, removedByCount = 0, removedByNoReads = 0, removedByEvenness = 0;
+    std::unordered_map<TaxID, uint64_t> speciesUniqueCount; // reads where sp is the sole top (no tie)
+    size_t removedByScore = 0, removedByCount = 0, removedByNoReads = 0, removedByEvenness = 0, removedByUniqueRatio = 0;
     size_t scoreRounds = 0, coverageRounds = 0;
 
     // Iterate to a fixpoint: reassign each read to its best surviving candidate,
@@ -133,14 +140,18 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
         while (true) {
             speciesScoreSum.clear();
             speciesScoreCount.clear();
+            speciesUniqueCount.clear();
             for (const std::vector<std::pair<TaxID, float>> &r : reads) {
                 float bestScore = -1.0f;
+                TaxID topSp = 0;
+                size_t withinMargin = 0;
                 for (const std::pair<TaxID, float> &hit : r) {
                     if (alive.count(hit.first) == 0) {
                         continue; // dropped species do not contribute
                     }
                     if (bestScore < 0.0f) {
                         bestScore = hit.second; // best-first: first survivor is the top hit
+                        topSp = hit.first;
                     } else if (hit.second <= bestScore * tieRatio) {
                         // best-first: this and all later survivors are outside the tie
                         // margin. With tieRatio == 1.0 this triggers on the second
@@ -152,6 +163,14 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
                     // near-identical sibling.
                     speciesScoreSum[hit.first] += hit.second;
                     speciesScoreCount[hit.first] += 1;
+                    ++withinMargin;
+                }
+                // Unique top: exactly one surviving species is within the tie margin,
+                // i.e. the top hit has no tie. A genome-subset "shadow" species is
+                // always tied with its true species, so it wins reads but almost
+                // never uniquely -> a near-zero unique fraction flags it.
+                if (withinMargin == 1) {
+                    speciesUniqueCount[topSp] += 1;
                 }
             }
 
@@ -174,6 +193,16 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
                     toRemove.push_back(sp);
                     ++removedByCount;
                     continue;
+                }
+                if (minUniqueRatio > 0.0f) {
+                    const auto uIt = speciesUniqueCount.find(sp);
+                    const uint64_t u = (uIt == speciesUniqueCount.end()) ? 0 : uIt->second;
+                    const double uniqueFraction = static_cast<double>(u) / static_cast<double>(c);
+                    if (uniqueFraction < static_cast<double>(minUniqueRatio)) {
+                        toRemove.push_back(sp);
+                        ++removedByUniqueRatio;
+                        continue;
+                    }
                 }
             }
             if (toRemove.empty()) {
@@ -261,6 +290,7 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     }
     std::cout << "Species removed (score)     : " << removedByScore << std::endl;
     std::cout << "Species removed (count)     : " << removedByCount << std::endl;
+    std::cout << "Species removed (uniqueness): " << removedByUniqueRatio << std::endl;
     std::cout << "Species removed (no reads)  : " << removedByNoReads << std::endl;
     std::cout << "Species removed (evenness)  : " << removedByEvenness << std::endl;
     std::cout << "Species kept                : " << alive.size() << std::endl;
@@ -276,12 +306,15 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
               [](const std::pair<TaxID, uint64_t> &a, const std::pair<TaxID, uint64_t> &b) {
                   return a.second > b.second;
               });
-    std::cout << "species\ttopHitReads\tavgScore" << std::endl;
+    std::cout << "species\ttopHitReads\tavgScore\tuniqueTop\tuniqueRatio" << std::endl;
     for (size_t r = 0; r < survivors.size() && r < MAX_REPORT_ROWS; ++r) {
         const TaxID sp = survivors[r].first;
         const uint64_t c = survivors[r].second;
         const double avg = (c > 0) ? speciesScoreSum[sp] / static_cast<double>(c) : 0.0;
-        std::cout << sp << '\t' << c << '\t' << avg << std::endl;
+        const auto uIt = speciesUniqueCount.find(sp);
+        const uint64_t u = (uIt == speciesUniqueCount.end()) ? 0 : uIt->second;
+        const double uRatio = (c > 0) ? static_cast<double>(u) / static_cast<double>(c) : 0.0;
+        std::cout << sp << '\t' << c << '\t' << avg << '\t' << u << '\t' << uRatio << std::endl;
     }
     if (survivors.size() > MAX_REPORT_ROWS) {
         std::cout << "... (" << (survivors.size() - MAX_REPORT_ROWS) << " more kept species)" << std::endl;
@@ -434,6 +467,7 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     par.minAdjEvenness = 0.5f;
     par.covUseAllHits = 1;
     par.minCount = 0;
+    par.minUniqueRatio = 0.0f;
     par.filterMethod = 0;
     par.minStrongScore = 0.7f;
     par.minStrongReads = 3;

@@ -406,6 +406,13 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &minCount,
                 "^[0-9]+$"),
+        MIN_UNIQUE_RATIO(MIN_UNIQUE_RATIO_ID,
+                "--min-unique-ratio",
+                "Min. unique-top fraction to keep a species (filter-candidates)",
+                "filter-candidates (method 0): remove candidate species whose unique-top reads (sole top within --tie-ratio) are less than this fraction of the reads it wins. Removes genome-subset 'shadow' species that are only ever tied with a true species. 0 disables it.",
+                typeid(float),
+                (void *) &minUniqueRatio,
+                "^0(\\.[0-9]+)?$|^1(\\.0+)?$"),
         FILTER_METHOD(FILTER_METHOD_ID,
                 "--filter-method",
                 "filter-candidates method (0: score+coverage, 1: evidence+uniqueness)",
@@ -1025,6 +1032,7 @@ LocalParameters::LocalParameters() :
     filterCandidates.push_back(&MIN_ADJ_EVENNESS);
     filterCandidates.push_back(&COV_USE_ALL_HITS);
     filterCandidates.push_back(&MIN_COUNT);
+    filterCandidates.push_back(&MIN_UNIQUE_RATIO);
     // method 1: best-evidence + uniqueness
     filterCandidates.push_back(&MIN_STRONG_SCORE);
     filterCandidates.push_back(&MIN_STRONG_READS);
