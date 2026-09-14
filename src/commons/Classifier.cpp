@@ -470,6 +470,13 @@ void Classifier::classifyReads() {
                 matchPerKmer *= 2;
                 moreReads = true;
                 std::cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << std::endl;
+                // The batch is retried from processedReadCnt by re-opening the query
+                // file, so any read saved when its k-mer buffer filled is stale. Drop
+                // it, otherwise it is prepended out of order (and duplicated) on retry.
+                savedSeq_1->name.clear();
+                savedSeq_1->s.clear();
+                savedSeq_2->name.clear();
+                savedSeq_2->s.clear();
                 break;
             }
             std::cout << "--------------------" << std::endl;
@@ -637,6 +644,13 @@ void Classifier::generateCandidatesImpl() {
                 matchPerKmer *= 2;
                 moreReads = true;
                 std::cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << std::endl;
+                // The batch is retried from processedReadCnt by re-opening the query
+                // file, so any read saved when its k-mer buffer filled is stale. Drop
+                // it, otherwise it is prepended out of order (and duplicated) on retry.
+                savedSeq_1->name.clear();
+                savedSeq_1->s.clear();
+                savedSeq_2->name.clear();
+                savedSeq_2->s.clear();
                 break;
             }
             std::cout << "--------------------" << std::endl;
@@ -809,6 +823,13 @@ void Classifier::classifyReadsWithPos() {
                 matchPerKmer *= 2;
                 moreReads = true;
                 std::cout << "--match-per-kmer was increased to " << matchPerKmer << " and searching again..." << std::endl;
+                // The batch is retried from processedReadCnt by re-opening the query
+                // file, so any read saved when its k-mer buffer filled is stale. Drop
+                // it, otherwise it is prepended out of order (and duplicated) on retry.
+                savedSeq_1->name.clear();
+                savedSeq_1->s.clear();
+                savedSeq_2->name.clear();
+                savedSeq_2->s.clear();
                 break;
             }
             std::cout << "--------------------" << std::endl;
