@@ -37,6 +37,8 @@ KmerExtractor::KmerExtractor(
     spaceNum = 0;
     maskMode = par.maskMode;
     maskProb = par.maskProb;
+    sdustT = par.sdustT;
+    sdustW = par.sdustW;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
     probMatrix = new ProbabilityMatrix(*(subMat));
 }
@@ -52,6 +54,8 @@ KmerExtractor::KmerExtractor(
     spaceNum = 0;
     maskMode = par.maskMode;
     maskProb = par.maskProb;
+    sdustT = par.sdustT;
+    sdustW = par.sdustW;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
     probMatrix = new ProbabilityMatrix(*(subMat));
     if (par.pmdKmer > 0) {
@@ -132,7 +136,10 @@ const char *KmerExtractor::getMaskedQuerySequence(
         read.length(),
         *probMatrix,
         maskProb,
-        subMat);
+        subMat,
+        maskMode,
+        sdustT,
+        sdustW);
     maskedSeq[read.length()] = '\0';
     return maskedSeq;
 }

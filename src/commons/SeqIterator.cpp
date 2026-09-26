@@ -1,4 +1,6 @@
 #include "SeqIterator.h"
+#include "sdust.h"
+#include <cstdlib>
 
 SeqIterator::~SeqIterator() {
 }
@@ -59,8 +61,27 @@ void SeqIterator::getMinHashList(priority_queue <uint64_t> &sortedHashQue, const
 
 
 void SeqIterator::maskLowComplexityRegions(const unsigned char *seq, unsigned char *maskedSeq, size_t seqLen, ProbabilityMatrix & probMat,
-                                           float maskProb, const BaseMatrix * subMat) {
+                                           float maskProb, const BaseMatrix * subMat, int maskMode, int sdustT, int sdustW) {
     if (seqLen == 0) {
+        return;
+    }
+
+    if (maskMode == 2) {
+        // SDUST: start from the original bases, then overwrite low-complexity
+        // intervals [start, finish) with 'N' to match the tantan output convention.
+        for (size_t pos = 0; pos < seqLen; ++pos) {
+            maskedSeq[pos] = (char) seq[pos];
+        }
+        int n = 0;
+        uint64_t *intervals = sdust(nullptr, (const uint8_t *) seq, (int) seqLen, sdustT, sdustW, &n);
+        for (int i = 0; i < n; ++i) {
+            uint32_t start = (uint32_t) (intervals[i] >> 32);
+            uint32_t finish = (uint32_t) intervals[i];
+            for (uint32_t pos = start; pos < finish && pos < seqLen; ++pos) {
+                maskedSeq[pos] = 'N';
+            }
+        }
+        free(intervals);
         return;
     }
 

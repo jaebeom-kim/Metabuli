@@ -50,8 +50,10 @@ public:
 
     bool compareMinHashList(priority_queue<uint64_t> list1, priority_queue<uint64_t> &list2, size_t length1, size_t length2);
 
+    // maskMode: 1 = tantan (uses probMat/maskProb/subMat), 2 = SDUST (uses sdustT/sdustW).
+    // Both write DNA to maskedSeq with low-complexity positions replaced by 'N'.
     static void maskLowComplexityRegions(const unsigned char * seq, unsigned char * maskedSeq, size_t seqLen, ProbabilityMatrix & probMat,
-                                         float maskProb, const BaseMatrix * subMat);
+                                         float maskProb, const BaseMatrix * subMat, int maskMode = 1, int sdustT = 20, int sdustW = 64);
 
 };
 

@@ -21,6 +21,8 @@ private:
     int spaceNum;
     int maskMode;
     float maskProb;
+    int sdustT;
+    int sdustW;
     int kmerLen;
     int windowSize;
     float syncmerRatio;

@@ -658,6 +658,20 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &packInfo,
                 "[0-1]"),
+        SDUST_T(SDUST_T_ID,
+                "--sdust-t",
+                "SDUST score threshold (used with --mask 2)",
+                "SDUST score threshold for low-complexity masking; only used when --mask 2 (SDUST) is set.",
+                typeid(int),
+                (void *) &sdustT,
+                "^[0-9]+$"),
+        SDUST_W(SDUST_W_ID,
+                "--sdust-w",
+                "SDUST window length (used with --mask 2)",
+                "SDUST window length for low-complexity masking; only used when --mask 2 (SDUST) is set.",
+                typeid(int),
+                (void *) &sdustW,
+                "^[0-9]+$"),
         NEW_TAXA(NEW_TAXA_ID,
                 "--new-taxa",
                 "TSV file of new taxa to be added",
@@ -827,6 +841,11 @@ LocalParameters::LocalParameters() :
                     (void *) &randomSeed,
                     "^[0-9]+$")
   {
+    // Widen --mask to accept SDUST (2) in addition to tantan (1); done here so the
+    // mmseqs submodule regex/description stay untouched across upstream syncs.
+    overrideParameterDescription(PARAM_MASK_RESIDUES,
+                                 "Mask low complexity regions: 0: off, 1: tantan, 2: SDUST",
+                                 "^[0-2]{1}", 0);
     // Initialize the parameters
     candidateOnly = false;
     minAdjEvenness = 0.5f;
@@ -860,6 +879,8 @@ LocalParameters::LocalParameters() :
     bufferSize = 0;
     accessionLevel = 0;
     packInfo = 1;
+    sdustT = 20;  // SDUST defaults (lh3/sdust)
+    sdustW = 64;
 
     // Test parameters
     testRank = "";
@@ -925,6 +946,8 @@ LocalParameters::LocalParameters() :
     build.push_back(&SKIP_PRODIGAL_TAXA);
     build.push_back(&MIN_EUK_CONTIG_LEN);
     build.push_back(&PACK_INFO);
+    build.push_back(&SDUST_T);
+    build.push_back(&SDUST_W);
 
     createCommonKmerList.push_back(&PARAM_THREADS);
     createCommonKmerList.push_back(&PARAM_MASK_PROBABILTY);
@@ -968,6 +991,8 @@ LocalParameters::LocalParameters() :
     classify.push_back(&TAXONOMY_PATH);
     classify.push_back(&PARAM_MASK_RESIDUES);
     classify.push_back(&PARAM_MASK_PROBABILTY);
+    classify.push_back(&SDUST_T);
+    classify.push_back(&SDUST_W);
     classify.push_back(&RAM_USAGE);
     classify.push_back(&MATCH_PER_KMER);
     classify.push_back(&ACCESSION_LEVEL);
@@ -1021,6 +1046,8 @@ LocalParameters::LocalParameters() :
     createCandidates.push_back(&MIN_AA_MATCH_EUK);
     createCandidates.push_back(&PARAM_MASK_RESIDUES);
     createCandidates.push_back(&PARAM_MASK_PROBABILTY);
+    createCandidates.push_back(&SDUST_T);
+    createCandidates.push_back(&SDUST_W);
     createCandidates.push_back(&RAM_USAGE);
     createCandidates.push_back(&MATCH_PER_KMER);
     createCandidates.push_back(&VALIDATE_INPUT);

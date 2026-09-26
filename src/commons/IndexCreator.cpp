@@ -1531,7 +1531,7 @@ bool IndexCreator::extractKmerFromSixFrames(
                         char *maskedSeq = nullptr;
                         if (par.maskMode) {
                             maskedSeq = new char[e.sequence.l + 1]; 
-                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat);
+                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, par.maskMode, par.sdustT, par.sdustW);
                             maskedSeq[e.sequence.l] = '\0';
                         } else {
                             maskedSeq = e.sequence.s;
@@ -1771,7 +1771,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                                 maxSeqLen = e.sequence.l;
                                 maskedSeq = new char[maxSeqLen + 1];
                             }
-                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat);
+                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, par.maskMode, par.sdustT, par.sdustW);
                             maskedSeq[e.sequence.l] = '\0';
                         } else {
                             maskedSeq = e.sequence.s;
@@ -2145,7 +2145,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                         char *maskedSeq = nullptr;
                         if (doMasking) {
                             maskedSeq = new char[e.sequence.l + 1]; // TODO: reuse the buffer
-                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat);
+                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, par.maskMode, par.sdustT, par.sdustW);
                             maskedSeq[e.sequence.l] = '\0';
                         } else {
                             maskedSeq = e.sequence.s;
@@ -2296,7 +2296,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                 if (doMasking) {
                                     delete[] maskedSeq;
                                     maskedSeq = new char[e.sequence.l + 1];
-                                    SeqIterator::maskLowComplexityRegions((unsigned char *) rcomp, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat);
+                                    SeqIterator::maskLowComplexityRegions((unsigned char *) rcomp, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, par.maskMode, par.sdustT, par.sdustW);
                                     maskedSeq[e.sequence.l] = '\0';
                                 } else {
                                     maskedSeq = rcomp;
@@ -2426,6 +2426,10 @@ void IndexCreator::writeDbParameters() {
     fprintf(handle, "Accession_level\t%d\n", par.accessionLevel);
     fprintf(handle, "Mask_mode\t%d\n", par.maskMode);
     fprintf(handle, "Mask_prob\t%f\n", par.maskProb);
+    if (par.maskMode == 2) {
+        fprintf(handle, "Sdust_T\t%d\n", par.sdustT);
+        fprintf(handle, "Sdust_W\t%d\n", par.sdustW);
+    }
     fprintf(handle, "Skip_redundancy\t1\n");
     fprintf(handle, "Syncmer\t%d\n", par.syncmer);
     if (par.syncmer == 1) {

@@ -168,6 +168,8 @@ public:
     PARAMETER(SKIP_PRODIGAL_TAXA)
     PARAMETER(MIN_EUK_CONTIG_LEN)
     PARAMETER(PACK_INFO)
+    PARAMETER(SDUST_T)
+    PARAMETER(SDUST_W)
 
     // DB updated parameters
     PARAMETER(NEW_TAXA)
@@ -299,6 +301,8 @@ public:
     std::string skipProdigalTaxa;
     int minEukContigLen;
     int packInfo;
+    int sdustT;  // --sdust-t: SDUST score threshold (used when --mask 2)
+    int sdustW;  // --sdust-w: SDUST window length (used when --mask 2)
 
     // DB updated parameters
     std::string newTaxa;
