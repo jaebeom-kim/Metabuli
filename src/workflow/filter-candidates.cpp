@@ -73,9 +73,7 @@ size_t tieSetDistinctSpecies(const std::vector<SpeciesCandidate> &cands,
     if (best < 0.0f) {
         return 0;
     }
-    const float diff = 0.09f;
-    const float myTieRatio = (tieRatio - diff) + (best * diff);
-    const float threshold = best * myTieRatio;
+    const float threshold = best * tieMarginFactor(best, tieRatio);
     std::unordered_set<TaxID> tied;
     for (const SpeciesCandidate &c : cands) {
         if (c.idScore < minScore) continue;
@@ -177,6 +175,7 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
             speciesUniqueCount.clear();
             for (const std::vector<std::pair<TaxID, float>> &r : reads) {
                 float bestScore = -1.0f;
+                float tieThreshold = -1.0f; // bestScore * tieMarginFactor, set once the top is known
                 TaxID topSp = 0;
                 size_t withinMargin = 0;
                 for (const std::pair<TaxID, float> &hit : r) {
@@ -186,10 +185,11 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
                     if (bestScore < 0.0f) {
                         bestScore = hit.second; // best-first: first survivor is the top hit
                         topSp = hit.first;
-                    } else if (hit.second <= bestScore * tieRatio) {
-                        // best-first: this and all later survivors are outside the tie
-                        // margin. With tieRatio == 1.0 this triggers on the second
-                        // survivor, i.e. strict top-hit-only scoring.
+                        // Same scaled tie margin as classify-candidates' chooseBestTaxonFromCandidates,
+                        // so "unique top here" matches "resolves to one species there".
+                        tieThreshold = bestScore * tieMarginFactor(bestScore, tieRatio);
+                    } else if (hit.second <= tieThreshold) {
+                        // best-first: this and all later survivors are outside the tie margin.
                         break;
                     }
                     // Credit the top hit plus any near-tie above the margin, so a real
@@ -408,7 +408,10 @@ std::unordered_set<TaxID> filterByEvidenceAndUniqueness(
         // the runner-up is clearly below it (not within the tie margin).
         const float topScore = cands[0].idScore;
         const float secondScore = (cands.size() > 1) ? cands[1].idScore : 0.0f;
-        const bool topIsUnique = (cands.size() == 1) || (secondScore < topScore * tieRatio);
+        // Same scaled tie margin as classify-candidates: the top is unique when the
+        // runner-up is not strictly above best * tieMarginFactor.
+        const bool topIsUnique = (cands.size() == 1)
+            || (secondScore <= topScore * tieMarginFactor(topScore, tieRatio));
 
         for (size_t idx = 0; idx < cands.size(); ++idx) {
             const SpeciesCandidate &candidate = cands[idx];

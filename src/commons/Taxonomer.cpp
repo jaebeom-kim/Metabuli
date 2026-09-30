@@ -233,8 +233,7 @@ void Taxonomer<MatchType>::chooseBestTaxonFromCandidates(
     maxSpecies.clear();
     tiedIndices.clear();
 
-    const float diff = 0.09f;
-    const float myTieRatio = (par.tieRatio - diff) + (bestSpScore.idScore * diff);
+    const float myTieRatio = tieMarginFactor(bestSpScore.idScore, par.tieRatio);
     MatchScore tiedScore;
     for (size_t i = 0; i < candidateEntry.candidates.size(); ++i) {
         const SpeciesCandidate &candidate = candidateEntry.candidates[i];

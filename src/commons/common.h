@@ -67,6 +67,17 @@ struct SpeciesCandidate {
     std::vector<uint16_t> kmerPositions;
 };
 
+// Tie-margin factor shared by classify-candidates (chooseBestTaxonFromCandidates)
+// and filter-candidates. A candidate ties with the top hit when its score is
+// strictly greater than bestScore * this factor. The factor scales with the best
+// idScore so higher-confidence reads use a tighter margin. Every tie decision in
+// both commands must go through this so "survives filtering" and "resolves to one
+// species at classification" use the exact same rule.
+inline float tieMarginFactor(float bestIdScore, float tieRatio) {
+    const float diff = 0.09f;
+    return (tieRatio - diff) + (bestIdScore * diff);
+}
+
 struct Assembly {
     std::string name;
     TaxID taxid;
