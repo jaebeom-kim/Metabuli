@@ -32,6 +32,7 @@ public:
     std::vector<MMseqsParameter*> createCandidates;
     std::vector<MMseqsParameter*> filterCandidates;
     std::vector<MMseqsParameter*> viewCandidates;
+    std::vector<MMseqsParameter*> extractUniqueCandidates;
     std::vector<MMseqsParameter*> groupGeneration;
     std::vector<MMseqsParameter*> extract;
     std::vector<MMseqsParameter*> filter;

@@ -1081,10 +1081,21 @@ LocalParameters::LocalParameters() :
     filterCandidates.push_back(&MIN_STRONG_READS);
     filterCandidates.push_back(&MIN_UNIQUE_READS);
     filterCandidates.push_back(&TIE_RATIO);
+    // shared with classify-candidates: keep --tie-ratio/--min-score consistent
+    // across the two steps so a species that survives filtering resolves the same
+    // way at classification time.
+    filterCandidates.push_back(&MIN_SCORE);
 
     // view-candidates (dump a species-candidate DB to human-readable TSV)
     viewCandidates.push_back(&PARAM_THREADS);
     viewCandidates.push_back(&TAXONOMY_PATH);
+
+    // extract-unique-candidates (subset uniquely mapped to a species)
+    extractUniqueCandidates.push_back(&PARAM_THREADS);
+    extractUniqueCandidates.push_back(&TAXONOMY_PATH);
+    extractUniqueCandidates.push_back(&TARGET_TAX_ID);
+    extractUniqueCandidates.push_back(&TIE_RATIO);
+    extractUniqueCandidates.push_back(&MIN_SCORE);
 
     assignUniref.push_back(&PARAM_THREADS);
     assignUniref.push_back(&RAM_USAGE);

@@ -510,7 +510,8 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     par.minStrongScore = 0.7f;
     par.minStrongReads = 3;
     par.minUniqueReads = 2;
-    par.tieRatio = 0.99;
+    par.tieRatio = 0.99;   // matches setClassifyDefaults (classify-candidates)
+    par.minScore = 0.0f;   // matches setClassifyDefaults (classify-candidates)
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
 
     const std::string inputDb = par.filenames[0];
