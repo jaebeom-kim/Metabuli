@@ -16,10 +16,11 @@
 // Read a species-candidate DB (from "create-candidates" / "filter-candidates")
 // and write a NEW candidate DB holding only the entries (reads) that are
 // UNIQUELY mapped to a user-specified species: that species is the sole top hit
-// within the --tie-ratio margin. This mirrors the "uniqueTop" definition used by
-// filter-candidates (a read counts as unique for a species when exactly one
-// surviving species sits within best*tieRatio of the top). Useful for pulling
-// out exactly the reads that give a species its unique support.
+// within the tie margin. This uses the same scaled tie margin (tieMarginFactor,
+// shared with classify-candidates / filter-candidates), so a read counts as
+// unique for a species exactly when classify-candidates would resolve it to that
+// single species. Useful for pulling out the reads that give a species its unique
+// support.
 //
 // The output is a candidate DB; run "view-candidates" on it to inspect the reads
 // as TSV, or "classify-candidates" to classify just this subset.
@@ -107,9 +108,12 @@ int extractUniqueCandidates(int argc, const char **argv, const Command &command)
 
         // Best-first walk (candidates are stored sorted by score descending):
         // the top hit is the first candidate at/above --min-score; count how many
-        // distinct species sit within best*tieRatio of it. withinMargin == 1 means
+        // distinct species sit within the tie margin of it. withinMargin == 1 means
         // the top hit has no tie, i.e. the read is uniquely mapped to that species.
+        // Use the same scaled tie margin as classify-candidates / filter-candidates
+        // (tieMarginFactor) so "unique here" matches how classify resolves the read.
         float bestScore = -1.0f;
+        float tieThreshold = -1.0f; // bestScore * tieMarginFactor, set once the top is known
         TaxID topSp = 0;
         size_t withinMargin = 0;
         for (const SpeciesCandidate &cand : entry.candidates) {
@@ -119,7 +123,8 @@ int extractUniqueCandidates(int argc, const char **argv, const Command &command)
             if (bestScore < 0.0f) {
                 bestScore = cand.idScore;
                 topSp = cand.speciesId;
-            } else if (cand.idScore <= bestScore * tieRatio) {
+                tieThreshold = bestScore * tieMarginFactor(bestScore, tieRatio);
+            } else if (cand.idScore <= tieThreshold) {
                 break; // outside the tie margin; all later (sorted) candidates are too
             }
             ++withinMargin;
