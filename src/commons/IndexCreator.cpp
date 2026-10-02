@@ -765,9 +765,6 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
     TaxID taxID;
     std::unordered_set<TaxID> usedExternalTaxIDs;
     std::vector<NewTaxon> newTaxons;
-    if (par.accessionLevel == 1) {
-        taxonomy->getUsedExternalTaxIDs(usedExternalTaxIDs);
-    }
 
     // First, label the accessions with external taxIDs
     while (current < end) {
@@ -790,17 +787,7 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
                 if (old2merged.count(taxID) > 0) {
                     taxID = old2merged[taxID];
                 }
-                if (par.accessionLevel == 1) {
-                    TaxID accTaxId = taxonomy->getSmallestUnusedExternalTaxID(usedExternalTaxIDs);
-                    acc2accId.emplace_back(accession, make_pair(taxID, accTaxId));
-                    if (accTaxId == 0) {
-                        cout << "accTaxId is 0 for accession " << accession << " " << taxID << endl;
-                    }
-                    observedAccessionsVec[it->second].taxID = accTaxId;
-                    newTaxons.emplace_back(accTaxId, taxID, "accession", accession);
-                } else {
-                    observedAccessionsVec[it->second].taxID = taxID;
-                }
+                observedAccessionsVec[it->second].taxID = taxID;
             }
         }
         ++current;  // Move to the next line
@@ -810,19 +797,13 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
         cout << "munmap failed" << endl;
     }                 
 
-    if (par.accessionLevel == 1) {
-        TaxonomyWrapper * newTaxonomy = taxonomy->addNewTaxa(newTaxons);
-        delete taxonomy;
-        taxonomy = newTaxonomy;
-    }
-
     // Compact the internal tax-ID numbering so that IDs which can reach the info
     // index (observed taxa and their ancestors up to the species representative)
     // get small values. This lets the info index pack to fewer bits with no
     // read-time translation. Fresh, non-accession-level builds only; updateDB
     // must keep the existing DB's numbering, and accession-level is left on the
     // maxTaxID sizing for now.
-    if (par.packInfo != 0 && par.accessionLevel == 0 && !isUpdating) {
+    if (par.packInfo != 0 && !isUpdating) {
         std::unordered_map<TaxID, TaxID> ext2int;
         taxonomy->getExternal2internalTaxID(ext2int);
         std::unordered_set<TaxID> writable;
@@ -913,18 +894,14 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
     } else {
         acc2taxidFile = fopen(mappingFileName.c_str(), "w");
     }
-    if (par.accessionLevel == 1) {
-        for (auto & acc2taxid: acc2accId) {
-            fprintf(acc2taxidFile, "%s\t%d\t%d\n", acc2taxid.first.c_str(), acc2taxid.second.first, acc2taxid.second.second);
+     
+    for (size_t i = 0; i < observedAccessionsVec.size(); ++i) {
+        if (observedAccessionsVec[i].taxID == 0) {
+            continue;
         }
-    } else {
-        for (size_t i = 0; i < observedAccessionsVec.size(); ++i) {
-            if (observedAccessionsVec[i].taxID == 0) {
-                continue;
-            }
-            fprintf(acc2taxidFile, "%s\t%d\n", observedAccessionsVec[i].accession.c_str(), taxonomy->getOriginalTaxID(observedAccessionsVec[i].taxID));
-        }        
-    }   
+        fprintf(acc2taxidFile, "%s\t%d\n", observedAccessionsVec[i].accession.c_str(), taxonomy->getOriginalTaxID(observedAccessionsVec[i].taxID));
+    }        
+       
 
     if (unmappedAccessions.empty()) {
         cout << "All accessions are mapped to taxonomy" << endl;
@@ -2423,7 +2400,6 @@ void IndexCreator::writeDbParameters() {
     fprintf(handle, "Creation_date\t%s\n", par.dbDate.c_str());
     fprintf(handle, "Metabuli commit used to create the DB\t%s\n", version);
     fprintf(handle, "Spaced_kmer_mask\t%s\n", par.spaceMask.c_str());
-    fprintf(handle, "Accession_level\t%d\n", par.accessionLevel);
     fprintf(handle, "Mask_mode\t%d\n", par.maskMode);
     fprintf(handle, "Mask_prob\t%f\n", par.maskProb);
     if (par.maskMode == 2) {

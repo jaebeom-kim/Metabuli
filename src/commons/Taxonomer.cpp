@@ -97,7 +97,6 @@ Taxonomer<MatchType>::Taxonomer(
     windowMask((1U << windowSize) - 1)
 {
     // Parameters
-    accessionLevel = par.accessionLevel;
     eukaryotaTaxId = taxonomy->getEukaryotaTaxID();
 
 
@@ -610,22 +609,8 @@ TaxID Taxonomer<MatchType>::lowerRankClassification(const unordered_map<TaxID, u
         minSubSpeciesMatch = 0;
     }
     cladeCnt.clear();
-    getSpeciesCladeCounts(taxCnt, cladeCnt, spTaxId);
-    if (accessionLevel == 2) { // Don't do accession-level classification
-        // Remove leaf nodes
-        for (auto it = cladeCnt.begin(); it != cladeCnt.end(); it++) {
-            TaxonNode const * taxon = taxonomy->taxonNode(it->first);
-            if (strcmp(taxonomy->getString(taxon->rankIdx), "") == 0 || strcmp(taxonomy->getString(taxon->rankIdx), "accession") == 0) {
-                // Remove current node from its parent's children list
-                cladeCnt[taxon->parentTaxId].children.erase(find(cladeCnt[taxon->parentTaxId].children.begin(),
-                                                                 cladeCnt[taxon->parentTaxId].children.end(),
-                                                                 it->first));
-            } 
-        }
-        return BFS(cladeCnt, spTaxId, minSubSpeciesMatch);
-    } else {
-        return BFS(cladeCnt, spTaxId, minSubSpeciesMatch);
-    }
+    getSpeciesCladeCounts(taxCnt, cladeCnt, spTaxId);    
+    return BFS(cladeCnt, spTaxId, minSubSpeciesMatch);
 }
 
 template <typename MatchType>

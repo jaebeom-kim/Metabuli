@@ -22,7 +22,6 @@ void setDefaults_updateDB(LocalParameters & par){
     par.splitNum = 4096;
     par.maskProb = 0.9;
     par.maskMode = 1;
-    par.accessionLevel = 0;
     par.packInfo = 1;
     // Get current date
     time_t now = time(0);
@@ -105,9 +104,6 @@ int updateDB(int argc, const char **argv, const Command &command){
     IndexCreator idxCre(par, taxonomy, par.kmerFormat);
     idxCre.setIsUpdating(true);
     idxCre.createIndex();
-    if (par.accessionLevel == 1) {
-        taxonomy = idxCre.getTaxonomy();
-    }
 
     if (taxonomy->IsExternalData()) {
         FileUtil::copyFile(oldDbDir + "/taxonomyDB", newDbDir + "/taxonomyDB");

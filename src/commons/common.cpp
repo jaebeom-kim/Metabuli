@@ -219,14 +219,6 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
             continue;
           }
           par.spaceMask = tokens[1];
-        } else if (tokens[0] == "Accession_level") {
-          if (tokens[1] == "0" && par.accessionLevel == 1){
-            par.accessionLevel = 0;
-            cout << "Warning: Current DB doesn't support accession-level classification." << endl;
-          }
-          if (tokens[1] == "1" && par.accessionLevel == 0){
-            par.accessionLevel = 2;
-          }
         } else if (tokens[0] == "DB_name") {
           par.dbName = tokens[1];
         } else if (tokens[0] == "Creation_date") {

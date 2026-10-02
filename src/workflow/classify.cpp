@@ -32,7 +32,6 @@ void setClassifyDefaults(LocalParameters & par){
     par.maskProb = 0.9;
     par.matchPerKmer = 4;
     par.maxHdist = -1;
-    par.accessionLevel = 0;
     par.tieRatio = 0.99;
     par.printLineage = 0;
     par.minAaMatch = 11;
