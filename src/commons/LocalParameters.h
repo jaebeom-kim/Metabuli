@@ -136,6 +136,15 @@ public:
     PARAMETER(MIN_CLADE_PROPORTION)
     PARAMETER(PRINT_FILTERED_RESULTS)
 
+    // classify-candidates: community refinement for reads from species not in the DB
+    PARAMETER(COMMUNITY_REFINE)
+    PARAMETER(COMMUNITY_METHOD)
+    PARAMETER(COMMUNITY_LABEL)
+    PARAMETER(COMMUNITY_LABEL_TYPE)
+    PARAMETER(NOVEL_SCORE_CEILING)
+    PARAMETER(COMMUNITY_MIN_EDGE)
+    PARAMETER(COMMUNITY_MAX_BREADTH)
+
     // extract
     PARAMETER(TARGET_TAX_ID)
     PARAMETER(EXTRACT_MODE)
@@ -155,7 +164,6 @@ public:
     PARAMETER(IS_ASSEMBLY)
     PARAMETER(SPLIT_NUM)
     PARAMETER(BUFFER_SIZE)
-    PARAMETER(ACCESSION_LEVEL)
     PARAMETER(DB_NAME)
     PARAMETER(DB_DATE)
     PARAMETER(CDS_INFO)
@@ -276,6 +284,15 @@ public:
     float minCladeProportion;
     std::string outFilteredResults;
 
+    // classify-candidates: community refinement (reads from species not in the DB)
+    int communityRefine;      // 0 = off (default), 1 = on
+    int communityMethod;      // community detection algorithm (0 = threshold-connected groups)
+    int communityLabel;       // community label determination (0 = LCA of members)
+    int communityLabelType;   // 0 = real LCA taxID (1 = synthetic novel node, future)
+    float novelScoreCeiling;  // exclude reads whose top idScore >= this from the tie graph
+    int communityMinEdge;     // min co-tie read count to keep a species-species edge
+    int communityMaxBreadth;  // skip reads tying more than this many species (0 = no cap)
+
     // Extract
     int targetTaxId;
     int extractMode;
@@ -289,7 +306,6 @@ public:
     std::string dbDate;
     int splitNum;
     size_t bufferSize;
-    int accessionLevel;
     std::string cdsInfo;
     int makeLibrary;
     std::string assAcc2taxid;

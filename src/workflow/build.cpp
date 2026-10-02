@@ -24,7 +24,6 @@ void setDefaults_build(LocalParameters & par) {
     par.splitNum = 4096;
     par.maskProb = 0.9;
     par.maskMode = 1;
-    par.accessionLevel = 0;
     par.packInfo = 1;
     time_t now = time(0);
     tm *ltm = localtime(&now);
@@ -104,10 +103,6 @@ int build(int argc, const char **argv, const Command &command){
         idxCre.createIndexWithPos();
     }
 
-    if (par.accessionLevel == 1) 
-    {
-        taxonomy = idxCre.getTaxonomy();
-    }
     taxonomy->writeTaxonomyDB(dbDir + "/taxonomyDB");
     
     if (idxCre.getNumOfFlush() == 1) 

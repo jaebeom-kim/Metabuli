@@ -476,6 +476,55 @@ LocalParameters::LocalParameters() :
                 typeid(std::string),
                 (void *) &outFilteredResults,
                 "^.*$"),
+        COMMUNITY_REFINE(COMMUNITY_REFINE_ID,
+                "--community-refine",
+                "classify-candidates: refine reads from species not in the DB via a species tie graph (0: off, 1: on)",
+                "classify-candidates: 1 = detect present species, group DB species that unknown organisms map to into communities, and reassign reads of removed-but-clustered species to the community LCA. 0 (default) = plain classification.",
+                typeid(int),
+                (void *) &communityRefine,
+                "^[0-1]$"),
+        COMMUNITY_METHOD(COMMUNITY_METHOD_ID,
+                "--community-method",
+                "Community detection algorithm (0: threshold-connected groups)",
+                "classify-candidates (--community-refine): community detection algorithm. 0 = species linked by >= --community-min-edge co-tie reads, connected groups of >= 2 species.",
+                typeid(int),
+                (void *) &communityMethod,
+                "^[0-9]+$"),
+        COMMUNITY_LABEL(COMMUNITY_LABEL_ID,
+                "--community-label",
+                "Community label determination (0: LCA of members)",
+                "classify-candidates (--community-refine): how a community's representative taxon is chosen. 0 = LCA of all members.",
+                typeid(int),
+                (void *) &communityLabel,
+                "^[0-9]+$"),
+        COMMUNITY_LABEL_TYPE(COMMUNITY_LABEL_TYPE_ID,
+                "--community-label-type",
+                "Community label type (0: real LCA taxID)",
+                "classify-candidates (--community-refine): 0 = emit the real LCA taxID (1 = synthetic novel-taxon node, future).",
+                typeid(int),
+                (void *) &communityLabelType,
+                "^[0-9]+$"),
+        NOVEL_SCORE_CEILING(NOVEL_SCORE_CEILING_ID,
+                "--novel-score-ceiling",
+                "Exclude reads with top score >= this from the tie graph (0.0-1.0)",
+                "classify-candidates (--community-refine): a read whose top idScore is >= this is treated as coming from a species that is in the DB and does not shape unknown-organism communities.",
+                typeid(float),
+                (void *) &novelScoreCeiling,
+                "^0(\\.[0-9]+)?$|^1(\\.0+)?$"),
+        COMMUNITY_MIN_EDGE(COMMUNITY_MIN_EDGE_ID,
+                "--community-min-edge",
+                "Min co-tie reads to link two species in the tie graph",
+                "classify-candidates (--community-refine): two species are linked only when at least this many reads tie them together.",
+                typeid(int),
+                (void *) &communityMinEdge,
+                "^[0-9]+$"),
+        COMMUNITY_MAX_BREADTH(COMMUNITY_MAX_BREADTH_ID,
+                "--community-max-breadth",
+                "Skip reads tying more than this many species (0: no cap)",
+                "classify-candidates (--community-refine): reads tying more than this many species are conserved-region noise and are left out of the tie graph. 0 = no cap.",
+                typeid(int),
+                (void *) &communityMaxBreadth,
+                "^[0-9]+$"),
         TARGET_TAX_ID(TARGET_TAX_ID_ID,
                "--tax-id",
                "Tax. ID of clade. -1 for unclassified reads",
@@ -560,13 +609,6 @@ LocalParameters::LocalParameters() :
                     typeid(size_t),
                     (void *) &bufferSize,
                     "^[0-9]+$"),
-        ACCESSION_LEVEL(ACCESSION_LEVEL_ID,
-                        "--accession-level",
-                        "Accession-level DB build/search",
-                        "Build or search a database for accession-level classification",
-                        typeid(int),
-                        (void *) &accessionLevel,
-                        "[0-1]"),
         DB_NAME(DB_NAME_ID,
                 "--db-name",
                 "Name of the database (a random number as default)",
@@ -851,6 +893,14 @@ LocalParameters::LocalParameters() :
     minAdjEvenness = 0.5f;
     minEukContigLen = 0;
     covUseAllHits = 1;
+    // classify-candidates community refinement (off by default)
+    communityRefine = 0;
+    communityMethod = 0;
+    communityLabel = 0;
+    communityLabelType = 0;
+    novelScoreCeiling = 0.95f;
+    communityMinEdge = 2;
+    communityMaxBreadth = 0;
     // Superkingdom taxonomy id
     virusTaxId = 10239;
     bacteriaTaxId = 2;
@@ -877,7 +927,6 @@ LocalParameters::LocalParameters() :
     dbDate = "";
     splitNum = 0;
     bufferSize = 0;
-    accessionLevel = 0;
     packInfo = 1;
     sdustT = 20;  // SDUST defaults (lh3/sdust)
     sdustW = 64;
@@ -926,7 +975,6 @@ LocalParameters::LocalParameters() :
     build.push_back(&SPLIT_NUM);
     build.push_back(&PARAM_MASK_PROBABILTY);
     build.push_back(&PARAM_MASK_RESIDUES);
-    build.push_back(&ACCESSION_LEVEL);
     build.push_back(&DB_NAME);
     build.push_back(&DB_DATE);
     build.push_back(&CDS_INFO);
@@ -964,7 +1012,6 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&SPLIT_NUM);
     updateDB.push_back(&PARAM_MASK_PROBABILTY);
     updateDB.push_back(&PARAM_MASK_RESIDUES);
-    updateDB.push_back(&ACCESSION_LEVEL);
     updateDB.push_back(&DB_NAME);
     updateDB.push_back(&DB_DATE);
     updateDB.push_back(&CDS_INFO);
@@ -988,14 +1035,12 @@ LocalParameters::LocalParameters() :
     classify.push_back(&MIN_SP_SCORE);
     classify.push_back(&MIN_AA_MATCH);
     classify.push_back(&MIN_AA_MATCH_EUK);
-    classify.push_back(&TAXONOMY_PATH);
     classify.push_back(&PARAM_MASK_RESIDUES);
     classify.push_back(&PARAM_MASK_PROBABILTY);
     classify.push_back(&SDUST_T);
     classify.push_back(&SDUST_W);
     classify.push_back(&RAM_USAGE);
     classify.push_back(&MATCH_PER_KMER);
-    classify.push_back(&ACCESSION_LEVEL);
     classify.push_back(&TIE_RATIO);
     classify.push_back(&PRINT_LINEAGE);
     classify.push_back(&MIN_AVG_SCORE);
@@ -1037,6 +1082,18 @@ LocalParameters::LocalParameters() :
     classifyCandidates.push_back(&DB_TOTAL_LENGTH);
     classifyCandidates.push_back(&UNCLASSIFIED);
     classifyCandidates.push_back(&QUERY_FILE);
+    // community refinement (reads from species not in the DB)
+    classifyCandidates.push_back(&COMMUNITY_REFINE);
+    classifyCandidates.push_back(&COMMUNITY_METHOD);
+    classifyCandidates.push_back(&COMMUNITY_LABEL);
+    classifyCandidates.push_back(&COMMUNITY_LABEL_TYPE);
+    classifyCandidates.push_back(&NOVEL_SCORE_CEILING);
+    classifyCandidates.push_back(&COMMUNITY_MIN_EDGE);
+    classifyCandidates.push_back(&COMMUNITY_MAX_BREADTH);
+    // filter-candidates presence gates (used when --community-refine 1)
+    classifyCandidates.push_back(&MIN_UNIQUE_RATIO);
+    classifyCandidates.push_back(&MIN_UNIQUE_COUNT);
+    classifyCandidates.push_back(&MIN_ADJ_EVENNESS);
 
     // create-candidates (generates the species-candidate DB only)
     createCandidates.push_back(&PARAM_THREADS);
@@ -1086,13 +1143,9 @@ LocalParameters::LocalParameters() :
     // way at classification time.
     filterCandidates.push_back(&MIN_SCORE);
 
-    // view-candidates (dump a species-candidate DB to human-readable TSV)
-    viewCandidates.push_back(&PARAM_THREADS);
-    viewCandidates.push_back(&TAXONOMY_PATH);
 
     // extract-unique-candidates (subset uniquely mapped to a species)
     extractUniqueCandidates.push_back(&PARAM_THREADS);
-    extractUniqueCandidates.push_back(&TAXONOMY_PATH);
     extractUniqueCandidates.push_back(&TARGET_TAX_ID);
     extractUniqueCandidates.push_back(&TIE_RATIO);
     extractUniqueCandidates.push_back(&MIN_SCORE);
@@ -1147,7 +1200,6 @@ LocalParameters::LocalParameters() :
     filter.push_back(&MATCH_PER_KMER);
     filter.push_back(&PRINT_MODE);
     filter.push_back(&CONTAM_LIST);
-    filter.push_back(&ACCESSION_LEVEL);
     
     //updateTargetDB
     exclusiontest_hiv.push_back(&TEST_RANK);

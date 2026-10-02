@@ -23,6 +23,10 @@ set(commons_source_files
 		commons/ProdigalWrapper.cpp
 		commons/Match.h
 		commons/common.cpp
+		commons/CandidatePresence.h
+		commons/CandidatePresence.cpp
+		commons/CommunityRefiner.h
+		commons/CommunityRefiner.cpp
 		commons/LocalUtil.h
 		commons/LocalUtil.cpp
 		commons/QueryIndexer.h

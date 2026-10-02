@@ -1,5 +1,6 @@
 #include "Classifier.h"
 #include "CandidateDBReader.h"
+#include "CommunityRefiner.h"
 #include "FileUtil.h"
 #include "QueryIndexer.h"
 #include "InterleavedKSeqWrapper.h"
@@ -1092,6 +1093,25 @@ bool Classifier::classifyCandidates(const std::string &candidateDb)
 
     if (!assignTaxonomyFromCandidateDB<Match>(candidateDb, queryList, par)) {
         return false;
+    }
+
+    // Optional: refine reads from species not in the DB via a species tie graph,
+    // then rebuild taxCounts from the refined per-read classifications.
+    if (par.communityRefine) {
+        const int threadCount = par.threads <= 0 ? 1 : par.threads;
+        CandidateDBReader refineReader(candidateDb, threadCount);
+        if (refineReader.open()) {
+            refineClassificationsWithCommunities(
+                queryList, refineReader, refineReader.size(), dbDir, *taxonomy, par);
+            refineReader.close();
+            taxCounts.clear();
+            for (const Query &q : queryList) {
+                ++taxCounts[q.classification];
+            }
+        } else {
+            std::cerr << "Warning: --community-refine could not reopen " << candidateDb
+                      << "; skipping refinement." << std::endl;
+        }
     }
 
     const size_t processedReadCnt = queryList.size();
