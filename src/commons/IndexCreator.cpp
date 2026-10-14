@@ -1665,7 +1665,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                     prodigal = new ProdigalWrapper();
                     if (spBatches[spIdx].repGenomeSize < 100'000 ||
                         ((taxonomy->getEukaryotaTaxID() != 0) &&
-                         (taxonomy->IsAncestor(spBatches[spIdx].speciesID, taxonomy->getEukaryotaTaxID()))
+                         (taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), spBatches[spIdx].speciesID))
                         )) {
                         prodigal->is_meta = 1;
                         prodigal->trainMeta(fastaPaths[spBatches[spIdx].repGenomeFasta]);
@@ -2208,7 +2208,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                 prodigal->is_meta = 0;
                                 if (lengthOfTrainingSeq < 100'000 || 
                                     ((taxonomy->getEukaryotaTaxID() != 0) && 
-                                     (taxonomy->IsAncestor(accessionBatches[batchIdx].speciesID, taxonomy->getEukaryotaTaxID()))
+                                     (taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), accessionBatches[batchIdx].speciesID))
                                     )) {
                                     prodigal->is_meta = 1;
                                     prodigal->trainMeta((unsigned char *) training_seq->entry.sequence.s, 
