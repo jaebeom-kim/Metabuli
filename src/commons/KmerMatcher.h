@@ -218,6 +218,14 @@ protected:
 
   void loadTaxIdList(const LocalParameters & par);
 
+  // Fill taxId2speciesId/taxId2genusId from one taxID_list file (IDs are
+  // internal; entries accumulate across calls, which is what multi-sub-DB
+  // search needs since all lists share one numbering).
+  void addTaxIdList(const std::string & fileName);
+
+  // Load <dir>/taxID_list of every selected sub-DB.
+  void loadTaxIdLists(const std::vector<std::string> & dbDirs);
+
   std::vector<QueryKmerSplit> makeQueryKmerSplits(
     const Buffer<Kmer> * queryKmerBuffer,
     const string & dbDir);
@@ -228,7 +236,8 @@ public:
 
   KmerMatcher(const LocalParameters &par,
     TaxonomyWrapper *taxonomy,
-    const MetamerPattern *metamerPattern);
+    const MetamerPattern *metamerPattern,
+    const std::vector<std::string> &taxIdListDirs = std::vector<std::string>());
 
   virtual ~KmerMatcher();
   

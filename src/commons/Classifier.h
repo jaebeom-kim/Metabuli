@@ -46,6 +46,23 @@ protected:
     size_t matchPerKmer;
     int kmerFormat;
 
+    // Selected k-mer lists (one for a classic DB, several for a sub-DB layout).
+    // All share the taxonomyDB (and thus the internal tax-ID numbering) of dbDir.
+    std::vector<SubDbEntry> subDbs;
+
+    // Run the k-mer search against every selected sub-DB, appending into
+    // matchBuffer. Returns false if any search overflowed the match buffer.
+    template <typename MatchType>
+    bool searchSubDbs(const Buffer<Kmer> * queryKmerBuffer, Buffer<MatchType> * matchBuffer);
+
+    // Collapse duplicates that arise when several sub-DBs contain the same
+    // species: matches identical in (query, position, species, target k-mer)
+    // are merged into one, LCA-merging their tax IDs — reproducing what a
+    // build-time merge of the sub-DBs would have stored. Expects the buffer to
+    // be sorted (Match::compare order). Returns the number of removed matches.
+    template <typename MatchType>
+    size_t dedupMatches(Buffer<MatchType> * matchBuffer);
+
     // Agents
     GeneticCode * geneticCode = nullptr;
     MetamerPattern * metamerPattern = nullptr;
@@ -102,19 +119,26 @@ protected:
         unordered_map<TaxID, double> &cladeScoreSums);
 
     void parseSp2GenomeSize() {
-        std::string fileName = dbDir + "/species2genomeSize.tsv";
-        ifstream infile(fileName);
-        if (!infile.is_open()) {
-            cerr << "Error: Could not open species to genome size file " << fileName << endl;
-            return;
+        bool anyOpened = false;
+        for (const SubDbEntry & sub : subDbs) {
+            std::string fileName = sub.dir + "/species2genomeSize.tsv";
+            ifstream infile(fileName);
+            if (!infile.is_open()) {
+                continue;
+            }
+            anyOpened = true;
+            string line;
+            while (getline(infile, line)) {
+                if (line.empty()) continue;
+                vector<string> columns = TaxonomyWrapper::splitByDelimiter(line, "\t", 3);
+                sp2genomeSize[static_cast<TaxID>(stoul(columns[0]))] = stoull(columns[2]);
+            }
+            infile.close();
         }
-        string line;
-        while (getline(infile, line)) {
-            if (line.empty()) continue;
-            vector<string> columns = TaxonomyWrapper::splitByDelimiter(line, "\t", 3);
-            sp2genomeSize[static_cast<TaxID>(stoul(columns[0]))] = stoull(columns[2]);
+        if (!anyOpened) {
+            cerr << "Error: Could not open species to genome size file in "
+                 << (subDbs.empty() ? dbDir : subDbs[0].dir) << endl;
         }
-        infile.close();
     }
 
     unordered_map<TaxID, TaxonCounts> getCladeCounts() {

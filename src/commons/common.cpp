@@ -12,6 +12,8 @@
 #include <fcntl.h>
 #include <algorithm>
 #include <cmath>
+#include <dirent.h>
+#include <random>
 
 const std::string atcg =
     "................................................................"
@@ -220,12 +222,13 @@ int loadDbParameters(LocalParameters &par, const std::string & dbDir) {
           }
           par.spaceMask = tokens[1];
         } else if (tokens[0] == "Accession_level") {
-          if (tokens[1] == "0" && par.accessionLevel == 1){
-            par.accessionLevel = 0;
-            cout << "Warning: Current DB doesn't support accession-level classification." << endl;
-          }
-          if (tokens[1] == "1" && par.accessionLevel == 0){
-            par.accessionLevel = 2;
+          // Accession-level support was removed. Old accession-level DBs still
+          // work: their per-accession taxa are pruned during classification
+          // (see Taxonomer::lowerRankClassification), so reads are assigned up
+          // to strain/subspecies level.
+          if (tokens[1] == "1") {
+            cout << "Warning: this database was built with accession-level support," << endl;
+            cout << "   which has been removed. Reads are classified without accession assignment." << endl;
           }
         } else if (tokens[0] == "DB_name") {
           par.dbName = tokens[1];
@@ -462,6 +465,178 @@ size_t readDbSize(const std::string& dbDir) {
   size_t dnaLength = kmerCnt * 3;
 
   return dnaLength * 3;  // Multiply by 3 for more conservative estimation.
+}
+
+std::vector<SubDbEntry> resolveSubDbs(const std::string & dbDir,
+                                      const std::string & subDbList) {
+  std::vector<SubDbEntry> all;
+  // A database from before the kmer-lists layout keeps its single list at the
+  // top level; it stays addressable as "base" so old databases work untouched.
+  if (fileExist(dbDir + "/diffIdx")) {
+    all.push_back({SUBDB_BASE_NAME, dbDir});
+  }
+
+  const std::string listsDir = dbDir + "/" + SUBDB_DIR_NAME;
+  std::vector<SubDbEntry> subDirs;
+  DIR *dp = opendir(listsDir.c_str());
+  if (dp != nullptr) {
+    struct dirent *entry;
+    while ((entry = readdir(dp)) != nullptr) {
+      const std::string name = entry->d_name;
+      if (name == "." || name == "..") {
+        continue;
+      }
+      const std::string subDir = listsDir + "/" + name;
+      if (!FileUtil::directoryExists(subDir.c_str())
+          || !fileExist(subDir + "/diffIdx")) {
+        continue;
+      }
+      if (!all.empty() && name == SUBDB_BASE_NAME) {
+        std::cerr << "Error: " << dbDir << " has both a top-level k-mer list and "
+                  << SUBDB_DIR_NAME << "/" << SUBDB_BASE_NAME << ". Rename the subdirectory." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      subDirs.push_back({name, subDir});
+    }
+    closedir(dp);
+  }
+  std::sort(subDirs.begin(), subDirs.end(),
+            [](const SubDbEntry & a, const SubDbEntry & b) { return a.name < b.name; });
+  all.insert(all.end(), subDirs.begin(), subDirs.end());
+
+  if (all.empty()) {
+    std::cerr << "Error: no k-mer list found in " << dbDir
+              << " (neither diffIdx nor " << SUBDB_DIR_NAME << "/<name>/diffIdx)." << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
+  if (subDbList.empty()) {
+    return all;
+  }
+
+  std::vector<SubDbEntry> selected;
+  std::vector<std::string> names = Util::split(subDbList, ",");
+  for (const std::string & name : names) {
+    if (name.empty()) {
+      continue;
+    }
+    auto it = std::find_if(all.begin(), all.end(),
+                           [&](const SubDbEntry & e) { return e.name == name; });
+    if (it == all.end()) {
+      std::cerr << "Error: sub-DB \"" << name << "\" not found in " << dbDir << ". Available: ";
+      for (size_t i = 0; i < all.size(); ++i) {
+        std::cerr << (i ? ", " : "") << all[i].name;
+      }
+      std::cerr << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (std::find_if(selected.begin(), selected.end(),
+                     [&](const SubDbEntry & e) { return e.name == name; }) == selected.end()) {
+      selected.push_back(*it);
+    }
+  }
+  if (selected.empty()) {
+    std::cerr << "Error: --sub-dbs selected nothing." << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  return selected;
+}
+
+std::string readDbParameter(const std::string & dir, const std::string & key) {
+  std::ifstream in(dir + "/db.parameters");
+  if (!in.is_open()) {
+    return "";
+  }
+  std::string line;
+  std::string value;
+  while (std::getline(in, line)) {
+    const size_t tab = line.find('\t');
+    if (tab == std::string::npos) {
+      continue;
+    }
+    if (line.compare(0, tab, key) == 0) {
+      value = line.substr(tab + 1); // keep scanning; the last occurrence wins
+    }
+  }
+  return value;
+}
+
+void appendDbParameter(const std::string & dir, const std::string & key,
+                       const std::string & value) {
+  std::ofstream out(dir + "/db.parameters", std::ios::app);
+  if (!out.is_open()) {
+    std::cerr << "Error: cannot open " << dir << "/db.parameters for writing." << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  out << key << '\t' << value << '\n';
+}
+
+void validateSubDbs(const std::string & dbDir,
+                    const std::vector<SubDbEntry> & subDbs,
+                    int maxTaxID) {
+  // A classic database (single top-level list) has its k-mer list and
+  // taxonomyDB physically colocated; nothing can be mixed up.
+  if (subDbs.size() == 1 && subDbs[0].dir == dbDir) {
+    return;
+  }
+
+  const std::string umbrellaLineage = readDbParameter(dbDir, SUBDB_KEY_LINEAGE);
+  static const char *kmerSpaceKeys[] = {"Spaced_kmer_mask", "Kmer_format", "Syncmer"};
+
+  for (const SubDbEntry & sub : subDbs) {
+    if (sub.dir == dbDir) { // top-level list, colocated with taxonomyDB
+      continue;
+    }
+    const std::string lineage = readDbParameter(sub.dir, SUBDB_KEY_LINEAGE);
+    if (umbrellaLineage.empty() || lineage.empty() || lineage != umbrellaLineage) {
+      std::cerr << "Error: sub-DB \"" << sub.name << "\" does not share the taxonomy of " << dbDir << "\n"
+                << "   (" << SUBDB_KEY_LINEAGE << ": \"" << lineage << "\" vs \"" << umbrellaLineage << "\").\n"
+                << "   Sub-DBs are only searchable against the taxonomyDB they were built with;\n"
+                << "   their k-mer entries store internal tax IDs of that exact numbering." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    const std::string watermark = readDbParameter(sub.dir, SUBDB_KEY_MAX_TAXID);
+    if (!watermark.empty() && std::stol(watermark) > static_cast<long>(maxTaxID)) {
+      std::cerr << "Error: sub-DB \"" << sub.name << "\" was built against a newer taxonomy ("
+                << SUBDB_KEY_MAX_TAXID << " " << watermark << " > loaded " << maxTaxID << ").\n"
+                << "   The taxonomyDB in " << dbDir << " is older than this sub-DB." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    for (const char *key : kmerSpaceKeys) {
+      const std::string umbrellaVal = readDbParameter(dbDir, key);
+      const std::string subVal = readDbParameter(sub.dir, key);
+      if (!umbrellaVal.empty() && !subVal.empty() && umbrellaVal != subVal) {
+        std::cerr << "Error: sub-DB \"" << sub.name << "\" disagrees with " << dbDir
+                  << " on " << key << " (\"" << subVal << "\" vs \"" << umbrellaVal << "\")." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
+
+size_t totalDbSize(const std::vector<SubDbEntry> & subDbs) {
+  size_t total = 0;
+  for (const SubDbEntry & sub : subDbs) {
+    const std::string value = readDbParameter(sub.dir, "Total_seq_length");
+    if (!value.empty() && std::stoul(value) > 0) {
+      total += std::stoul(value);
+    } else {
+      total += readDbSize(sub.dir);
+    }
+  }
+  return total;
+}
+
+std::string randomHexString(size_t length) {
+  static const char hexDigits[] = "0123456789abcdef";
+  std::random_device rd;
+  std::mt19937_64 gen(rd());
+  std::uniform_int_distribution<int> dist(0, 15);
+  std::string result(length, '0');
+  for (size_t i = 0; i < length; ++i) {
+    result[i] = hexDigits[dist(gen)];
+  }
+  return result;
 }
 
 

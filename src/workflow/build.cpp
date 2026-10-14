@@ -24,7 +24,6 @@ void setDefaults_build(LocalParameters & par) {
     par.splitNum = 4096;
     par.maskProb = 0.9;
     par.maskMode = 1;
-    par.accessionLevel = 0;
     par.packInfo = 1;
     time_t now = time(0);
     tm *ltm = localtime(&now);
@@ -39,9 +38,20 @@ int build(int argc, const char **argv, const Command &command){
     LocalParameters &par = LocalParameters::getLocalInstance();
     setDefaults_build(par);
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
-    const string & dbDir = par.filenames[0];
+    const string dbDir = par.filenames[0]; // copy; filenames[0] is retargeted below
     if (!FileUtil::directoryExists(dbDir.c_str())) {
         FileUtil::makeDir(dbDir.c_str());
+    }
+    // The k-mer list goes to kmer-lists/base; database-level files (taxonomyDB,
+    // acc2taxid.map, db.parameters) stay at the top. add-sub-db adds sibling
+    // lists, and classify/create-candidates search all of them by default.
+    const string listsDir = dbDir + "/" + SUBDB_DIR_NAME;
+    if (!FileUtil::directoryExists(listsDir.c_str())) {
+        FileUtil::makeDir(listsDir.c_str());
+    }
+    const string baseDir = listsDir + "/" + SUBDB_BASE_NAME;
+    if (!FileUtil::directoryExists(baseDir.c_str())) {
+        FileUtil::makeDir(baseDir.c_str());
     }
     
     #ifdef OPENMP
@@ -97,6 +107,8 @@ int build(int argc, const char **argv, const Command &command){
                                                       taxonomyDir + "/merged.dmp",
                                                       true);
 
+    // IndexCreator derives every output path from filenames[0].
+    par.filenames[0] = baseDir;
     IndexCreator idxCre(par, taxonomy, 2);
     if (par.storeKmerPos == 0) {
         idxCre.createIndex();
@@ -104,42 +116,51 @@ int build(int argc, const char **argv, const Command &command){
         idxCre.createIndexWithPos();
     }
 
-    if (par.accessionLevel == 1) 
-    {
-        taxonomy = idxCre.getTaxonomy();
-    }
     taxonomy->writeTaxonomyDB(dbDir + "/taxonomyDB");
-    
-    if (idxCre.getNumOfFlush() == 1) 
-    {
-        delete taxonomy;
-        cout << "Index creation completed." << endl;
-        return 0;
+
+    if (idxCre.getNumOfFlush() > 1) {
+        cout << "Merge reference DB files ... " << endl;
+        idxCre.updateTaxId2SpeciesTaxId(baseDir + "/taxID_list");
+        idxCre.printFilesToMerge();
+
+        if (par.storeKmerPos == 0) {
+            idxCre.setMergedFileNames(baseDir + "/diffIdx", baseDir + "/info", baseDir + "/split");
+            idxCre.mergeTargetFiles<FilterMode::DB_CREATION>();
+        } else {
+            idxCre.setMergedFileNames(baseDir + "/diffIdx", baseDir + "/info", baseDir + "/split", baseDir + "/kmerpos");
+            idxCre.mergeTargetFiles<FilterMode::DB_CREATION_POS>();
+        }
     }
 
-    cout << "Merge reference DB files ... " << endl;
-    // for (int i = 0; i < 10; i++) {
-    //     idxCre.addFilesToMerge(dbDir + "/" + to_string(i) + "_diffIdx",
-    //                            dbDir + "/" + to_string(i) + "_info",
-    //                            dbDir + "/" + to_string(i) + "_kmerpos");
-    // }
-    idxCre.updateTaxId2SpeciesTaxId(dbDir + "/taxID_list");
-    idxCre.printFilesToMerge();
-
-    if (par.storeKmerPos == 0) {
-        idxCre.setMergedFileNames(dbDir + "/diffIdx", dbDir + "/info", dbDir + "/split");
-        idxCre.mergeTargetFiles<FilterMode::DB_CREATION>();
-    } else {
-        idxCre.setMergedFileNames(dbDir + "/diffIdx", dbDir + "/info", dbDir + "/split", dbDir + "/kmerpos");
-        idxCre.mergeTargetFiles<FilterMode::DB_CREATION_POS>();
+    // Accession mappings (external tax IDs) are shared by all k-mer lists and
+    // live at the database level.
+    if (fileExist(baseDir + "/acc2taxid.map")) {
+        if (rename((baseDir + "/acc2taxid.map").c_str(), (dbDir + "/acc2taxid.map").c_str()) != 0) {
+            cerr << "Error: could not move acc2taxid.map to " << dbDir << endl;
+            return 1;
+        }
     }
+
+    // Database-level db.parameters: holds the k-mer-space contract every
+    // sub-DB must satisfy, plus the lineage ID that identifies the internal
+    // tax-ID numbering (verified against each sub-DB at load time). Written as
+    // a copy of the base list's file; per-list keys in it are not consulted.
+    FileUtil::copyFile((baseDir + "/db.parameters").c_str(), (dbDir + "/db.parameters").c_str());
+    const string lineage = randomHexString(16);
+    appendDbParameter(dbDir, SUBDB_KEY_LINEAGE, lineage);
+    appendDbParameter(baseDir, SUBDB_KEY_LINEAGE, lineage);
+    appendDbParameter(baseDir, SUBDB_KEY_MAX_TAXID, to_string(taxonomy->getMaxTaxID()));
+
     delete taxonomy;
     cout << "Index creation completed." << endl;
 
-    if (par.validateDb) 
+    if (par.validateDb)
     {
         cout << "Validating the created database..." << endl;
-        if (validateDatabase(dbDir) != 0) 
+        // validateDatabase checks a k-mer list directory; the taxonomyDB
+        // warning it prints for kmer-lists/base is expected (it lives one
+        // level up).
+        if (validateDatabase(baseDir) != 0)
         {
             cerr << "Database validation failed." << endl;
             return 1;

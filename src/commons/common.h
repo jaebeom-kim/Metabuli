@@ -400,6 +400,51 @@ TaxonomyWrapper * loadTaxonomyDB(const std::string & taxDbFile);
 
 int loadDbParameters(LocalParameters & par, const std::string & dbDir);
 
+// --- Sub-DB layout -----------------------------------------------------------
+// A database directory holds its k-mer lists (diffIdx/info/split/taxID_list)
+// in <DB dir>/kmer-lists/<name>/ — build creates kmer-lists/base, add-sub-db
+// adds siblings. Databases from before this layout keep their single list at
+// the top level; it resolves as sub-DB "base". Either way, all lists share the
+// database-level taxonomyDB and therefore one internal tax-ID numbering.
+
+// db.parameters keys guarding the shared internal tax-ID numbering.
+#define SUBDB_KEY_LINEAGE "Taxonomy_lineage"
+#define SUBDB_KEY_MAX_TAXID "Taxonomy_max_id"
+// Directory that holds the k-mer lists.
+#define SUBDB_DIR_NAME "kmer-lists"
+// Default sub-DB name; also the selector of a legacy top-level k-mer list.
+#define SUBDB_BASE_NAME "base"
+
+struct SubDbEntry {
+    std::string name; // user-facing selector (SUBDB_BASE_NAME for the top-level list)
+    std::string dir;  // directory containing diffIdx/info/split/taxID_list
+};
+
+// Enumerate the k-mer lists inside dbDir and apply the user's selection.
+// subDbList is a comma-separated list of sub-DB names ("" selects all).
+// Exits with an error message if no list is found or a name is unknown.
+std::vector<SubDbEntry> resolveSubDbs(const std::string & dbDir, const std::string & subDbList);
+
+// Read one key from <dir>/db.parameters; returns "" if the file or key is absent.
+std::string readDbParameter(const std::string & dir, const std::string & key);
+
+// Append "key\tvalue" to <dir>/db.parameters (creates the file if needed).
+void appendDbParameter(const std::string & dir, const std::string & key, const std::string & value);
+
+// Verify that every selected sub-DB was built against the currently loaded
+// taxonomy: same lineage ID and a build-time max tax ID not exceeding the
+// loaded taxonomy's. Also checks that k-mer-space parameters agree with the
+// umbrella. Exits on violation. No-op for a classic single-list database.
+void validateSubDbs(const std::string & dbDir, const std::vector<SubDbEntry> & subDbs, int maxTaxID);
+
+// Sum of Total_seq_length over the selected sub-DBs; falls back to
+// readDbSize() for lists without the key. Species shared between sub-DBs are
+// counted once per sub-DB (slight overestimation).
+size_t totalDbSize(const std::vector<SubDbEntry> & subDbs);
+
+// Random lowercase-hex string (used to mint taxonomy lineage IDs).
+std::string randomHexString(size_t length);
+
 int searchAccession2TaxID(const std::string & name, const std::unordered_map<std::string, int> & acc2taxid);
 
 template <typename T>

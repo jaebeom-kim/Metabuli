@@ -19,7 +19,6 @@ void setDefaults(LocalParameters & par){
     par.splitNum = 4096;
     par.maskProb = 0.9;
     par.maskMode = 0;
-    par.accessionLevel = 0;
     time_t now = time(0);
     tm *ltm = localtime(&now);
     par.dbDate = to_string(1900 + ltm->tm_year) + "-" + to_string(1 + ltm->tm_mon) + "-" + to_string(ltm->tm_mday);

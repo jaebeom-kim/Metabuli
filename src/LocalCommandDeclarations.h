@@ -4,6 +4,7 @@
 
 extern int build(int argc, const char **argv, const Command& command);
 extern int updateDB(int argc, const char **argv, const Command& command);
+extern int addSubDb(int argc, const char **argv, const Command& command);
 extern int classify(int argc, const char **argv, const Command& command);
 extern int classifyCandidates(int argc, const char **argv, const Command& command);
 extern int createCandidates(int argc, const char **argv, const Command& command);

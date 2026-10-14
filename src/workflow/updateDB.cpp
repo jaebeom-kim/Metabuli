@@ -22,7 +22,6 @@ void setDefaults_updateDB(LocalParameters & par){
     par.splitNum = 4096;
     par.maskProb = 0.9;
     par.maskMode = 1;
-    par.accessionLevel = 0;
     par.packInfo = 1;
     // Get current date
     time_t now = time(0);
@@ -42,6 +41,20 @@ int updateDB(int argc, const char **argv, const Command &command){
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
     string newDbDir = par.filenames[0];
     string oldDbDir = par.filenames[3];
+
+    cerr << "Warning: updateDB is deprecated and will be removed in a future release." << endl;
+    cerr << "   Use add-sub-db instead; it adds new sequences as a sub-DB without" << endl;
+    cerr << "   rewriting the existing database." << endl;
+
+    // updateDB merges into a single top-level k-mer list, which only exists in
+    // databases from before the kmer-lists layout.
+    if (!fileExist(oldDbDir + "/diffIdx")) {
+        cerr << "Error: " << oldDbDir << " has no top-level k-mer list." << endl;
+        cerr << "   updateDB only supports databases from before the kmer-lists layout;" << endl;
+        cerr << "   use add-sub-db for this database." << endl;
+        return 1;
+    }
+
     if (!FileUtil::directoryExists(newDbDir.c_str())) {
         FileUtil::makeDir(newDbDir.c_str());
     }
@@ -105,9 +118,6 @@ int updateDB(int argc, const char **argv, const Command &command){
     IndexCreator idxCre(par, taxonomy, par.kmerFormat);
     idxCre.setIsUpdating(true);
     idxCre.createIndex();
-    if (par.accessionLevel == 1) {
-        taxonomy = idxCre.getTaxonomy();
-    }
 
     if (taxonomy->IsExternalData()) {
         FileUtil::copyFile(oldDbDir + "/taxonomyDB", newDbDir + "/taxonomyDB");

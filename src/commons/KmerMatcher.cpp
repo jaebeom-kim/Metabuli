@@ -19,19 +19,24 @@ constexpr uint16_t KmerMatcher::HAMMING_LUT7[64];
 KmerMatcher::KmerMatcher(
     const LocalParameters & par,
     TaxonomyWrapper * taxonomy,
-    const MetamerPattern *metamerPattern) 
+    const MetamerPattern *metamerPattern,
+    const std::vector<std::string> & taxIdListDirs)
     : par(par), taxonomy(taxonomy), metamerPattern(metamerPattern)
-{                        
+{
     // Parameters
     threads = par.threads;
     dbDir = par.filenames[1 + par.pairedFileInput()];
     hammingMargin = par.hammingMargin;
-    DNA_MASK = ~metamerPattern->dnaMask; // metamer & DNA_MASK -> AA part 
+    DNA_MASK = ~metamerPattern->dnaMask; // metamer & DNA_MASK -> AA part
     AA_MASK = metamerPattern->dnaMask;   // metamer & AA_MASK  -> DNA part
     totalMatchCnt = 0;
     kmerLen = metamerPattern->kmerLen;
     kmerFormat = 2;
-    loadTaxIdList(par);
+    if (!taxIdListDirs.empty() && par.contamList == "") {
+        loadTaxIdLists(taxIdListDirs);
+    } else {
+        loadTaxIdList(par);
+    }
 }
 
 KmerMatcher::KmerMatcher(
@@ -55,6 +60,34 @@ KmerMatcher::~KmerMatcher() {
     delete geneticCode;
 }
 
+void KmerMatcher::addTaxIdList(const std::string & fileName) {
+    std::ifstream in{fileName};
+    if (!in.is_open()) {
+        std::cout << "Cannot open the taxID list file " << fileName << std::endl;
+        return;
+    }
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        TaxID taxId = static_cast<TaxID>(std::stoul(line));
+        TaxID speciesTaxID = taxonomy->getTaxIdAtRank(taxId, "species");
+        TaxID genusTaxID = taxonomy->getTaxIdAtRank(taxId, "genus");
+        const TaxonNode* taxon = taxonomy->taxonNode(taxId);
+        if (taxId != taxon->taxId) {
+            taxId2speciesId[taxId] = speciesTaxID;
+            taxId2genusId[taxId] = genusTaxID;
+        }
+        while (taxon->taxId != speciesTaxID) {
+            taxId2speciesId[taxon->taxId] = speciesTaxID;
+            taxId2genusId[taxon->taxId] = genusTaxID;
+            taxon = taxonomy->taxonNode(taxon->parentTaxId);
+        }
+        taxId2speciesId[speciesTaxID] = speciesTaxID;
+        taxId2genusId[speciesTaxID] = genusTaxID;
+    }
+    in.close();
+}
+
 void KmerMatcher::loadTaxIdList(const LocalParameters & par) {
     // cout << "Loading the list for taxonomy IDs ... " << std::flush;
     if (par.contamList != "") {
@@ -65,60 +98,18 @@ void KmerMatcher::loadTaxIdList(const LocalParameters & par) {
                 std::cout << "TaxID list file for " << contam << " does not exist." << std::endl;
                 continue;
             }
-            std::ifstream in{fileName};
-            if (!in.is_open()) {
-                std::cout << "Cannot open the taxID list file." << std::endl;
-                return;
-            }
-            std::string line;
-            while (std::getline(in, line)) {
-                if (line.empty()) continue;                   
-                TaxID taxId = static_cast<TaxID>(std::stoul(line));
-                TaxID speciesTaxID = taxonomy->getTaxIdAtRank(taxId, "species");
-                TaxID genusTaxID = taxonomy->getTaxIdAtRank(taxId, "genus");
-                const TaxonNode* taxon = taxonomy->taxonNode(taxId);            
-                if (taxId != taxon->taxId) {
-                    taxId2speciesId[taxId] = speciesTaxID;
-                    taxId2genusId[taxId] = genusTaxID;
-                }
-                while (taxon->taxId != speciesTaxID) {
-                    taxId2speciesId[taxon->taxId] = speciesTaxID;
-                    taxId2genusId[taxon->taxId] = genusTaxID;
-                    taxon = taxonomy->taxonNode(taxon->parentTaxId);
-                }
-                taxId2speciesId[speciesTaxID] = speciesTaxID;
-                taxId2genusId[speciesTaxID] = genusTaxID;
-            }
-            in.close();
+            addTaxIdList(fileName);
         }
     } else {
-        std::ifstream in{dbDir + "/taxID_list"};
-        if (!in.is_open()) {
-            std::cout << "Cannot open the taxID list file." << std::endl;
-            return;
-        }
-        std::string line;
-        while (std::getline(in, line)) {
-            if (line.empty()) continue;                   
-            TaxID taxId = static_cast<TaxID>(std::stoul(line));
-            TaxID speciesTaxID = taxonomy->getTaxIdAtRank(taxId, "species");
-            TaxID genusTaxID = taxonomy->getTaxIdAtRank(taxId, "genus");
-            const TaxonNode* taxon = taxonomy->taxonNode(taxId);            
-            if (taxId != taxon->taxId) {
-                taxId2speciesId[taxId] = speciesTaxID;
-                taxId2genusId[taxId] = genusTaxID;
-            }
-            while (taxon->taxId != speciesTaxID) {
-                taxId2speciesId[taxon->taxId] = speciesTaxID;
-                taxId2genusId[taxon->taxId] = genusTaxID;
-                taxon = taxonomy->taxonNode(taxon->parentTaxId);
-            }
-            taxId2speciesId[speciesTaxID] = speciesTaxID;
-            taxId2genusId[speciesTaxID] = genusTaxID;
-        }
-        in.close();
+        addTaxIdList(dbDir + "/taxID_list");
     }
     // cout << "Done" << endl;
+}
+
+void KmerMatcher::loadTaxIdLists(const std::vector<std::string> & dbDirs) {
+    for (const std::string & dir : dbDirs) {
+        addTaxIdList(dir + "/taxID_list");
+    }
 }
 
 
@@ -129,6 +120,9 @@ bool KmerMatcher::matchKmers(
 {
     const string targetDiffIdxFileName = db + "/diffIdx";
     const string targetInfoFileName = db + "/info";
+    // The caller may search several sub-DBs into the same buffer; count only
+    // the matches this call appends.
+    const size_t matchCntBefore = totalMatches->startIndexOfReserve;
     std::vector<QueryKmerSplit> querySplits = makeQueryKmerSplits(queryKmerBuffer, db);
     const Kmer * qKmers = queryKmerBuffer->buffer;
 
@@ -263,7 +257,7 @@ bool KmerMatcher::matchKmers(
         return false;
     }
     std::cout << double(time(nullptr) - beforeSearch) << " s" << std::endl;
-    totalMatchCnt += totalMatches->startIndexOfReserve;
+    totalMatchCnt += totalMatches->startIndexOfReserve - matchCntBefore;
     return true;
 }
 
@@ -275,6 +269,7 @@ bool KmerMatcher::matchKmersWithPos(
     const string targetDiffIdxFileName = db + "/diffIdx";
     const string targetInfoFileName = db + "/info";
     const string targetKmerPosFileName = db + "/kmerpos";
+    const size_t matchCntBefore = totalMatches->startIndexOfReserve;
 
     std::vector<QueryKmerSplit> querySplits = makeQueryKmerSplits(queryKmerBuffer, db);
     const Kmer * qKmers = queryKmerBuffer->buffer;
@@ -414,7 +409,7 @@ bool KmerMatcher::matchKmersWithPos(
         return false;
     }
     std::cout << double(time(nullptr) - beforeSearch) << " s" << std::endl;
-    totalMatchCnt += totalMatches->startIndexOfReserve;
+    totalMatchCnt += totalMatches->startIndexOfReserve - matchCntBefore;
     return true;
 }
 
@@ -483,6 +478,7 @@ bool KmerMatcher::matchKmers_AA(
     Buffer<Match_AA> * totalMatches,
     const string & db)
 {
+    const size_t matchCntBefore = totalMatches->startIndexOfReserve;
     std::vector<QueryKmerSplit> querySplits = makeQueryKmerSplits(queryKmerBuffer, db);
     const Kmer * qKmers = queryKmerBuffer->buffer;
     std::atomic<int> totalOverFlowCnt{0};
@@ -568,7 +564,7 @@ bool KmerMatcher::matchKmers_AA(
     if (totalOverFlowCnt.load() > 0) {
         return false;
     }
-    this->totalMatchCnt += totalMatches->startIndexOfReserve;
+    this->totalMatchCnt += totalMatches->startIndexOfReserve - matchCntBefore;
     return true;
 }
 

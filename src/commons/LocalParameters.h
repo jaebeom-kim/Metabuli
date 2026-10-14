@@ -42,6 +42,7 @@ public:
     std::vector<MMseqsParameter*> addToLibrary;
     std::vector<MMseqsParameter*> build;
     std::vector<MMseqsParameter*> updateDB;
+    std::vector<MMseqsParameter*> addSubDb;
     std::vector<MMseqsParameter*> applyThreshold;
     std::vector<MMseqsParameter*> binning2report;
     std::vector<MMseqsParameter*> filterByGenus;
@@ -155,7 +156,6 @@ public:
     PARAMETER(IS_ASSEMBLY)
     PARAMETER(SPLIT_NUM)
     PARAMETER(BUFFER_SIZE)
-    PARAMETER(ACCESSION_LEVEL)
     PARAMETER(DB_NAME)
     PARAMETER(DB_DATE)
     PARAMETER(CDS_INFO)
@@ -189,6 +189,9 @@ public:
     // Filter
     PARAMETER(PRINT_MODE)
     PARAMETER(CONTAM_LIST)
+
+    // Sub-DB selection (classify / create-candidates)
+    PARAMETER(SUB_DB_LIST)
 
     // printInfo
     PARAMETER(INFO_BEGIN)
@@ -289,7 +292,6 @@ public:
     std::string dbDate;
     int splitNum;
     size_t bufferSize;
-    int accessionLevel;
     std::string cdsInfo;
     int makeLibrary;
     std::string assAcc2taxid;
@@ -325,6 +327,9 @@ public:
     // Filter
     int printMode;
     std::string contamList;
+
+    // Sub-DB selection: comma-separated sub-DB names to search ("" = all)
+    std::string subDbList;
 
     // printInfo
     size_t infoBegin;

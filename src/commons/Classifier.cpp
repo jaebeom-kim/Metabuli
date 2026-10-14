@@ -125,16 +125,36 @@ inline std::string filteredKronaFileName(const std::string &classificationFileNa
 Classifier::Classifier(LocalParameters & par) : par(par) {
     dbDir = par.filenames[1 + par.pairedFileInput()];
     matchPerKmer = par.matchPerKmer;
-    loadDbParameters(par, par.filenames[1 + par.pairedFileInput()]);
+    subDbs = resolveSubDbs(dbDir, par.subDbList);
+    // The umbrella db.parameters defines the k-mer space. A database without a
+    // top-level file (sub-DB-only layout) falls back to the first selected
+    // sub-DB; validateSubDbs() checks that they all agree anyway.
+    if (fileExist(dbDir + "/db.parameters")) {
+        loadDbParameters(par, dbDir);
+    } else {
+        loadDbParameters(par, subDbs[0].dir);
+    }
     kmerFormat = par.kmerFormat;
-    if (par.dbTotalLength == 0) {
-        par.dbTotalLength = readDbSize(par.filenames[1 + par.pairedFileInput()]);
+    if (subDbs.size() > 1) {
+        cout << "Searching " << subDbs.size() << " sub-DBs:";
+        for (const SubDbEntry & sub : subDbs) {
+            cout << " " << sub.name;
+        }
+        cout << endl;
+        par.dbTotalLength = totalDbSize(subDbs);
+    } else if (subDbs[0].dir != dbDir) {
+        // Single sub-DB selected out of a kmer-lists layout: its own length,
+        // not the database-level Total_seq_length loadDbParameters imported.
+        par.dbTotalLength = totalDbSize(subDbs);
+    } else if (par.dbTotalLength == 0) {
+        par.dbTotalLength = readDbSize(subDbs[0].dir);
     }
 
     cout << "Database name : " << par.dbName << endl;
     cout << "Creation date : " << par.dbDate << endl;
-    
+
     taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
+    validateSubDbs(dbDir, subDbs, taxonomy->getMaxTaxID());
 
     if (par.precisionMode != 0) {
         preciseModePreset(par);
@@ -179,8 +199,87 @@ Classifier::Classifier(LocalParameters & par) : par(par) {
 
     kmerExtractor = new KmerExtractor(par, metamerPattern);
     queryIndexer = new QueryIndexer(par);
-    kmerMatcher = new KmerMatcher(par, taxonomy, metamerPattern);
+    std::vector<std::string> subDbDirs;
+    for (const SubDbEntry & sub : subDbs) {
+        subDbDirs.push_back(sub.dir);
+    }
+    kmerMatcher = new KmerMatcher(par, taxonomy, metamerPattern, subDbDirs);
     reporter = new Reporter(par, taxonomy);
+}
+
+template <typename MatchType>
+bool Classifier::searchSubDbs(
+    const Buffer<Kmer> * queryKmerBuffer,
+    Buffer<MatchType> * matchBuffer)
+{
+    constexpr bool withPos = std::is_same<MatchType, MatchWithPos>::value;
+    for (const SubDbEntry & sub : subDbs) {
+        if (subDbs.size() > 1) {
+            std::cout << "Sub-DB                 : " << sub.name << std::endl;
+        }
+        bool searchComplete;
+        if constexpr (withPos) {
+            searchComplete = kmerMatcher->matchKmersWithPos(queryKmerBuffer, matchBuffer, sub.dir);
+        } else {
+            searchComplete = kmerMatcher->matchKmers(queryKmerBuffer, matchBuffer, sub.dir);
+        }
+        if (!searchComplete) { // buffer overflow; the caller retries the batch
+            return false;
+        }
+    }
+    return true;
+}
+
+template <typename MatchType>
+size_t Classifier::dedupMatches(Buffer<MatchType> * matchBuffer) {
+    constexpr bool withPos = std::is_same<MatchType, MatchWithPos>::value;
+    const size_t n = matchBuffer->startIndexOfReserve;
+    if (n < 2) {
+        return 0;
+    }
+    MatchType * m = matchBuffer->buffer;
+    // Matches are sorted by (query, species, frame, pos, taxId, ...), so all
+    // duplicates of one query k-mer vs. one species lie in one small run; they
+    // are not necessarily adjacent within it (taxId sorts before the target
+    // k-mer value), hence the inner scan over the run's kept matches.
+    size_t w = 0;         // next write slot
+    size_t runStart = 0;  // first kept match of the current run
+    for (size_t r = 0; r < n; ++r) {
+        bool duplicate = false;
+        if (w > 0
+            && m[w - 1].qKmer.qInfo.sequenceID == m[r].qKmer.qInfo.sequenceID
+            && m[w - 1].tKmer.tInfo.speciesId == m[r].tKmer.tInfo.speciesId
+            && m[w - 1].qKmer.qInfo.frame == m[r].qKmer.qInfo.frame
+            && m[w - 1].qKmer.qInfo.pos == m[r].qKmer.qInfo.pos) {
+            for (size_t k = runStart; k < w; ++k) {
+                bool sameHit = m[k].qKmer.value == m[r].qKmer.value
+                               && m[k].tKmer.value == m[r].tKmer.value;
+                if constexpr (withPos) {
+                    sameHit = sameHit && m[k].posId == m[r].posId;
+                }
+                if (sameHit) {
+                    if (m[k].tKmer.tInfo.taxId != m[r].tKmer.tInfo.taxId) {
+                        // What a build-time merge would have stored.
+                        m[k].tKmer.tInfo.taxId =
+                            taxonomy->LCA(m[k].tKmer.tInfo.taxId, m[r].tKmer.tInfo.taxId);
+                    }
+                    duplicate = true;
+                    break;
+                }
+            }
+        } else {
+            runStart = w;
+        }
+        if (duplicate) {
+            continue;
+        }
+        if (w != r) {
+            m[w] = m[r];
+        }
+        ++w;
+    }
+    matchBuffer->startIndexOfReserve = w;
+    return n - w;
 }
 
 Classifier::~Classifier() {
@@ -443,12 +542,16 @@ void Classifier::classifyReads() {
             // }
             // 3) Match k-mers
             start = time(nullptr);
-            bool searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer, dbDir);
+            bool searchComplete = searchSubDbs<Match>(&queryKmerBuffer, &matchBuffer);
             if (searchComplete) {
                 std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
 
                 // 4) Sort matches
                 kmerMatcher->sortMatches(&matchBuffer);
+                if (subDbs.size() > 1) {
+                    size_t removed = dedupMatches(&matchBuffer);
+                    std::cout << "Cross-sub-DB duplicates: " << removed << std::endl;
+                }
 
                 // 5) Assign taxonomy
                 assignTaxonomy(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);
@@ -612,12 +715,7 @@ void Classifier::generateCandidatesImpl() {
             std::cout << difftime(time(nullptr), start) << " s" << std::endl;
 
             // 3) Match k-mers
-            bool searchComplete;
-            if constexpr (withPos) {
-                searchComplete = kmerMatcher->matchKmersWithPos(&queryKmerBuffer, &matchBuffer, dbDir);
-            } else {
-                searchComplete = kmerMatcher->matchKmers(&queryKmerBuffer, &matchBuffer, dbDir);
-            }
+            bool searchComplete = searchSubDbs<MatchType>(&queryKmerBuffer, &matchBuffer);
             if (searchComplete) {
                 std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
 
@@ -628,6 +726,10 @@ void Classifier::generateCandidatesImpl() {
                                   MatchWithPos::compare);
                 } else {
                     kmerMatcher->sortMatches(&matchBuffer);
+                }
+                if (subDbs.size() > 1) {
+                    size_t removed = dedupMatches(&matchBuffer);
+                    std::cout << "Cross-sub-DB duplicates: " << removed << std::endl;
                 }
 
                 // 5) Collect species candidates (no classification)
@@ -791,7 +893,7 @@ void Classifier::classifyReadsWithPos() {
             // }
             // 3) Match k-mers
             start = time(nullptr);
-            bool searchComplete = kmerMatcher->matchKmersWithPos(&queryKmerBuffer, &matchBuffer, dbDir);
+            bool searchComplete = searchSubDbs<MatchWithPos>(&queryKmerBuffer, &matchBuffer);
             if (searchComplete) {
                 std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
 
@@ -802,6 +904,10 @@ void Classifier::classifyReadsWithPos() {
                               matchBuffer.buffer + matchBuffer.startIndexOfReserve,
                               MatchWithPos::compare);
                 std::cout << double(time(nullptr) - beforeSortMatches) << " s" << std::endl;
+                if (subDbs.size() > 1) {
+                    size_t removed = dedupMatches(&matchBuffer);
+                    std::cout << "Cross-sub-DB duplicates: " << removed << std::endl;
+                }
 
                 // 5) Assign taxonomy
                 assignTaxonomy<MatchWithPos>(matchBuffer.buffer, matchBuffer.startIndexOfReserve, queryList, par);

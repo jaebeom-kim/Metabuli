@@ -560,13 +560,6 @@ LocalParameters::LocalParameters() :
                     typeid(size_t),
                     (void *) &bufferSize,
                     "^[0-9]+$"),
-        ACCESSION_LEVEL(ACCESSION_LEVEL_ID,
-                        "--accession-level",
-                        "Accession-level DB build/search",
-                        "Build or search a database for accession-level classification",
-                        typeid(int),
-                        (void *) &accessionLevel,
-                        "[0-1]"),
         DB_NAME(DB_NAME_ID,
                 "--db-name",
                 "Name of the database (a random number as default)",
@@ -742,12 +735,19 @@ LocalParameters::LocalParameters() :
                        typeid(int),
                        (void *) &printMode,
                        "[1-2]"),
-        CONTAM_LIST(CONTAM_LIST_ID, 
+        CONTAM_LIST(CONTAM_LIST_ID,
                    "--contam-list",
                    "List of contaminants to be filtered",
                    "List of taxids to be filtered",
                      typeid(std::string),
                         (void *) &contamList,
+                        "^.*$"),
+        SUB_DB_LIST(SUB_DB_LIST_ID,
+                   "--sub-dbs",
+                   "Comma-separated sub-DB names to search (default: all)",
+                   "Comma-separated sub-DB names to search. Default: every k-mer list in the DB directory.",
+                     typeid(std::string),
+                        (void *) &subDbList,
                         "^.*$"),
         INFO_BEGIN(INFO_BEGIN_ID,
                 "--info-begin",
@@ -877,7 +877,6 @@ LocalParameters::LocalParameters() :
     dbDate = "";
     splitNum = 0;
     bufferSize = 0;
-    accessionLevel = 0;
     packInfo = 1;
     sdustT = 20;  // SDUST defaults (lh3/sdust)
     sdustW = 64;
@@ -898,6 +897,9 @@ LocalParameters::LocalParameters() :
     // Filter
     printMode = 0;
     contamList = "";
+
+    // Sub-DB selection
+    subDbList = "";
 
     // classified to full taxonomy
     removeUnclassified = false;
@@ -926,7 +928,6 @@ LocalParameters::LocalParameters() :
     build.push_back(&SPLIT_NUM);
     build.push_back(&PARAM_MASK_PROBABILTY);
     build.push_back(&PARAM_MASK_RESIDUES);
-    build.push_back(&ACCESSION_LEVEL);
     build.push_back(&DB_NAME);
     build.push_back(&DB_DATE);
     build.push_back(&CDS_INFO);
@@ -964,7 +965,6 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&SPLIT_NUM);
     updateDB.push_back(&PARAM_MASK_PROBABILTY);
     updateDB.push_back(&PARAM_MASK_RESIDUES);
-    updateDB.push_back(&ACCESSION_LEVEL);
     updateDB.push_back(&DB_NAME);
     updateDB.push_back(&DB_DATE);
     updateDB.push_back(&CDS_INFO);
@@ -978,6 +978,9 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&SKIP_PRODIGAL_TAXA);
     updateDB.push_back(&MIN_EUK_CONTIG_LEN);
     updateDB.push_back(&PACK_INFO);
+
+    // add-sub-db (same build options as updateDB)
+    addSubDb = updateDB;
 
     //classify
     classify.push_back(&PARAM_THREADS);
@@ -995,7 +998,6 @@ LocalParameters::LocalParameters() :
     classify.push_back(&SDUST_W);
     classify.push_back(&RAM_USAGE);
     classify.push_back(&MATCH_PER_KMER);
-    classify.push_back(&ACCESSION_LEVEL);
     classify.push_back(&TIE_RATIO);
     classify.push_back(&PRINT_LINEAGE);
     classify.push_back(&MIN_AVG_SCORE);
@@ -1022,6 +1024,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&DB_TOTAL_LENGTH);
     classify.push_back(&MAX_SHIFT);
     classify.push_back(&GAP_PENALTY);
+    classify.push_back(&SUB_DB_LIST);
     // classify.push_back(&EM);
 
     //classify-candidates
@@ -1064,6 +1067,7 @@ LocalParameters::LocalParameters() :
     createCandidates.push_back(&TOP_SPECIES);
     createCandidates.push_back(&MAX_SHIFT);
     createCandidates.push_back(&GAP_PENALTY);
+    createCandidates.push_back(&SUB_DB_LIST);
 
     // filter-candidates (prune a species-candidate DB)
     filterCandidates.push_back(&PARAM_THREADS);
@@ -1147,7 +1151,6 @@ LocalParameters::LocalParameters() :
     filter.push_back(&MATCH_PER_KMER);
     filter.push_back(&PRINT_MODE);
     filter.push_back(&CONTAM_LIST);
-    filter.push_back(&ACCESSION_LEVEL);
     
     //updateTargetDB
     exclusiontest_hiv.push_back(&TEST_RANK);

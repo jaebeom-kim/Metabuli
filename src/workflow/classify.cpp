@@ -32,7 +32,6 @@ void setClassifyDefaults(LocalParameters & par){
     par.maskProb = 0.9;
     par.matchPerKmer = 4;
     par.maxHdist = -1;
-    par.accessionLevel = 0;
     par.tieRatio = 0.99;
     par.printLineage = 0;
     par.minAaMatch = 11;
@@ -172,36 +171,27 @@ int classify(int argc, const char **argv, const Command& command) {
             cout << "Error: " << dbDir << " is not found." << endl;
             exit(1);
         }
-        const string & deltaIdx = dbDir + "/deltaIdx.mtbl";
-        const string & diffIdx = dbDir + "/diffIdx";
-
-        bool newFormat = false;
-        if (FileUtil::fileExists(diffIdx.c_str())) {
-            newFormat = false;
-        } else if (FileUtil::fileExists(deltaIdx.c_str())) {
-            newFormat = true;
-        } else {
-            cout << "Error: Neither " << diffIdx << " nor " << deltaIdx << " is found." << endl;
-            cout << "       Please check the database directory." << endl;
-            exit(1);
-        }
-
-        if (newFormat) {
-            const string & deltaIdxSplit = dbDir + "/deltaIdxSplits.mtbl";
+        if (FileUtil::fileExists((dbDir + "/deltaIdx.mtbl").c_str())
+            && !FileUtil::fileExists((dbDir + "/diffIdx").c_str())) {
+            const string deltaIdxSplit = dbDir + "/deltaIdxSplits.mtbl";
             if (!FileUtil::fileExists(deltaIdxSplit.c_str())) {
                 cout << "Error: " << deltaIdxSplit << " is not found." << endl;
                 exit(1);
             }
         } else {
-            const string & info = dbDir + "/info";
-            const string & split = dbDir + "/split";
-            if (!FileUtil::fileExists(info.c_str())) {
-                cout << "Error: " << info << " is not found." << endl;
-                exit(1);
-            }
-            if (!FileUtil::fileExists(split.c_str())) {
-                cout << "Error: " << split << " is not found." << endl;
-                exit(1);
+            // Enumerate the k-mer lists (legacy top-level or kmer-lists/<name>)
+            // and check every selected one is complete. resolveSubDbs() itself
+            // errors out when no list or an unknown --sub-dbs name is given.
+            std::vector<SubDbEntry> subDbs = resolveSubDbs(dbDir, par.subDbList);
+            for (const SubDbEntry & sub : subDbs) {
+                if (!FileUtil::fileExists((sub.dir + "/info").c_str())) {
+                    cout << "Error: " << sub.dir << "/info is not found." << endl;
+                    exit(1);
+                }
+                if (!FileUtil::fileExists((sub.dir + "/split").c_str())) {
+                    cout << "Error: " << sub.dir << "/split is not found." << endl;
+                    exit(1);
+                }
             }
         }
         const string & taxonomy = dbDir + "/taxonomyDB";

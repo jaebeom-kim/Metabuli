@@ -62,7 +62,6 @@ private:
     uint32_t windowMask;
 
     // Parameters from user
-    int accessionLevel;
     int eukaryotaTaxId;
     std::vector<uint8_t> ownedPriorityTaxonLookup;
     const std::vector<uint8_t> *priorityTaxonLookup = &ownedPriorityTaxonLookup;
