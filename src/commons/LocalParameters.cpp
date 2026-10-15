@@ -841,11 +841,13 @@ LocalParameters::LocalParameters() :
                     (void *) &randomSeed,
                     "^[0-9]+$")
   {
-    // Widen --mask to accept SDUST (2) in addition to tantan (1); done here so the
-    // mmseqs submodule regex/description stay untouched across upstream syncs.
+    // Widen --mask beyond the mmseqs 0/1 range; done here so the mmseqs
+    // submodule regex/description stay untouched across upstream syncs.
+    // 3 = auto: tantan for eukaryotic species, SDUST for everything else
+    // (queries cannot be domain-routed, so query masking uses SDUST).
     overrideParameterDescription(PARAM_MASK_RESIDUES,
-                                 "Mask low complexity regions: 0: off, 1: tantan, 2: SDUST",
-                                 "^[0-2]{1}", 0);
+                                 "Mask low complexity regions: 0: off, 1: tantan, 2: SDUST, 3: tantan for Eukaryota + SDUST for others",
+                                 "^[0-3]{1}", 0);
     // Initialize the parameters
     candidateOnly = false;
     minAdjEvenness = 0.5f;

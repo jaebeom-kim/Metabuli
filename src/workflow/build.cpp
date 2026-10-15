@@ -23,7 +23,7 @@ void setDefaults_build(LocalParameters & par) {
     par.customMetamer = "";
     par.splitNum = 4096;
     par.maskProb = 0.9;
-    par.maskMode = 1;
+    par.maskMode = 3;
     par.packInfo = 1;
     time_t now = time(0);
     tm *ltm = localtime(&now);

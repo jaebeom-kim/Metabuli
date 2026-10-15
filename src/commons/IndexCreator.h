@@ -164,6 +164,22 @@ protected:
     std::unordered_map<string, vector<CDSinfo>> cdsInfoMap;
     std::vector<AccessionBatch> accessionBatches;
     std::vector<SpeciesBatch> spBatches;
+
+    // --mask 3 (auto): tantan for eukaryotic species (catches the long-period
+    // tandem repeats SDUST cannot see; its strand asymmetry is harmless for
+    // single-representative euk genomes), SDUST for everything else (strand-
+    // symmetric, so multi-strain species keep consistent k-mer sets across
+    // genomes and sub-DBs).
+    int effectiveMaskMode(TaxID speciesID) const {
+        if (par.maskMode != 3) {
+            return par.maskMode;
+        }
+        if (taxonomy->getEukaryotaTaxID() != 0
+            && taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), speciesID)) {
+            return 1;
+        }
+        return 2;
+    }
     // Per-batch multiplier on the k-mer-count reservation estimate. Grown (x2)
     // when a batch's actual k-mer count exceeds its reservation, so the batch is
     // re-processed with more room instead of overrunning the shared buffer.

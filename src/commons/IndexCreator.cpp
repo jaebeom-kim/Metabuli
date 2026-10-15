@@ -70,6 +70,11 @@ IndexCreator::IndexCreator(
     isUpdating = false;
     subMat = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, 0.0);
 
+    if (par.maskMode == 3 && taxonomy->getEukaryotaTaxID() == 0) {
+        cout << "Warning: --mask 3 selected but the taxonomy has no \"Eukaryota\" node;" << endl;
+        cout << "   every sequence will be masked with SDUST (same as --mask 2)." << endl;
+    }
+
     if (!par.noMaskTaxa.empty()) {
         vector<string> taxaNotToMaskStr = Util::split(par.noMaskTaxa, ",");
         for (const string &taxIdStr : taxaNotToMaskStr) {
@@ -1501,8 +1506,8 @@ bool IndexCreator::extractKmerFromSixFrames(
                         // Mask low complexity regions
                         char *maskedSeq = nullptr;
                         if (par.maskMode) {
-                            maskedSeq = new char[e.sequence.l + 1]; 
-                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, par.maskMode, par.sdustT, par.sdustW);
+                            maskedSeq = new char[e.sequence.l + 1];
+                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, effectiveMaskMode(accessionBatches[batchIdx].speciesID), par.sdustT, par.sdustW);
                             maskedSeq[e.sequence.l] = '\0';
                         } else {
                             maskedSeq = e.sequence.s;
@@ -1742,7 +1747,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                                 maxSeqLen = e.sequence.l;
                                 maskedSeq = new char[maxSeqLen + 1];
                             }
-                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, par.maskMode, par.sdustT, par.sdustW);
+                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, effectiveMaskMode(spBatches[spIdx].speciesID), par.sdustT, par.sdustW);
                             maskedSeq[e.sequence.l] = '\0';
                         } else {
                             maskedSeq = e.sequence.s;
@@ -2116,7 +2121,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                         char *maskedSeq = nullptr;
                         if (doMasking) {
                             maskedSeq = new char[e.sequence.l + 1]; // TODO: reuse the buffer
-                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, par.maskMode, par.sdustT, par.sdustW);
+                            SeqIterator::maskLowComplexityRegions((unsigned char *) e.sequence.s, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, effectiveMaskMode(accessionBatches[batchIdx].speciesID), par.sdustT, par.sdustW);
                             maskedSeq[e.sequence.l] = '\0';
                         } else {
                             maskedSeq = e.sequence.s;
@@ -2267,7 +2272,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                 if (doMasking) {
                                     delete[] maskedSeq;
                                     maskedSeq = new char[e.sequence.l + 1];
-                                    SeqIterator::maskLowComplexityRegions((unsigned char *) rcomp, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, par.maskMode, par.sdustT, par.sdustW);
+                                    SeqIterator::maskLowComplexityRegions((unsigned char *) rcomp, (unsigned char *) maskedSeq, e.sequence.l, probMatrix, par.maskProb, subMat, effectiveMaskMode(accessionBatches[batchIdx].speciesID), par.sdustT, par.sdustW);
                                     maskedSeq[e.sequence.l] = '\0';
                                 } else {
                                     maskedSeq = rcomp;
@@ -2396,7 +2401,7 @@ void IndexCreator::writeDbParameters() {
     fprintf(handle, "Spaced_kmer_mask\t%s\n", par.spaceMask.c_str());
     fprintf(handle, "Mask_mode\t%d\n", par.maskMode);
     fprintf(handle, "Mask_prob\t%f\n", par.maskProb);
-    if (par.maskMode == 2) {
+    if (par.maskMode >= 2) { // 2: SDUST, 3: auto (SDUST for non-eukaryotes)
         fprintf(handle, "Sdust_T\t%d\n", par.sdustT);
         fprintf(handle, "Sdust_W\t%d\n", par.sdustW);
     }

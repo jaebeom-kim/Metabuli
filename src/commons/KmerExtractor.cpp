@@ -35,7 +35,11 @@ KmerExtractor::KmerExtractor(
         }
     }
     spaceNum = 0;
-    maskMode = par.maskMode;
+    // Queries cannot be routed by domain before classification, so the
+    // auto mode (--mask 3: tantan for Eukaryota, SDUST otherwise) falls back
+    // to SDUST for query masking (strand-invariant; read orientation is
+    // arbitrary).
+    maskMode = (par.maskMode == 3) ? 2 : par.maskMode;
     maskProb = par.maskProb;
     sdustT = par.sdustT;
     sdustW = par.sdustW;
@@ -52,7 +56,11 @@ KmerExtractor::KmerExtractor(
     windowSize = metamerPattern->windowSize;
     kmerScanners = metamerPattern->createScanners(par);
     spaceNum = 0;
-    maskMode = par.maskMode;
+    // Queries cannot be routed by domain before classification, so the
+    // auto mode (--mask 3: tantan for Eukaryota, SDUST otherwise) falls back
+    // to SDUST for query masking (strand-invariant; read orientation is
+    // arbitrary).
+    maskMode = (par.maskMode == 3) ? 2 : par.maskMode;
     maskProb = par.maskProb;
     sdustT = par.sdustT;
     sdustW = par.sdustW;
