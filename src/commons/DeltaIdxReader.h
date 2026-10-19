@@ -178,16 +178,6 @@ private:
     uint64_t fetchWord = 0;
     uint8_t fetchLane = 0;
     size_t fetchBufStartElem = SIZE_MAX;  // file element index of the window start
-    size_t fetchedIdCnt = 0;
-    size_t fetchSeekCnt = 0;
-    size_t fetchCallCnt = 0;
-public:
-    // log2-bucket histogram of candidate group sizes:
-    // [1, 2-3, 4-7, 8-15, 16-31, 32-63, 64-127, 128-255, 256-511, 512+]
-    static constexpr int GROUP_HIST_BUCKETS = 10;
-private:
-    size_t fetchGroupCnt[GROUP_HIST_BUCKETS] = {0};  // groups per bucket
-    size_t fetchGroupIds[GROUP_HIST_BUCKETS] = {0};  // candidates per bucket
     static constexpr size_t FETCH_SEEK_READ = 512; // elements per cold seek (4 KB)
 
     void fillValueBufferLazy() {
@@ -218,15 +208,7 @@ private:
         return *posBuffer.p++;
     }
 
-    double decodeSeconds = 0.0; // time spent decoding the delta stream
-
     void fillValueBuffer() {
-        const auto t0 = std::chrono::steady_clock::now();
-        fillValueBufferTimed();
-        decodeSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    }
-
-    void fillValueBufferTimed() {
         if (lazyInfo) {
             fillValueBufferLazy();
             return;
@@ -651,12 +633,6 @@ public:
     // continue the window (dense regions, streamed as before) or seek forward
     // (sparse regions, skipping unread info bytes).
     void fetchInfos(size_t startOrdinal, size_t n, uint32_t *out) {
-        fetchedIdCnt += n;
-        ++fetchCallCnt;
-        const int bucket = std::min(GROUP_HIST_BUCKETS - 1,
-                                    63 - __builtin_clzll(static_cast<unsigned long long>(n)));
-        ++fetchGroupCnt[bucket];
-        fetchGroupIds[bucket] += n;
         if (infoIsPacked) {
             if (startOrdinal != fetchCursorOrdinal) {
                 const size_t wordOffset = startOrdinal / packedValuesPerWord;
@@ -670,7 +646,6 @@ public:
                 } else {
                     // Cold seek: read only a small chunk; a dense region keeps
                     // extending via sequential refills below.
-                    ++fetchSeekCnt;
                     const size_t lastWord = (startOrdinal + n - 1) / packedValuesPerWord;
                     const size_t wordsNeeded = lastWord - wordOffset + 1;
                     fetchWordBuffer->loadBufferAt(wordOffset,
@@ -704,7 +679,6 @@ public:
                     && startOrdinal < fetchBufStartElem + bufIds) {
                     fetchPlainBuffer->p = fetchPlainBuffer->start + (startOrdinal - fetchBufStartElem);
                 } else {
-                    ++fetchSeekCnt;
                     fetchPlainBuffer->loadBufferAt(startOrdinal, std::max(n, FETCH_SEEK_READ));
                     fetchBufStartElem = startOrdinal;
                 }
@@ -719,13 +693,6 @@ public:
         }
         fetchCursorOrdinal = startOrdinal + n;
     }
-
-    size_t getFetchedIdCnt() const { return fetchedIdCnt; }
-    size_t getFetchSeekCnt() const { return fetchSeekCnt; }
-    size_t getFetchCallCnt() const { return fetchCallCnt; }
-    double getDecodeSeconds() const { return decodeSeconds; }
-    const size_t * getFetchGroupCnt() const { return fetchGroupCnt; }
-    const size_t * getFetchGroupIds() const { return fetchGroupIds; }
 
     Kmer  * getValueBuffer() {
         return valueBuffer;
