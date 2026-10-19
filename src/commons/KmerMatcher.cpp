@@ -133,17 +133,28 @@ bool KmerMatcher::matchKmers(
 
     std::cout << "Reference k-mer search : " << flush;
     time_t beforeSearch = time(nullptr);
+    std::atomic<size_t> fetchedInfoIds{0};
+    std::atomic<size_t> infoFetchSeeks{0};
+    size_t totalTargetKmers = 0;
     #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
-    querySplits, qKmers, totalMatches, cout, mask)
+    querySplits, qKmers, totalMatches, cout, mask, fetchedInfoIds, infoFetchSeeks, totalTargetKmers)
     {
         Buffer<Match> localMatches(1024 * 1024);
-        DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(db + "/diffIdx", db + "/info", 1024 * 1024 * 4, 1024 * 1024 * 4);
+        // Lazy info: tax IDs are fetched per AA-matched candidate group instead
+        // of being streamed alongside the metamers, so info-file regions that
+        // never match a query are never read.
+        DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(db + "/diffIdx", db + "/info", 1024 * 1024 * 4, 1024 * 1024 * 4, /*lazyInfo=*/true);
         std::vector<Kmer> candidates;
         std::vector<Match> filteredMatches;
         std::vector<uint8_t> hammings;
+        std::vector<uint32_t> idScratch;
         candidates.reserve(1024);
         filteredMatches.reserve(1024);
         hammings.reserve(1024);
+        idScratch.reserve(1024);
+        size_t groupStartOrdinal = 0;
+        #pragma omp single
+        { totalTargetKmers = deltaIdxReaders->getTotalValueNum(); }
         bool localHasOverflow = false;
     #pragma omp for schedule(dynamic, 1)
         for (size_t i = 0; i < querySplits.size(); i++) {
@@ -220,9 +231,22 @@ bool KmerMatcher::matchKmers(
                 // Match found - load target k-mers matching at amino acid level
                 while (!deltaIdxReaders->isCompleted() 
                         && qKmerAA == tKmerAA) {
-                    candidates.emplace_back(tKmer.value, tKmer.id & mask);
+                    if (candidates.empty()) {
+                        groupStartOrdinal = deltaIdxReaders->lastOrdinal();
+                    }
+                    candidates.emplace_back(tKmer.value, 0u);
                     tKmer = deltaIdxReaders->next();
                     tKmerAA = AminoAcidPart(tKmer.value);
+                }
+
+                // Candidates are consecutive k-mers of the sorted list; fetch
+                // their tax IDs as one contiguous range.
+                if (!candidates.empty()) {
+                    idScratch.resize(candidates.size());
+                    deltaIdxReaders->fetchInfos(groupStartOrdinal, candidates.size(), idScratch.data());
+                    for (size_t c = 0; c < candidates.size(); ++c) {
+                        candidates[c].id = idScratch[c] & mask;
+                    }
                 }
 
                 filterCandidates(qKmer, candidates, filteredMatches, hammings);
@@ -250,6 +274,8 @@ bool KmerMatcher::matchKmers(
                 splitCheckList[i] = true;
             }
         } // End of omp for (Iterating for splits)
+        fetchedInfoIds.fetch_add(deltaIdxReaders->getFetchedIdCnt(), std::memory_order_relaxed);
+        infoFetchSeeks.fetch_add(deltaIdxReaders->getFetchSeekCnt(), std::memory_order_relaxed);
         delete deltaIdxReaders;
     } // End of omp parallel
         
@@ -257,6 +283,12 @@ bool KmerMatcher::matchKmers(
         return false;
     }
     std::cout << double(time(nullptr) - beforeSearch) << " s" << std::endl;
+    if (totalTargetKmers > 0) {
+        std::cout << "Info IDs fetched       : " << fetchedInfoIds.load()
+                  << " / " << totalTargetKmers
+                  << " (" << (100.0 * fetchedInfoIds.load() / totalTargetKmers)
+                  << "%, " << infoFetchSeeks.load() << " seeks)" << std::endl;
+    }
     lastMatchCnt = totalMatches->startIndexOfReserve - matchCntBefore;
     totalMatchCnt += lastMatchCnt;
     return true;

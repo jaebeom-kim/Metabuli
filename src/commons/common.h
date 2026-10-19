@@ -314,8 +314,15 @@ struct ReadBuffer {
     }
 
     size_t loadBufferAt(size_t offset) {
+        return loadBufferAt(offset, capacity);
+    }
+
+    // Seek and read at most maxCount elements (capped by capacity). Lets a
+    // caller doing sparse random reads avoid paying a full-capacity read per
+    // seek.
+    size_t loadBufferAt(size_t offset, size_t maxCount) {
         fseek(fp, offset * sizeof(T), SEEK_SET);
-        size_t readCount = fread(start, sizeof(T), capacity, fp);
+        size_t readCount = fread(start, sizeof(T), std::min(maxCount, capacity), fp);
         size = readCount;
         end = start + readCount;
         p = start;

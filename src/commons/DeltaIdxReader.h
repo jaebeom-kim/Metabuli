@@ -160,6 +160,45 @@ private:
     bool fileCompleted = false;
     bool valueBufferCompleted = false;
 
+    // --- Lazy info mode (classify-time matchKmers) --------------------------
+    // The metamer stream must be decoded fully (deltas are sequential), but
+    // tax IDs are only needed for AA-matched candidate groups, which are
+    // contiguous ordinal ranges of the sorted k-mer list. In lazy mode next()
+    // skips the info stream entirely; fetchInfos() reads a requested range
+    // through a small seekable window, so info bytes of never-matched regions
+    // are never read from disk.
+    bool lazyInfo = false;
+    size_t decodeOrdinal = 0;      // ordinal of the next metamer to decode
+    size_t bufferBaseOrdinal = 0;  // ordinal of valueBuffer[0]
+    std::unique_ptr<ReadBuffer<TaxID>> fetchPlainBuffer;
+    std::unique_ptr<ReadBuffer<uint64_t>> fetchWordBuffer;
+    size_t fetchCursorOrdinal = SIZE_MAX; // ordinal after the last fetched ID
+    uint64_t fetchWord = 0;
+    uint8_t fetchLane = 0;
+    size_t fetchBufStartElem = SIZE_MAX;  // file element index of the window start
+    size_t fetchedIdCnt = 0;
+    size_t fetchSeekCnt = 0;
+    static constexpr size_t FETCH_SEEK_READ = 512; // elements per cold seek (4 KB)
+
+    void fillValueBufferLazy() {
+        if (valueCnt == 0) {
+            bufferBaseOrdinal = decodeOrdinal;
+        }
+        for (; valueCnt < valueBufferSize && decodeOrdinal < totalValueNum; ++valueCnt) {
+            const uint64_t v = getNextMetamer();
+            if (unlikely(v == UINT64_MAX)) {
+                fileCompleted = true;
+                break;
+            }
+            valueBuffer[valueCnt].value = v;
+            valueBuffer[valueCnt].id = 0; // filled on demand via fetchInfos()
+            ++decodeOrdinal;
+        }
+        if (decodeOrdinal >= totalValueNum) {
+            fileCompleted = true;
+        }
+    }
+
     // Reads one position in lockstep with the info stream, refilling as needed.
     // Positions are 1:1 with info IDs regardless of whether the info is packed.
     inline uint16_t nextPos() {
@@ -170,6 +209,10 @@ private:
     }
 
     void fillValueBuffer() {
+        if (lazyInfo) {
+            fillValueBufferLazy();
+            return;
+        }
         // Format is chosen once per refill, not once per ID. This keeps legacy
         // uint32 databases on the same hot path they used before bitpacking.
         if (unlikely(infoIsPacked)) {
@@ -365,33 +408,50 @@ public:
     DeltaIdxReader(
         std::string deltaIdxFileName,
         std::string infoFileName,
-        size_t valueBufferSize = 32768, 
-        size_t readBufferSize = 8192)
+        size_t valueBufferSize = 32768,
+        size_t readBufferSize = 8192,
+        bool lazyInfo = false)
         : deltaIdxFileName(deltaIdxFileName),
         infoFileName(infoFileName),
         valueBufferSize(valueBufferSize),
         deltaIdxBuffer(deltaIdxFileName, readBufferSize),
-        infoMetadata(InfoIndex::loadMetadata(infoFileName))
+        infoMetadata(InfoIndex::loadMetadata(infoFileName)),
+        lazyInfo(lazyInfo)
     {
         lastValue = 0;
         valueCnt = 0;
         valueBuffer = new Kmer[valueBufferSize];
         infoIsPacked = infoMetadata.isPacked();
+        // The on-demand fetch window is deliberately small: a seek costs one
+        // window read, so dense regions stream as before while sparse regions
+        // skip whole stretches of the info file.
+        constexpr size_t FETCH_WINDOW_WORDS = 32768;  // 256 KB
+        constexpr size_t FETCH_WINDOW_IDS = 65536;    // 256 KB
         if (infoIsPacked) {
             packedIdBits = infoMetadata.idBits;
             packedValuesPerWord = InfoIndex::idsPerWord(packedIdBits);
             packedIdMask = InfoIndex::maskForBits(packedIdBits);
-            // readBufferSize is historically a count of 32-bit IDs. A half-size
-            // uint64 buffer keeps roughly the same byte budget for packed data.
-            const size_t wordBufferSize = std::max<size_t>(1, readBufferSize / 2);
-            packedInfoBuffer = std::make_unique<ReadBuffer<uint64_t>>(infoFileName,
-                                                                      wordBufferSize);
-            packedLane = packedValuesPerWord;
             totalValueNum = infoMetadata.idCount;
+            if (lazyInfo) {
+                fetchWordBuffer = std::make_unique<ReadBuffer<uint64_t>>(infoFileName,
+                                                                         FETCH_WINDOW_WORDS);
+            } else {
+                // readBufferSize is historically a count of 32-bit IDs. A half-size
+                // uint64 buffer keeps roughly the same byte budget for packed data.
+                const size_t wordBufferSize = std::max<size_t>(1, readBufferSize / 2);
+                packedInfoBuffer = std::make_unique<ReadBuffer<uint64_t>>(infoFileName,
+                                                                          wordBufferSize);
+                packedLane = packedValuesPerWord;
+            }
         } else {
-            plainInfoBuffer = std::make_unique<ReadBuffer<TaxID>>(infoFileName,
-                                                                  readBufferSize);
             totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
+            if (lazyInfo) {
+                fetchPlainBuffer = std::make_unique<ReadBuffer<TaxID>>(infoFileName,
+                                                                      FETCH_WINDOW_IDS);
+            } else {
+                plainInfoBuffer = std::make_unique<ReadBuffer<TaxID>>(infoFileName,
+                                                                      readBufferSize);
+            }
         }
         fillValueBuffer();
     }
@@ -510,6 +570,26 @@ public:
         valueBufferCompleted = false;
         deltaIdxBuffer.loadBufferAt(offset.diffIdxOffset);
         const size_t infoOffset = offset.infoIdxOffset - (offset.ADkmer != 0);
+        if (lazyInfo) {
+            // Only ordinal bookkeeping; the info file is touched by
+            // fetchInfos() alone.
+            if (offset.ADkmer == 0 && offset.diffIdxOffset == 0 && offset.infoIdxOffset == 0) {
+                valueCnt = 0;
+                lastValue = 0;
+                decodeOrdinal = 0;
+                bufferBaseOrdinal = 0;
+            } else {
+                lastValue = offset.ADkmer;
+                valueBuffer[0].value = lastValue;
+                valueBuffer[0].id = 0;
+                valueCnt = 1;
+                bufferBaseOrdinal = infoOffset;  // the anchor k-mer's ordinal
+                decodeOrdinal = infoOffset + 1;
+            }
+            valueBufferIdx = 0;
+            fillValueBuffer();
+            return;
+        }
         if (infoIsPacked) {
             // Split offsets are logical ID counts. Packed files translate that
             // once at seek time, then stream IDs from the chosen word/lane.
@@ -542,6 +622,83 @@ public:
         valueBufferIdx = 0;
         fillValueBuffer();
     }
+
+    // Ordinal of the k-mer returned by the most recent next() (lazy mode).
+    size_t lastOrdinal() const {
+        return bufferBaseOrdinal + valueBufferIdx - 1;
+    }
+
+    // Lazy mode: read n tax IDs starting at startOrdinal. Candidate groups are
+    // contiguous and visited in ascending order, so consecutive calls either
+    // continue the window (dense regions, streamed as before) or seek forward
+    // (sparse regions, skipping unread info bytes).
+    void fetchInfos(size_t startOrdinal, size_t n, uint32_t *out) {
+        fetchedIdCnt += n;
+        if (infoIsPacked) {
+            if (startOrdinal != fetchCursorOrdinal) {
+                const size_t wordOffset = startOrdinal / packedValuesPerWord;
+                const uint8_t targetLane = startOrdinal % packedValuesPerWord;
+                const size_t bufWords = fetchWordBuffer->end - fetchWordBuffer->start;
+                if (fetchBufStartElem != SIZE_MAX
+                    && wordOffset >= fetchBufStartElem
+                    && wordOffset < fetchBufStartElem + bufWords) {
+                    // Target is already buffered: reposition without a syscall.
+                    fetchWordBuffer->p = fetchWordBuffer->start + (wordOffset - fetchBufStartElem);
+                } else {
+                    // Cold seek: read only a small chunk; a dense region keeps
+                    // extending via sequential refills below.
+                    ++fetchSeekCnt;
+                    const size_t lastWord = (startOrdinal + n - 1) / packedValuesPerWord;
+                    const size_t wordsNeeded = lastWord - wordOffset + 1;
+                    fetchWordBuffer->loadBufferAt(wordOffset,
+                                                  std::max(wordsNeeded, FETCH_SEEK_READ));
+                    fetchBufStartElem = wordOffset;
+                }
+                fetchLane = packedValuesPerWord; // force a word load
+                if (targetLane != 0) {
+                    fetchWord = *fetchWordBuffer->p++;
+                    fetchLane = targetLane;
+                }
+            }
+            for (size_t k = 0; k < n; ++k) {
+                if (fetchLane >= packedValuesPerWord) {
+                    if (unlikely(fetchWordBuffer->p >= fetchWordBuffer->end)) {
+                        fetchBufStartElem += fetchWordBuffer->end - fetchWordBuffer->start;
+                        fetchWordBuffer->loadBuffer();
+                    }
+                    fetchWord = *fetchWordBuffer->p++;
+                    fetchLane = 0;
+                }
+                out[k] = static_cast<uint32_t>(
+                    (fetchWord >> (fetchLane * packedIdBits)) & packedIdMask);
+                ++fetchLane;
+            }
+        } else {
+            if (startOrdinal != fetchCursorOrdinal) {
+                const size_t bufIds = fetchPlainBuffer->end - fetchPlainBuffer->start;
+                if (fetchBufStartElem != SIZE_MAX
+                    && startOrdinal >= fetchBufStartElem
+                    && startOrdinal < fetchBufStartElem + bufIds) {
+                    fetchPlainBuffer->p = fetchPlainBuffer->start + (startOrdinal - fetchBufStartElem);
+                } else {
+                    ++fetchSeekCnt;
+                    fetchPlainBuffer->loadBufferAt(startOrdinal, std::max(n, FETCH_SEEK_READ));
+                    fetchBufStartElem = startOrdinal;
+                }
+            }
+            for (size_t k = 0; k < n; ++k) {
+                if (unlikely(fetchPlainBuffer->p >= fetchPlainBuffer->end)) {
+                    fetchBufStartElem += fetchPlainBuffer->end - fetchPlainBuffer->start;
+                    fetchPlainBuffer->loadBuffer();
+                }
+                out[k] = static_cast<uint32_t>(*fetchPlainBuffer->p++);
+            }
+        }
+        fetchCursorOrdinal = startOrdinal + n;
+    }
+
+    size_t getFetchedIdCnt() const { return fetchedIdCnt; }
+    size_t getFetchSeekCnt() const { return fetchSeekCnt; }
 
     Kmer  * getValueBuffer() {
         return valueBuffer;
