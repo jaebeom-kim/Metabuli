@@ -65,6 +65,7 @@ protected:
   int bitsForCodon = 3;
   uint8_t hammingMargin;
   size_t totalMatchCnt;
+  size_t lastMatchCnt = 0;
   uint8_t hammingLookup[8][8] = {
       {0, 1, 1, 1, 2, 1, 3, 3}, {1, 0, 1, 1, 2, 2, 3, 2},
       {1, 1, 0, 1, 2, 2, 2, 3}, {1, 1, 1, 0, 1, 2, 3, 3},
@@ -265,8 +266,19 @@ public:
                                    const uint16_t *diffIdxBuffer,
                                    size_t &diffBufferIdx, size_t &totalPos);
 
+  // Sorted query k-mer buffers start with blank entries (id == 0); returns
+  // their count, i.e. the index of the first real query k-mer.
+  static size_t countQueryKmerBlanks(const Buffer<Kmer> *qKmers);
+
+  static size_t countQueryKmers(const Buffer<Kmer> *qKmers) {
+    return qKmers->startIndexOfReserve - countQueryKmerBlanks(qKmers);
+  }
+
   // Getters
   size_t getTotalMatchCnt() const { return totalMatchCnt; }
+
+  // Matches appended by the most recent matchKmers*/matchKmers_AA call.
+  size_t getLastMatchCnt() const { return lastMatchCnt; }
 
   unordered_map<TaxID, TaxID> &getTaxId2SpeciesId() {
     return taxId2speciesId;

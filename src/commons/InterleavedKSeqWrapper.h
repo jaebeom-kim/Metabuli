@@ -2,6 +2,7 @@
 #define METABULI_INTERLEAVED_KSEQ_WRAPPER_H
 
 #include "KSeqWrapper.h"
+#include "OffsetKSeqWrapper.h"
 #include "BamKSeqWrapper.h"
 #include <string>
 
@@ -15,10 +16,11 @@
 // its own underlying handle on the same file, so the file is parsed twice; the
 // exposed entry is always the last physical record read, so no deep copy is
 // needed (kseq reuses its buffers only on the next read).
-class InterleavedKSeqWrapper : public KSeqWrapper {
+class InterleavedKSeqWrapper : public MetabuliKSeqWrapper {
 public:
     InterleavedKSeqWrapper(const char *file, int mate)
-        : inner(KSeqFactory(file)), mate(mate), started(false) {
+        : inner(makeOffsetKseq(file)), mate(mate), started(false) {
+        seq = nullptr;
         if (inner != nullptr) {
             type = inner->type;
         }
@@ -46,12 +48,16 @@ public:
         return true;
     }
 
+    size_t getSourceOffset() override {
+        return inner != nullptr ? inner->getSourceOffset() : 0;
+    }
+
     ~InterleavedKSeqWrapper() override {
         delete inner;
     }
 
 private:
-    KSeqWrapper *inner;
+    MetabuliKSeqWrapper *inner;
     int mate;      // 0 -> R1 stream, 1 -> R2 stream
     bool started;  // mate-0 only: first ReadEntry consumes a single record
 };
@@ -64,10 +70,10 @@ inline bool hasBamExtension(const std::string &path) {
         && path.compare(path.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-inline KSeqWrapper *createQueryKseqWrapper(const std::string &file0,
-                                           const std::string &file1,
-                                           bool interleaved,
-                                           int mate) {
+inline MetabuliKSeqWrapper *createQueryKseqWrapper(const std::string &file0,
+                                                   const std::string &file1,
+                                                   bool interleaved,
+                                                   int mate) {
     const std::string &path = (mate == 0) ? file0 : file1;
     // BAM input is single-end: read sequences straight out of the alignment
     // records (see BamKSeqWrapper). Interleaved is not combined with BAM.
@@ -77,7 +83,7 @@ inline KSeqWrapper *createQueryKseqWrapper(const std::string &file0,
     if (interleaved) {
         return new InterleavedKSeqWrapper(file0.c_str(), mate);
     }
-    return KSeqFactory(path.c_str());
+    return makeOffsetKseq(path.c_str());
 }
 
 #endif // METABULI_INTERLEAVED_KSEQ_WRAPPER_H

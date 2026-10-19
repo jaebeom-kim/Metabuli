@@ -7,6 +7,8 @@
 
 #include <cerrno>
 #include <cstdlib>
+#include <iomanip>
+#include <sys/stat.h>
 #include <limits>
 #include <variant>
 
@@ -120,6 +122,45 @@ inline std::string filteredReportFileName(const std::string &classificationFileN
 inline std::string filteredKronaFileName(const std::string &classificationFileName) {
     return replaceSuffix(classificationFileName, "_classifications.tsv", "_filtered_krona.html");
 }
+
+// Total bytes of the query input(s), the denominator for byte-based progress.
+// Interleaved input is traversed once per mate stream, so file0 counts twice.
+inline size_t queryInputBytes(const LocalParameters & par) {
+    struct stat st;
+    size_t total = 0;
+    if (stat(par.filenames[0].c_str(), &st) == 0) {
+        total += static_cast<size_t>(st.st_size);
+    }
+    if (par.seqMode == 2) {
+        const std::string & second = par.pairedFileInput() ? par.filenames[1] : par.filenames[0];
+        if (stat(second.c_str(), &st) == 0) {
+            total += static_cast<size_t>(st.st_size);
+        }
+    }
+    return total;
+}
+
+// Report how far the readers have advanced through the query input. Byte-based
+// (compressed bytes for gzip), so no upfront read-counting pass is needed.
+inline void printQueryProgress(MetabuliKSeqWrapper * kseq1, MetabuliKSeqWrapper * kseq2, size_t totalBytes) {
+    if (totalBytes == 0) {
+        return;
+    }
+    size_t consumed = kseq1->getSourceOffset();
+    if (kseq2 != nullptr) {
+        consumed += kseq2->getSourceOffset();
+    }
+    if (consumed == 0) { // source without a byte offset (e.g., stdin)
+        return;
+    }
+    double pct = 100.0 * static_cast<double>(consumed) / static_cast<double>(totalBytes);
+    if (pct > 100.0) {
+        pct = 100.0;
+    }
+    std::cout << "Progress               : " << std::fixed << std::setprecision(1) << pct << "%" << std::endl;
+    std::cout.unsetf(std::ios::fixed | std::ios::scientific);
+    std::cout << std::setprecision(6);
+}
 }
 
 Classifier::Classifier(LocalParameters & par) : par(par) {
@@ -213,9 +254,10 @@ bool Classifier::searchSubDbs(
     Buffer<MatchType> * matchBuffer)
 {
     constexpr bool withPos = std::is_same<MatchType, MatchWithPos>::value;
+    std::cout << "Query k-mer number     : " << KmerMatcher::countQueryKmers(queryKmerBuffer) << std::endl;
     for (const SubDbEntry & sub : subDbs) {
         if (subDbs.size() > 1) {
-            std::cout << "Sub-DB                 : " << sub.name << std::endl;
+            std::cout << "Searching " << sub.name << " database" << std::endl;
         }
         bool searchComplete;
         if constexpr (withPos) {
@@ -226,6 +268,7 @@ bool Classifier::searchSubDbs(
         if (!searchComplete) { // buffer overflow; the caller retries the batch
             return false;
         }
+        std::cout << "K-mer match count      : " << kmerMatcher->getLastMatchCnt() << std::endl;
     }
     return true;
 }
@@ -486,6 +529,7 @@ void Classifier::classifyReads() {
     reporter->openReadClassificationFile();
     reporter->openSpeciesCandidateFile();
 
+    const size_t queryTotalBytes = queryInputBytes(par); // progress denominator
     bool complete = false;
     SeqEntry * savedSeq_1 = new SeqEntry();
     SeqEntry * savedSeq_2 = new SeqEntry(); 
@@ -494,8 +538,8 @@ void Classifier::classifyReads() {
 
     std::cout << "--------------------" << std::endl;
     while (!complete) {
-        KSeqWrapper* kseq1 = createQueryKseqWrapper(par.filenames[0], par.filenames[0], par.interleaved, 0);
-        KSeqWrapper* kseq2 = par.seqMode == 2 ? createQueryKseqWrapper(par.filenames[0], par.filenames[1], par.interleaved, 1) : nullptr;
+        MetabuliKSeqWrapper* kseq1 = createQueryKseqWrapper(par.filenames[0], par.filenames[0], par.interleaved, 0);
+        MetabuliKSeqWrapper* kseq2 = par.seqMode == 2 ? createQueryKseqWrapper(par.filenames[0], par.filenames[1], par.interleaved, 1) : nullptr;
 
         // Move kseq to unprocessed reads
         for (size_t i = 0; i < processedReadCnt; i++) {
@@ -544,7 +588,6 @@ void Classifier::classifyReads() {
             start = time(nullptr);
             bool searchComplete = searchSubDbs<Match>(&queryKmerBuffer, &matchBuffer);
             if (searchComplete) {
-                std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
 
                 // 4) Sort matches
                 kmerMatcher->sortMatches(&matchBuffer);
@@ -569,6 +612,7 @@ void Classifier::classifyReads() {
                 processedReadCnt += seqCnt;                    
                 std::cout << difftime(time(nullptr), start) << " s" << std::endl;
                 std::cout << "Processed read count   : " << processedReadCnt << std::endl;
+                printQueryProgress(kseq1, kseq2, queryTotalBytes);
             } else {
                 matchPerKmer *= 2;
                 moreReads = true;
@@ -668,6 +712,7 @@ void Classifier::generateCandidatesImpl() {
 
     reporter->openSpeciesCandidateFile();
 
+    const size_t queryTotalBytes = queryInputBytes(par); // progress denominator
     bool complete = false;
     SeqEntry * savedSeq_1 = new SeqEntry();
     SeqEntry * savedSeq_2 = new SeqEntry();
@@ -675,8 +720,8 @@ void Classifier::generateCandidatesImpl() {
 
     std::cout << "--------------------" << std::endl;
     while (!complete) {
-        KSeqWrapper* kseq1 = createQueryKseqWrapper(par.filenames[0], par.filenames[0], par.interleaved, 0);
-        KSeqWrapper* kseq2 = par.seqMode == 2 ? createQueryKseqWrapper(par.filenames[0], par.filenames[1], par.interleaved, 1) : nullptr;
+        MetabuliKSeqWrapper* kseq1 = createQueryKseqWrapper(par.filenames[0], par.filenames[0], par.interleaved, 0);
+        MetabuliKSeqWrapper* kseq2 = par.seqMode == 2 ? createQueryKseqWrapper(par.filenames[0], par.filenames[1], par.interleaved, 1) : nullptr;
 
         // Move kseq to unprocessed reads
         for (size_t i = 0; i < processedReadCnt; i++) {
@@ -717,7 +762,6 @@ void Classifier::generateCandidatesImpl() {
             // 3) Match k-mers
             bool searchComplete = searchSubDbs<MatchType>(&queryKmerBuffer, &matchBuffer);
             if (searchComplete) {
-                std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
 
                 // 4) Sort matches
                 if constexpr (withPos) {
@@ -742,6 +786,7 @@ void Classifier::generateCandidatesImpl() {
                 processedReadCnt += seqCnt;
                 std::cout << difftime(time(nullptr), start) << " s" << std::endl;
                 std::cout << "Processed read count   : " << processedReadCnt << std::endl;
+                printQueryProgress(kseq1, kseq2, queryTotalBytes);
             } else {
                 matchPerKmer *= 2;
                 moreReads = true;
@@ -838,6 +883,7 @@ void Classifier::classifyReadsWithPos() {
     reporter->openReadClassificationFile();
     reporter->openSpeciesCandidateFile();
 
+    const size_t queryTotalBytes = queryInputBytes(par); // progress denominator
     bool complete = false;
     SeqEntry * savedSeq_1 = new SeqEntry();
     SeqEntry * savedSeq_2 = new SeqEntry(); 
@@ -846,8 +892,8 @@ void Classifier::classifyReadsWithPos() {
 
     std::cout << "--------------------" << std::endl;
     while (!complete) {
-        KSeqWrapper* kseq1 = createQueryKseqWrapper(par.filenames[0], par.filenames[0], par.interleaved, 0);
-        KSeqWrapper* kseq2 = par.seqMode == 2 ? createQueryKseqWrapper(par.filenames[0], par.filenames[1], par.interleaved, 1) : nullptr;
+        MetabuliKSeqWrapper* kseq1 = createQueryKseqWrapper(par.filenames[0], par.filenames[0], par.interleaved, 0);
+        MetabuliKSeqWrapper* kseq2 = par.seqMode == 2 ? createQueryKseqWrapper(par.filenames[0], par.filenames[1], par.interleaved, 1) : nullptr;
 
         // Move kseq to unprocessed reads
         for (size_t i = 0; i < processedReadCnt; i++) {
@@ -895,7 +941,6 @@ void Classifier::classifyReadsWithPos() {
             start = time(nullptr);
             bool searchComplete = searchSubDbs<MatchWithPos>(&queryKmerBuffer, &matchBuffer);
             if (searchComplete) {
-                std::cout << "K-mer match count      : " << kmerMatcher->getTotalMatchCnt() << std::endl;
 
                 // 4) Sort matches
                 time_t beforeSortMatches = time(nullptr);
@@ -925,6 +970,7 @@ void Classifier::classifyReadsWithPos() {
                 processedReadCnt += seqCnt;                    
                 std::cout << difftime(time(nullptr), start) << " s" << std::endl;
                 std::cout << "Processed read count   : " << processedReadCnt << std::endl;
+                printQueryProgress(kseq1, kseq2, queryTotalBytes);
             } else {
                 matchPerKmer *= 2;
                 moreReads = true;

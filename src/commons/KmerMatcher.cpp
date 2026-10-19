@@ -257,7 +257,8 @@ bool KmerMatcher::matchKmers(
         return false;
     }
     std::cout << double(time(nullptr) - beforeSearch) << " s" << std::endl;
-    totalMatchCnt += totalMatches->startIndexOfReserve - matchCntBefore;
+    lastMatchCnt = totalMatches->startIndexOfReserve - matchCntBefore;
+    totalMatchCnt += lastMatchCnt;
     return true;
 }
 
@@ -409,20 +410,24 @@ bool KmerMatcher::matchKmersWithPos(
         return false;
     }
     std::cout << double(time(nullptr) - beforeSearch) << " s" << std::endl;
-    totalMatchCnt += totalMatches->startIndexOfReserve - matchCntBefore;
+    lastMatchCnt = totalMatches->startIndexOfReserve - matchCntBefore;
+    totalMatchCnt += lastMatchCnt;
     return true;
+}
+
+size_t KmerMatcher::countQueryKmerBlanks(const Buffer<Kmer> * qKmers) {
+    return std::find_if(qKmers->buffer,
+                        qKmers->buffer + qKmers->startIndexOfReserve,
+                        [](const auto& kmer) { return kmer.id != 0;}
+                       ) - qKmers->buffer;
 }
 
 std::vector<QueryKmerSplit> KmerMatcher::makeQueryKmerSplits(
     const Buffer<Kmer> * qKmers,
-    const string & dbDir) 
+    const string & dbDir)
 {
-    size_t blankCnt = std::find_if(qKmers->buffer,
-                                   qKmers->buffer + qKmers->startIndexOfReserve, 
-                                   [](const auto& kmer) { return kmer.id != 0;}
-                                  ) - qKmers->buffer;
+    size_t blankCnt = countQueryKmerBlanks(qKmers);
     size_t queryKmerNum = qKmers->startIndexOfReserve - blankCnt;
-    std::cout << "Query k-mer number     : " << queryKmerNum << endl;
 
     // Filter out meaningless target splits
     string diffIdxSplitFileName = dbDir + "/split";
@@ -564,7 +569,8 @@ bool KmerMatcher::matchKmers_AA(
     if (totalOverFlowCnt.load() > 0) {
         return false;
     }
-    this->totalMatchCnt += totalMatches->startIndexOfReserve - matchCntBefore;
+    this->lastMatchCnt = totalMatches->startIndexOfReserve - matchCntBefore;
+    this->totalMatchCnt += lastMatchCnt;
     return true;
 }
 

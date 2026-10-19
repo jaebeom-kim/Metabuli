@@ -2,6 +2,7 @@
 #define METABULI_BAM_KSEQ_WRAPPER_H
 
 #include "KSeqWrapper.h"
+#include "OffsetKSeqWrapper.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -24,7 +25,7 @@
 // their original sequenced orientation.
 //
 // Assumes a little-endian host (BAM is little-endian); Metabuli's targets are.
-class BamKSeqWrapper : public KSeqWrapper {
+class BamKSeqWrapper : public MetabuliKSeqWrapper {
 public:
     explicit BamKSeqWrapper(const char *fileName) {
         type = KSeqWrapper::KSEQ_GZIP;
@@ -39,6 +40,16 @@ public:
         (void) fileName;
         ok = false;
 #endif
+    }
+
+    size_t getSourceOffset() override {
+#ifdef HAVE_ZLIB
+        if (file != nullptr) {
+            z_off_t pos = gzoffset(file); // compressed bytes consumed
+            return pos > 0 ? (size_t) pos : 0;
+        }
+#endif
+        return 0;
     }
 
     bool ReadEntry() override {
