@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <chrono>
 #include <algorithm>
 #include <unistd.h>
 #include <fcntl.h>
@@ -217,7 +218,15 @@ private:
         return *posBuffer.p++;
     }
 
+    double decodeSeconds = 0.0; // time spent decoding the delta stream
+
     void fillValueBuffer() {
+        const auto t0 = std::chrono::steady_clock::now();
+        fillValueBufferTimed();
+        decodeSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    }
+
+    void fillValueBufferTimed() {
         if (lazyInfo) {
             fillValueBufferLazy();
             return;
@@ -714,6 +723,7 @@ public:
     size_t getFetchedIdCnt() const { return fetchedIdCnt; }
     size_t getFetchSeekCnt() const { return fetchSeekCnt; }
     size_t getFetchCallCnt() const { return fetchCallCnt; }
+    double getDecodeSeconds() const { return decodeSeconds; }
     const size_t * getFetchGroupCnt() const { return fetchGroupCnt; }
     const size_t * getFetchGroupIds() const { return fetchGroupIds; }
 

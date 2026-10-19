@@ -137,11 +137,12 @@ bool KmerMatcher::matchKmers(
     std::atomic<size_t> fetchedInfoIds{0};
     std::atomic<size_t> infoFetchSeeks{0};
     std::atomic<size_t> infoFetchCalls{0};
+    std::atomic<uint64_t> decodeMicros{0};
     size_t groupHistCnt[DeltaIdxReader::GROUP_HIST_BUCKETS] = {0};
     size_t groupHistIds[DeltaIdxReader::GROUP_HIST_BUCKETS] = {0};
     size_t totalTargetKmers = 0;
     #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
-    querySplits, qKmers, totalMatches, cout, mask, fetchedInfoIds, infoFetchSeeks, infoFetchCalls, groupHistCnt, groupHistIds, totalTargetKmers, lazyInfo)
+    querySplits, qKmers, totalMatches, cout, mask, fetchedInfoIds, infoFetchSeeks, infoFetchCalls, groupHistCnt, groupHistIds, totalTargetKmers, lazyInfo, decodeMicros)
     {
         Buffer<Match> localMatches(1024 * 1024);
         // Lazy info (--lazy-info 1): tax IDs are fetched per AA-matched
@@ -281,6 +282,7 @@ bool KmerMatcher::matchKmers(
         fetchedInfoIds.fetch_add(deltaIdxReaders->getFetchedIdCnt(), std::memory_order_relaxed);
         infoFetchSeeks.fetch_add(deltaIdxReaders->getFetchSeekCnt(), std::memory_order_relaxed);
         infoFetchCalls.fetch_add(deltaIdxReaders->getFetchCallCnt(), std::memory_order_relaxed);
+        decodeMicros.fetch_add(static_cast<uint64_t>(deltaIdxReaders->getDecodeSeconds() * 1e6), std::memory_order_relaxed);
         #pragma omp critical (groupHist)
         {
             for (int b = 0; b < DeltaIdxReader::GROUP_HIST_BUCKETS; ++b) {
@@ -295,6 +297,8 @@ bool KmerMatcher::matchKmers(
         return false;
     }
     std::cout << double(time(nullptr) - beforeSearch) << " s" << std::endl;
+    std::cout << "Decode time            : " << (decodeMicros.load() / 1e6)
+              << " thread-seconds" << std::endl;
     if (lazyInfo && totalTargetKmers > 0) {
         std::cout << "Info IDs fetched       : " << fetchedInfoIds.load()
                   << " / " << totalTargetKmers
