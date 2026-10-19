@@ -132,11 +132,20 @@ public:
 
     void buildPaddedHammingRows() {
         paddedHammingRows.clear();
+#if !defined(__ARM_NEON) && !defined(__ARM_NEON__) && !defined(__SSSE3__)
+        std::cout << "SIMD Hamming batch: disabled (no NEON/SSSE3 in this build); using scalar path" << std::endl;
+        return;
+#else
         const int maxCodon = geneticCode->maxCodonPerAA;
         if (bitPerCodon != 3 || codonMask != 0x7U
             || (!regularEightCodonLookup && maxCodon > 8)) {
+            std::cout << "SIMD Hamming batch: disabled (bitPerCodon=" << bitPerCodon
+                      << ", maxCodonPerAA=" << maxCodon << "); using scalar path" << std::endl;
             return;
         }
+        std::cout << "SIMD Hamming batch: enabled ("
+                  << (regularEightCodonLookup ? "regular genetic code" : "custom genetic code")
+                  << ", maxCodonPerAA=" << maxCodon << ")" << std::endl;
         const uint8_t *lookup = geneticCode->hammingLookup;
         if (regularEightCodonLookup) {
             paddedHammingRows.assign(8 * 16, 4);
@@ -154,6 +163,7 @@ public:
                 }
             }
         }
+#endif
     }
 
     SingleCodePattern(const std::string & customFile);
