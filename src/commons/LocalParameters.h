@@ -193,6 +193,9 @@ public:
     // Sub-DB selection (classify / create-candidates)
     PARAMETER(SUB_DB_LIST)
 
+    // Lazy reference-info reads during k-mer search
+    PARAMETER(LAZY_INFO)
+
     // printInfo
     PARAMETER(INFO_BEGIN)
     PARAMETER(INFO_END)
@@ -330,6 +333,10 @@ public:
 
     // Sub-DB selection: comma-separated sub-DB names to search ("" = all)
     std::string subDbList;
+
+    // 1: fetch reference tax IDs only for AA-matched k-mer groups (default);
+    // 0: stream them alongside the metamers (pre-lazy behavior)
+    int lazyInfo;
 
     // printInfo
     size_t infoBegin;

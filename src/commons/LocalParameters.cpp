@@ -749,6 +749,13 @@ LocalParameters::LocalParameters() :
                      typeid(std::string),
                         (void *) &subDbList,
                         "^.*$"),
+        LAZY_INFO(LAZY_INFO_ID,
+                   "--lazy-info",
+                   "Fetch reference tax IDs only for matched k-mers (0: off, 1: on)",
+                   "1: read reference tax IDs only for AA-matched k-mer groups, skipping info-file regions without matches. 0: stream them with the k-mers.",
+                     typeid(int),
+                        (void *) &lazyInfo,
+                        "^[0-1]{1}$"),
         INFO_BEGIN(INFO_BEGIN_ID,
                 "--info-begin",
                 "Begin of the info to print",
@@ -903,6 +910,9 @@ LocalParameters::LocalParameters() :
     // Sub-DB selection
     subDbList = "";
 
+    // Lazy info reads
+    lazyInfo = 1;
+
     // classified to full taxonomy
     removeUnclassified = false;
     excludeTaxid = "";
@@ -1027,6 +1037,7 @@ LocalParameters::LocalParameters() :
     classify.push_back(&MAX_SHIFT);
     classify.push_back(&GAP_PENALTY);
     classify.push_back(&SUB_DB_LIST);
+    classify.push_back(&LAZY_INFO);
     // classify.push_back(&EM);
 
     //classify-candidates
@@ -1070,6 +1081,7 @@ LocalParameters::LocalParameters() :
     createCandidates.push_back(&MAX_SHIFT);
     createCandidates.push_back(&GAP_PENALTY);
     createCandidates.push_back(&SUB_DB_LIST);
+    createCandidates.push_back(&LAZY_INFO);
 
     // filter-candidates (prune a species-candidate DB)
     filterCandidates.push_back(&PARAM_THREADS);
