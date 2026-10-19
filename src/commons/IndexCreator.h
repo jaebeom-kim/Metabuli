@@ -165,6 +165,20 @@ protected:
     std::vector<AccessionBatch> accessionBatches;
     std::vector<SpeciesBatch> spBatches;
 
+    // Per-flush chunk files (<n>_diffIdx/<n>_info/<n>_kmerpos) are merge inputs
+    // only; once the merged diffIdx/info/split are written they are dead weight
+    // (hundreds of GB on large builds), so mergeTargetFiles() removes them.
+    // External merge inputs (e.g., updateDB's old database) live in other
+    // directories under different names and are never touched.
+    void removeFlushChunks() {
+        for (size_t i = 0; i < numOfFlush; ++i) {
+            const std::string prefix = dbDir + "/" + std::to_string(i) + "_";
+            remove((prefix + "diffIdx").c_str());
+            remove((prefix + "info").c_str());
+            remove((prefix + "kmerpos").c_str()); // absent unless --kmer-pos; remove() just fails silently
+        }
+    }
+
     // --mask 3 (auto): tantan for eukaryotic species (catches the long-period
     // tandem repeats SDUST cannot see; its strand asymmetry is harmless for
     // single-representative euk genomes), SDUST for everything else (strand-
@@ -654,6 +668,8 @@ void IndexCreator::mergeTargetFiles() {
     cout<<mergedInfoFileName<<endl;
     cout<<string(dbDir) + "/taxID_list"<<endl;
     cout<<deltaIdxSplitFileName<<endl;
+
+    removeFlushChunks();
 }
 
 
