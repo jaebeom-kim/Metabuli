@@ -3,6 +3,8 @@
 #include "InfoIndex.h"
 #include "TaxonomyWrapper.h"
 #include <fstream>
+#include <set>
+#include <utility>
 #include <iostream>
 #include <unistd.h>
 #include "Debug.h"
@@ -14,6 +16,9 @@
 #include <cmath>
 #include <dirent.h>
 #include <random>
+#ifdef __linux__
+#include <sched.h>
+#endif
 
 const std::string atcg =
     "................................................................"
@@ -637,6 +642,65 @@ std::string randomHexString(size_t length) {
     result[i] = hexDigits[dist(gen)];
   }
   return result;
+}
+
+#ifdef __linux__
+namespace {
+// Read an int from /sys/devices/system/cpu/cpu<cpu>/topology/<field>, or -1.
+int readCpuTopology(int cpu, const char *field) {
+  char path[128];
+  snprintf(path, sizeof(path),
+           "/sys/devices/system/cpu/cpu%d/topology/%s", cpu, field);
+  std::ifstream in(path);
+  int value;
+  if (in >> value) {
+    return value;
+  }
+  return -1;
+}
+} // namespace
+#endif
+
+int availablePhysicalCores() {
+#ifdef __linux__
+  cpu_set_t set;
+  CPU_ZERO(&set);
+  if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+    // (package, core) pairs uniquely identify a physical core; SMT siblings
+    // share the pair and are therefore counted once.
+    std::set<std::pair<int, int>> physicalCores;
+    int allowedLogical = 0;
+    for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+      if (!CPU_ISSET(cpu, &set)) {
+        continue;
+      }
+      ++allowedLogical;
+      const int pkg = readCpuTopology(cpu, "physical_package_id");
+      const int core = readCpuTopology(cpu, "core_id");
+      if (pkg >= 0 && core >= 0) {
+        physicalCores.insert({pkg, core});
+      }
+    }
+    if (!physicalCores.empty()) {
+      return static_cast<int>(physicalCores.size());
+    }
+    if (allowedLogical > 0) { // topology unreadable: use the cpuset size
+      return allowedLogical;
+    }
+  }
+#endif
+  long n = sysconf(_SC_NPROCESSORS_ONLN);
+  return n > 1 ? static_cast<int>(n) : 1;
+}
+
+void applySmartThreadDefault(LocalParameters & par) {
+  if (par.PARAM_THREADS.wasSet) {
+    return; // explicit --threads wins
+  }
+  const int cores = availablePhysicalCores();
+  par.threads = cores;
+  std::cout << "Threads: " << cores
+            << " (one per physical core; override with --threads)" << std::endl;
 }
 
 

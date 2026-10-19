@@ -14,6 +14,7 @@ int classifyCandidates(int argc, const char **argv, const Command& command) {
     par.topSpecies = 0;
     par.mappingOutput = "";
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
+    applySmartThreadDefault(par); // default to one thread per physical core
 
     const std::string &candidateDb = par.filenames[0];
     const std::string &dbDir = par.filenames[1];

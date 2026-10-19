@@ -21,6 +21,7 @@ int createCandidates(int argc, const char **argv, const Command &command) {
     par.em = false;
     par.topSpecies = 5; // default number of candidate species per read; overridable
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
+    applySmartThreadDefault(par); // default to one thread per physical core
 
     // Interleaved paired-end reads: single file, paired processing.
     if (par.interleaved) {

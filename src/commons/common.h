@@ -452,6 +452,18 @@ size_t totalDbSize(const std::vector<SubDbEntry> & subDbs);
 // Random lowercase-hex string (used to mint taxonomy lineage IDs).
 std::string randomHexString(size_t length);
 
+// Number of distinct physical cores the process is actually allowed to run on.
+// Honors the cgroup/cpuset affinity (so SLURM `-c N`, taskset, and containers
+// are respected) and counts SMT siblings once, because k-mer search is fastest
+// at one thread per physical core (SMT splits the per-core L2 and slows it).
+// Falls back to the cpuset's logical-CPU count, then to all online CPUs, when
+// topology is unreadable (non-Linux, odd containers).
+int availablePhysicalCores();
+
+// If the user did not pass --threads, set par.threads to availablePhysicalCores().
+// An explicit --threads is always respected.
+void applySmartThreadDefault(LocalParameters & par);
+
 int searchAccession2TaxID(const std::string & name, const std::unordered_map<std::string, int> & acc2taxid);
 
 template <typename T>
