@@ -1,6 +1,7 @@
 #include "MetamerPattern.h"
 #include "json.h"
 #include <array>
+#include <cstring>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
@@ -18,23 +19,20 @@ inline bool usesRegularEightCodonLookup(const GeneticCode *geneticCode) {
     return dynamic_cast<const RegularGeneticCode *>(geneticCode) != nullptr;
 }
 
+// The SIMD kernels take one pointer per k-mer position into the pattern's
+// paddedHammingRows (16-byte-stride rows, see MetamerPattern.h); rows are
+// loaded straight from that precomputed table, no per-call copying.
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
-size_t hammingDistSumBatchRegularNeon(
-    uint64_t kmer1,
+constexpr size_t SIMD_BATCH_MIN_CANDIDATES = 8;  // kernel lane width
+size_t hammingDistSumBatchNeon(
     const Kmer *candidates,
     size_t candidateCnt,
     uint8_t *hammings,
     int kmerLen,
-    const uint8_t *lookup) {
-    if (kmerLen > static_cast<int>(MAX_BATCH_KMER_LEN)) {
-        return 0;
-    }
-
+    const uint8_t *const *rowPtrs) {
     uint8x8_t rows[MAX_BATCH_KMER_LEN];
-    uint64_t queryCodons = kmer1;
     for (int pos = 0; pos < kmerLen; ++pos) {
-        rows[pos] = vld1_u8(lookup + ((queryCodons & 0x7U) << 3U));
-        queryCodons >>= 3U;
+        rows[pos] = vld1_u8(rowPtrs[pos]);
     }
 
     size_t i = 0;
@@ -83,27 +81,16 @@ size_t hammingDistSumBatchRegularNeon(
 #endif
 
 #if defined(__SSSE3__)
-size_t hammingDistSumBatchRegularSsse3(
-    uint64_t kmer1,
+constexpr size_t SIMD_BATCH_MIN_CANDIDATES = 16;  // kernel lane width
+size_t hammingDistSumBatchSsse3(
     const Kmer *candidates,
     size_t candidateCnt,
     uint8_t *hammings,
     int kmerLen,
-    const uint8_t *lookup) {
-    if (kmerLen > static_cast<int>(MAX_BATCH_KMER_LEN)) {
-        return 0;
-    }
-
+    const uint8_t *const *rowPtrs) {
     __m128i rows[MAX_BATCH_KMER_LEN];
-    uint64_t queryCodons = kmer1;
     for (int pos = 0; pos < kmerLen; ++pos) {
-        alignas(16) uint8_t row[16] = {};
-        const uint8_t *src = lookup + ((queryCodons & 0x7U) << 3U);
-        for (int j = 0; j < 8; ++j) {
-            row[j] = src[j];
-        }
-        rows[pos] = _mm_load_si128(reinterpret_cast<const __m128i *>(row));
-        queryCodons >>= 3U;
+        rows[pos] = _mm_loadu_si128(reinterpret_cast<const __m128i *>(rowPtrs[pos]));
     }
 
     size_t i = 0;
@@ -285,6 +272,7 @@ SingleCodePattern::SingleCodePattern(const std::string & customFile) {
         }
         geneticCode = std::make_unique<CustomGeneticCode>(translationTable);
     }
+    regularEightCodonLookup = usesRegularEightCodonLookup(geneticCode.get());
     initializeLnFreq();
 
     // Validate total bits do not exceed 64 bits
@@ -303,6 +291,7 @@ SingleCodePattern::SingleCodePattern(const std::string & customFile) {
     dnaMask = (1ULL << totalDNABits) - 1;
     codonMask = (1ULL << bitPerCodon) - 1;
     aaMask = (1ULL << bitPerAA) - 1;
+    buildPaddedHammingRows(); // needs bitPerCodon/codonMask set just above
     file.close();
 }
 
@@ -550,48 +539,70 @@ void SingleCodePattern::hammingDistSumBatch(
         return;
     }
 
-    const bool regularLookup = usesRegularEightCodonLookup(geneticCode.get());
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-    size_t i = 0;
-    if (regularLookup && bitPerCodon == 3 && codonMask == 0x7U) {
-        i = hammingDistSumBatchRegularNeon(
-            kmer1, candidates, candidateCnt, hammings, kmerLen, geneticCode->hammingLookup);
-    }
-#elif defined(__SSSE3__)
-    size_t i = 0;
-    if (regularLookup && bitPerCodon == 3 && codonMask == 0x7U) {
-        i = hammingDistSumBatchRegularSsse3(
-            kmer1, candidates, candidateCnt, hammings, kmerLen, geneticCode->hammingLookup);
-    }
-#else
-    size_t i = 0;
-#endif
-
     if (kmerLen > static_cast<int>(MAX_BATCH_KMER_LEN)) {
-        for (; i < candidateCnt; ++i) {
+        for (size_t i = 0; i < candidateCnt; ++i) {
             hammings[i] = hammingDistSum(kmer1, candidates[i].value);
         }
         return;
     }
 
-    std::array<const uint8_t *, MAX_BATCH_KMER_LEN> rows{};
-    uint64_t aaStream = kmer1 >> totalDNABits;
-    uint64_t queryCodons = kmer1;
     const uint8_t *lookup = geneticCode->hammingLookup;
     const int maxCodon = geneticCode->maxCodonPerAA;
     const int rowStride = maxCodon * maxCodon;
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__SSSE3__)
+    // The SIMD kernels index each row with vtbl/pshufb, so every 3-bit target
+    // codon value must map to a valid lane; paddedHammingRows (built once at
+    // construction) provides 16-byte-stride rows for exactly the codes that
+    // qualify, and row selection here is pointer arithmetic only. Candidates
+    // share the query's AA part (filterCandidates batches AA-equal k-mers),
+    // so the (aa, queryCodon) row is valid for all of them.
+    if (!paddedHammingRows.empty() && candidateCnt >= SIMD_BATCH_MIN_CANDIDATES) {
+        const uint8_t *base = paddedHammingRows.data();
+        const uint8_t *rowPtrs[MAX_BATCH_KMER_LEN];
+        uint64_t aaStream = kmer1 >> totalDNABits;
+        uint64_t queryCodons = kmer1;
+        for (int pos = 0; pos < kmerLen; ++pos) {
+            rowPtrs[pos] = regularEightCodonLookup
+                ? base + (queryCodons & 0x7U) * 16
+                : base + ((aaStream & aaMask) * maxCodon + (queryCodons & 0x7U)) * 16;
+            aaStream >>= bitPerAA;
+            queryCodons >>= 3U;
+        }
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+        size_t i = hammingDistSumBatchNeon(candidates, candidateCnt, hammings, kmerLen, rowPtrs);
+#else
+        size_t i = hammingDistSumBatchSsse3(candidates, candidateCnt, hammings, kmerLen, rowPtrs);
+#endif
+        for (; i < candidateCnt; ++i) { // tail; same padded rows as the kernel
+            uint64_t targetCodons = candidates[i].value;
+            uint8_t hammingSum = 0;
+            for (int pos = 0; pos < kmerLen; ++pos) {
+                hammingSum += rowPtrs[pos][targetCodons & 0x7U];
+                targetCodons >>= 3U;
+            }
+            hammings[i] = hammingSum;
+        }
+        return;
+    }
+#endif
+
+    // Generic scalar path: any bit widths, custom codes with wide AA groups.
+    std::array<const uint8_t *, MAX_BATCH_KMER_LEN> rows{};
+    uint64_t aaStream = kmer1 >> totalDNABits;
+    uint64_t queryCodons = kmer1;
     for (int pos = 0; pos < kmerLen; ++pos) {
         const int aa = aaStream & aaMask;
         const int queryCodon = queryCodons & codonMask;
-        rows[pos] = regularLookup
+        rows[pos] = regularEightCodonLookup
             ? lookup + queryCodon * 8
             : lookup + aa * rowStride + queryCodon * maxCodon;
         aaStream >>= bitPerAA;
         queryCodons >>= bitPerCodon;
     }
 
-    for (; i < candidateCnt; ++i) {
+    for (size_t i = 0; i < candidateCnt; ++i) {
         uint64_t targetCodons = candidates[i].value;
         uint8_t hammingSum = 0;
         for (int pos = 0; pos < kmerLen; ++pos) {
@@ -1065,38 +1076,41 @@ void LegacyPattern::hammingDistSumBatch(
         return;
     }
 
-    const bool regularLookup = usesRegularEightCodonLookup(geneticCode.get());
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-    size_t i = 0;
-    if (regularLookup && bitPerCodon == 3 && codonMask == 0x7U) {
-        i = hammingDistSumBatchRegularNeon(
-            kmer1, candidates, candidateCnt, hammings, kmerLen, geneticCode->hammingLookup);
-    }
-#elif defined(__SSSE3__)
-    size_t i = 0;
-    if (regularLookup && bitPerCodon == 3 && codonMask == 0x7U) {
-        i = hammingDistSumBatchRegularSsse3(
-            kmer1, candidates, candidateCnt, hammings, kmerLen, geneticCode->hammingLookup);
-    }
-#else
-    size_t i = 0;
-#endif
-
     if (kmerLen > static_cast<int>(MAX_BATCH_KMER_LEN)) {
-        for (; i < candidateCnt; ++i) {
+        for (size_t i = 0; i < candidateCnt; ++i) {
             hammings[i] = hammingDistSum(kmer1, candidates[i].value);
         }
         return;
     }
 
-    std::array<const uint8_t *, MAX_BATCH_KMER_LEN> rows{};
-    uint64_t queryCodons = kmer1;
     const uint8_t *lookup = geneticCode->hammingLookup;
     const int maxCodon = geneticCode->maxCodonPerAA;
+    size_t i = 0;
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__SSSE3__)
+    if (regularEightCodonLookup && !paddedHammingRows.empty()
+        && candidateCnt >= SIMD_BATCH_MIN_CANDIDATES) {
+        const uint8_t *base = paddedHammingRows.data();
+        const uint8_t *rowPtrs[MAX_BATCH_KMER_LEN];
+        uint64_t qCodons = kmer1;
+        for (int pos = 0; pos < kmerLen; ++pos) {
+            rowPtrs[pos] = base + (qCodons & 0x7U) * 16;
+            qCodons >>= 3U;
+        }
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+        i = hammingDistSumBatchNeon(candidates, candidateCnt, hammings, kmerLen, rowPtrs);
+#else
+        i = hammingDistSumBatchSsse3(candidates, candidateCnt, hammings, kmerLen, rowPtrs);
+#endif
+    }
+#endif
+
+    std::array<const uint8_t *, MAX_BATCH_KMER_LEN> rows{};
+    uint64_t queryCodons = kmer1;
 
     for (int pos = 0; pos < kmerLen; ++pos) {
         const int queryCodon = queryCodons & codonMask;
-        rows[pos] = regularLookup
+        rows[pos] = regularEightCodonLookup
             ? lookup + queryCodon * 8
             : lookup + queryCodon * maxCodon;
         queryCodons >>= bitPerCodon;

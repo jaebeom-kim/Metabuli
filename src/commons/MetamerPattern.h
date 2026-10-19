@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <cstring>
 #include "SyncmerScanner.h"
 #include "GeneticCode.h"
 #include "SubstitutionMatrix.h"
@@ -116,12 +117,50 @@ public:
     int bitPerAA;
     uint64_t codonMask;
     uint64_t aaMask;
-    
+    // Cached "is RegularGeneticCode with the flat 8x8 Hamming table" check;
+    // hammingDistSumBatch() is called once per query AA group, so the
+    // dynamic_cast must not sit on that path.
+    bool regularEightCodonLookup = false;
+    // Hamming rows re-padded to a fixed 16-byte stride so the SIMD batch
+    // kernels can load a row per position without per-call copying:
+    //   regular: row(queryCodon)        = data() + queryCodon * 16
+    //   custom : row(aa, queryCodon)    = data() + (aa * maxCodonPerAA + queryCodon) * 16
+    // Lanes beyond an AA's codon count hold 4 (the tables' default for
+    // impossible codons). Empty when the code is not SIMD-compatible
+    // (bitPerCodon != 3 or an AA with more than 8 codons).
+    std::vector<uint8_t> paddedHammingRows;
+
+    void buildPaddedHammingRows() {
+        paddedHammingRows.clear();
+        const int maxCodon = geneticCode->maxCodonPerAA;
+        if (bitPerCodon != 3 || codonMask != 0x7U
+            || (!regularEightCodonLookup && maxCodon > 8)) {
+            return;
+        }
+        const uint8_t *lookup = geneticCode->hammingLookup;
+        if (regularEightCodonLookup) {
+            paddedHammingRows.assign(8 * 16, 4);
+            for (int qc = 0; qc < 8; ++qc) {
+                memcpy(paddedHammingRows.data() + qc * 16, lookup + qc * 8, 8);
+            }
+        } else {
+            const size_t aaCnt = geneticCode->aa2codon.size();
+            paddedHammingRows.assign(aaCnt * maxCodon * 16, 4);
+            for (size_t aa = 0; aa < aaCnt; ++aa) {
+                for (int qc = 0; qc < maxCodon; ++qc) {
+                    memcpy(paddedHammingRows.data() + (aa * maxCodon + qc) * 16,
+                           lookup + aa * maxCodon * maxCodon + qc * maxCodon,
+                           maxCodon);
+                }
+            }
+        }
+    }
+
     SingleCodePattern(const std::string & customFile);
-    SingleCodePattern(std::unique_ptr<GeneticCode> code, int kmerLen) 
+    SingleCodePattern(std::unique_ptr<GeneticCode> code, int kmerLen)
         : MetamerPattern(0, 0, 0, kmerLen),
          geneticCode(std::move(code)),
-         bitPerCodon(geneticCode->bitPerCodon), 
+         bitPerCodon(geneticCode->bitPerCodon),
          bitPerAA(geneticCode->bitPerAA),
          codonMask((1ULL << bitPerCodon) - 1),
          aaMask((1ULL << bitPerAA) - 1)
@@ -129,6 +168,9 @@ public:
         totalDNABits = kmerLen * geneticCode->bitPerCodon;
         totalAABits = kmerLen * geneticCode->bitPerAA;
         dnaMask = (1ULL << totalDNABits) - 1;
+        regularEightCodonLookup =
+            dynamic_cast<const RegularGeneticCode *>(geneticCode.get()) != nullptr;
+        buildPaddedHammingRows();
         std::cout << "Total DNA bits: " << totalDNABits << ", Total AA bits: " << totalAABits << std::endl;
         initializeLnFreq();
     }
