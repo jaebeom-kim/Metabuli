@@ -81,7 +81,7 @@ size_t hammingDistSumBatchNeon(
 #endif
 
 #if defined(__SSSE3__)
-constexpr size_t SIMD_BATCH_MIN_CANDIDATES = 16;  // kernel lane width
+constexpr size_t SIMD_BATCH_MIN_CANDIDATES = 8;  // 8-wide epilogue below
 size_t hammingDistSumBatchSsse3(
     const Kmer *candidates,
     size_t candidateCnt,
@@ -158,6 +158,53 @@ size_t hammingDistSumBatchSsse3(
         }
 
         _mm_storeu_si128(reinterpret_cast<__m128i *>(hammings + i), sums);
+    }
+
+    // 8-wide epilogue: candidate groups of 8-15 are common, and skipping them
+    // would leave most groups on the scalar path. Upper 8 lanes shuffle
+    // garbage that is never stored.
+    if (i + 8 <= candidateCnt) {
+        uint64_t streams[8] = {
+            candidates[i + 0].value,
+            candidates[i + 1].value,
+            candidates[i + 2].value,
+            candidates[i + 3].value,
+            candidates[i + 4].value,
+            candidates[i + 5].value,
+            candidates[i + 6].value,
+            candidates[i + 7].value,
+        };
+        __m128i sums = _mm_setzero_si128();
+
+        for (int pos = 0; pos < kmerLen; ++pos) {
+            alignas(16) uint8_t targetCodons[16] = {
+                static_cast<uint8_t>(streams[0] & 0x7U),
+                static_cast<uint8_t>(streams[1] & 0x7U),
+                static_cast<uint8_t>(streams[2] & 0x7U),
+                static_cast<uint8_t>(streams[3] & 0x7U),
+                static_cast<uint8_t>(streams[4] & 0x7U),
+                static_cast<uint8_t>(streams[5] & 0x7U),
+                static_cast<uint8_t>(streams[6] & 0x7U),
+                static_cast<uint8_t>(streams[7] & 0x7U),
+                0, 0, 0, 0, 0, 0, 0, 0,
+            };
+
+            streams[0] >>= 3U;
+            streams[1] >>= 3U;
+            streams[2] >>= 3U;
+            streams[3] >>= 3U;
+            streams[4] >>= 3U;
+            streams[5] >>= 3U;
+            streams[6] >>= 3U;
+            streams[7] >>= 3U;
+
+            const __m128i idx =
+                _mm_load_si128(reinterpret_cast<const __m128i *>(targetCodons));
+            sums = _mm_add_epi8(sums, _mm_shuffle_epi8(rows[pos], idx));
+        }
+
+        _mm_storel_epi64(reinterpret_cast<__m128i *>(hammings + i), sums);
+        i += 8;
     }
 
     return i;

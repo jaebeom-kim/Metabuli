@@ -178,6 +178,7 @@ private:
     size_t fetchBufStartElem = SIZE_MAX;  // file element index of the window start
     size_t fetchedIdCnt = 0;
     size_t fetchSeekCnt = 0;
+    size_t fetchCallCnt = 0;
     static constexpr size_t FETCH_SEEK_READ = 512; // elements per cold seek (4 KB)
 
     void fillValueBufferLazy() {
@@ -634,6 +635,7 @@ public:
     // (sparse regions, skipping unread info bytes).
     void fetchInfos(size_t startOrdinal, size_t n, uint32_t *out) {
         fetchedIdCnt += n;
+        ++fetchCallCnt;
         if (infoIsPacked) {
             if (startOrdinal != fetchCursorOrdinal) {
                 const size_t wordOffset = startOrdinal / packedValuesPerWord;
@@ -699,6 +701,7 @@ public:
 
     size_t getFetchedIdCnt() const { return fetchedIdCnt; }
     size_t getFetchSeekCnt() const { return fetchSeekCnt; }
+    size_t getFetchCallCnt() const { return fetchCallCnt; }
 
     Kmer  * getValueBuffer() {
         return valueBuffer;
