@@ -137,9 +137,11 @@ bool KmerMatcher::matchKmers(
     std::atomic<size_t> fetchedInfoIds{0};
     std::atomic<size_t> infoFetchSeeks{0};
     std::atomic<size_t> infoFetchCalls{0};
+    size_t groupHistCnt[DeltaIdxReader::GROUP_HIST_BUCKETS] = {0};
+    size_t groupHistIds[DeltaIdxReader::GROUP_HIST_BUCKETS] = {0};
     size_t totalTargetKmers = 0;
     #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
-    querySplits, qKmers, totalMatches, cout, mask, fetchedInfoIds, infoFetchSeeks, infoFetchCalls, totalTargetKmers, lazyInfo)
+    querySplits, qKmers, totalMatches, cout, mask, fetchedInfoIds, infoFetchSeeks, infoFetchCalls, groupHistCnt, groupHistIds, totalTargetKmers, lazyInfo)
     {
         Buffer<Match> localMatches(1024 * 1024);
         // Lazy info (--lazy-info 1): tax IDs are fetched per AA-matched
@@ -279,6 +281,13 @@ bool KmerMatcher::matchKmers(
         fetchedInfoIds.fetch_add(deltaIdxReaders->getFetchedIdCnt(), std::memory_order_relaxed);
         infoFetchSeeks.fetch_add(deltaIdxReaders->getFetchSeekCnt(), std::memory_order_relaxed);
         infoFetchCalls.fetch_add(deltaIdxReaders->getFetchCallCnt(), std::memory_order_relaxed);
+        #pragma omp critical (groupHist)
+        {
+            for (int b = 0; b < DeltaIdxReader::GROUP_HIST_BUCKETS; ++b) {
+                groupHistCnt[b] += deltaIdxReaders->getFetchGroupCnt()[b];
+                groupHistIds[b] += deltaIdxReaders->getFetchGroupIds()[b];
+            }
+        }
         delete deltaIdxReaders;
     } // End of omp parallel
         
@@ -293,6 +302,22 @@ bool KmerMatcher::matchKmers(
                   << "%, " << infoFetchSeeks.load() << " seeks, avg group "
                   << (infoFetchCalls.load() ? fetchedInfoIds.load() / infoFetchCalls.load() : 0)
                   << ")" << std::endl;
+    if (infoFetchCalls.load() > 0) {
+        static const char *bucketNames[DeltaIdxReader::GROUP_HIST_BUCKETS] = {
+            "1", "2-3", "4-7", "8-15", "16-31", "32-63", "64-127", "128-255", "256-511", "512+"};
+        std::cout << "Group size dist        :";
+        for (int b = 0; b < DeltaIdxReader::GROUP_HIST_BUCKETS; ++b) {
+            if (groupHistCnt[b] > 0) {
+                std::cout << " " << bucketNames[b] << ":" << groupHistCnt[b];
+            }
+        }
+        size_t simdIds = 0;
+        for (int b = 3; b < DeltaIdxReader::GROUP_HIST_BUCKETS; ++b) { // groups >= 8
+            simdIds += groupHistIds[b];
+        }
+        std::cout << " | candidates in groups >= 8: "
+                  << (100.0 * simdIds / fetchedInfoIds.load()) << "%" << std::endl;
+    }
     }
     lastMatchCnt = totalMatches->startIndexOfReserve - matchCntBefore;
     totalMatchCnt += lastMatchCnt;

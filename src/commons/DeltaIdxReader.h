@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <algorithm>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -179,6 +180,13 @@ private:
     size_t fetchedIdCnt = 0;
     size_t fetchSeekCnt = 0;
     size_t fetchCallCnt = 0;
+public:
+    // log2-bucket histogram of candidate group sizes:
+    // [1, 2-3, 4-7, 8-15, 16-31, 32-63, 64-127, 128-255, 256-511, 512+]
+    static constexpr int GROUP_HIST_BUCKETS = 10;
+private:
+    size_t fetchGroupCnt[GROUP_HIST_BUCKETS] = {0};  // groups per bucket
+    size_t fetchGroupIds[GROUP_HIST_BUCKETS] = {0};  // candidates per bucket
     static constexpr size_t FETCH_SEEK_READ = 512; // elements per cold seek (4 KB)
 
     void fillValueBufferLazy() {
@@ -636,6 +644,10 @@ public:
     void fetchInfos(size_t startOrdinal, size_t n, uint32_t *out) {
         fetchedIdCnt += n;
         ++fetchCallCnt;
+        const int bucket = std::min(GROUP_HIST_BUCKETS - 1,
+                                    63 - __builtin_clzll(static_cast<unsigned long long>(n)));
+        ++fetchGroupCnt[bucket];
+        fetchGroupIds[bucket] += n;
         if (infoIsPacked) {
             if (startOrdinal != fetchCursorOrdinal) {
                 const size_t wordOffset = startOrdinal / packedValuesPerWord;
@@ -702,6 +714,8 @@ public:
     size_t getFetchedIdCnt() const { return fetchedIdCnt; }
     size_t getFetchSeekCnt() const { return fetchSeekCnt; }
     size_t getFetchCallCnt() const { return fetchCallCnt; }
+    const size_t * getFetchGroupCnt() const { return fetchGroupCnt; }
+    const size_t * getFetchGroupIds() const { return fetchGroupIds; }
 
     Kmer  * getValueBuffer() {
         return valueBuffer;
