@@ -1,5 +1,6 @@
 #include "ProdigalWrapper.h"
 #include "SeqIterator.h"
+#include <algorithm>
 #include <iostream>
 #include <climits>
 ProdigalWrapper::~ProdigalWrapper() {
@@ -519,14 +520,11 @@ void ProdigalWrapper::removeCompletelyOverlappingGenes() {
     fng = 0;
     if(ng == 0) return;
 
-    // genes[] is sorted by 'end' ascending: add_genes() finalizes each gene at
-    // its higher-coordinate node, so for any j > i, genes[j].end >= genes[i].end.
-    // Therefore gene i is completely contained in some later gene iff some j > i
-    // has genes[j].begin <= genes[i].begin. Scan right-to-left tracking the
-    // minimum begin among all genes to the right; drop gene i when that minimum
-    // is <= genes[i].begin. This removes every fully contained gene (not only
-    // ones contained in the immediate successor) and leaves the survivors sorted
-    // by begin as well as by end, which is what getExtendedORFs_fixed() assumes.
+    std::sort(genes, genes + ng, [](const _gene & a, const _gene & b) {
+        if (a.end != b.end) return a.end < b.end;
+        return a.begin > b.begin;
+    });
+
     std::vector<bool> keep(ng, true);
     int minBeginToRight = INT_MAX;
     for(int i = ng - 1; i >= 0; i--){

@@ -26,10 +26,11 @@ public:
         : seq(nullptr), seqStart(0), seqEnd(0), seqLen(0), loadedCharCnt(0), posStart(0), kmerSize(kmerSize) {
     }
 
-    KmerScanner(const char * seq, uint32_t seqStart, uint32_t seqEnd, int kmerSize) 
-        : seq(seq), seqStart(seqStart), seqEnd(seqEnd), seqLen(seqEnd - seqStart + 1), loadedCharCnt(0), posStart(0), 
+    KmerScanner(const char * seq, uint32_t seqStart, uint32_t seqEnd, int kmerSize)
+        : seq(seq), seqStart(seqStart), seqEnd(seqEnd),
+          seqLen(seqEnd >= seqStart ? seqEnd - seqStart + 1 : 0), loadedCharCnt(0), posStart(0),
           kmerSize(kmerSize) {
-    } 
+    }
 
     virtual ~KmerScanner() {
         // std::cout << "KmerScanner destroyed." << std::endl;
@@ -39,7 +40,9 @@ public:
         this->seq = seq;
         this->seqStart = seqStart;
         this->seqEnd = seqEnd;
-        this->seqLen = seqEnd - seqStart + 1;
+        // An inverted range (end < start) would wrap the unsigned length and
+        // make the scanner read far past the sequence; treat it as empty.
+        this->seqLen = (seqEnd >= seqStart) ? seqEnd - seqStart + 1 : 0;
         this->loadedCharCnt = 0;
         this->posStart = 0;
         this->isForward = isForward;
@@ -368,7 +371,7 @@ public:
 
     virtual Kmer next() {
         int aa = 0;
-        while ((uint32_t) posStart <= seqLen - kmerSize) {
+        while (posStart <= (int) seqLen - kmerSize) {
             bool sawN = false;
             loadedCharCnt -= (loadedCharCnt == kmerSize);
             while (loadedCharCnt < kmerSize) {

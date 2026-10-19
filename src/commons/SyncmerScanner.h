@@ -146,7 +146,8 @@ public:
     Kmer next() override {
         bool syncymerFound = false;
         int aa = 0;
-        while ((posStart <= seqLen - kmerSize) && !syncymerFound) {
+        // Signed arithmetic: seqLen < kmerSize must terminate, not wrap.
+        while ((posStart <= (int) seqLen - kmerSize) && !syncymerFound) {
             bool sawN = false;
             smerCnt -= (smerCnt > 0);
             // Fill the deque with s-mers
