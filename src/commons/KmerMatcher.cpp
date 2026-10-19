@@ -6,6 +6,17 @@
 #include <ostream>
 #include <vector>
 
+// DeltaIdxReader decodes the delta stream into valueBuffer (16-byte Kmers),
+// which the join loop then reads back one at a time. When the database is
+// resident in RAM (the common server case), a buffer larger than the private
+// L2 forces that write->read round-trip through DRAM, and the search is
+// DRAM-bandwidth-bound. Sizing both buffers to stay within one core's L2
+// (512 KB on EPYC Milan; similar elsewhere) keeps the round-trip in cache.
+// Candidate groups are NOT limited by this: they accumulate in a separate
+// std::vector and next() refills transparently across buffer boundaries.
+static constexpr size_t SEARCH_VALUE_BUFFER = 1024 * 16;  // 16K Kmers = 256 KB
+static constexpr size_t SEARCH_DELTA_BUFFER = 1024 * 64;  // 64K uint16 = 128 KB
+
 constexpr uint16_t KmerMatcher::HAMMING_LUT0[64];
 constexpr uint16_t KmerMatcher::HAMMING_LUT1[64];
 constexpr uint16_t KmerMatcher::HAMMING_LUT2[64];
@@ -141,7 +152,7 @@ bool KmerMatcher::matchKmers(
         // Lazy info (--lazy-info 1): tax IDs are fetched per AA-matched
         // candidate group instead of being streamed alongside the metamers, so
         // info-file regions that never match a query are never read.
-        DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(db + "/diffIdx", db + "/info", 1024 * 1024 * 4, 1024 * 1024 * 4, lazyInfo);
+        DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(db + "/diffIdx", db + "/info", SEARCH_VALUE_BUFFER, SEARCH_DELTA_BUFFER, lazyInfo);
         std::vector<Kmer> candidates;
         std::vector<Match> filteredMatches;
         std::vector<uint8_t> hammings;
@@ -309,8 +320,8 @@ bool KmerMatcher::matchKmersWithPos(
                 targetDiffIdxFileName,
                 targetInfoFileName,
                 targetKmerPosFileName,
-                1024 * 1024 * 4,
-                1024 * 1024 * 4);
+                SEARCH_VALUE_BUFFER,
+                SEARCH_DELTA_BUFFER);
         std::vector<Kmer> candidates;
         std::vector<MatchWithPos> filteredMatches;
         std::vector<uint8_t> hammings;
@@ -513,7 +524,7 @@ bool KmerMatcher::matchKmers_AA(
         DeltaIdxReader * deltaIdxReaders 
             = new DeltaIdxReader(db + "/diffIdx",
                                  db + "/info", 
-                                 1024 * 1024, 1024 * 1024);
+                                 SEARCH_VALUE_BUFFER, SEARCH_DELTA_BUFFER);
         std::vector<Match_AA> tempMatches;  
     
         #pragma omp for schedule(dynamic, 1)
