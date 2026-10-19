@@ -59,6 +59,20 @@ int updateDB(int argc, const char **argv, const Command &command){
         FileUtil::makeDir(newDbDir.c_str());
     }
 
+    // One or more accession2taxid files, comma-separated; plain or gzipped.
+    {
+        bool missing = false;
+        for (const string & f : Util::split(par.filenames[2], ",")) {
+            if (!FileUtil::fileExists(f.c_str())) {
+                cout << "Error: accession2taxid file " << f << " does not exist." << endl;
+                missing = true;
+            }
+        }
+        if (missing) {
+            return 1;
+        }
+    }
+
     if (par.validateInput == 1) {
         const string & fnaListFileName = par.filenames[1];
         // Read the file line by line
@@ -91,6 +105,10 @@ int updateDB(int argc, const char **argv, const Command &command){
     }
 
 
+    if (par.gtdb == 1 && par.filenames[2].find(',') != string::npos) {
+        cout << "Error: --gtdb takes a single taxid map file, not a comma-separated list." << endl;
+        return 1;
+    }
     if (par.gtdb == 1) {
         accession2taxid(par.filenames[1], par.filenames[2]);
         par.filenames[2] = par.filenames[2].substr(0, par.filenames[2].find_last_of('.')) + ".accession2taxid";

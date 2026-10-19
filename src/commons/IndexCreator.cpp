@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <unordered_map>
 #include <utility>
+#include <zlib.h>
 #include "NcbiTaxonomy.cpp"
 #include "common.h"
 
@@ -730,73 +731,50 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
     unordered_map<TaxID, TaxID> old2merged;
     taxonomy->getMergedNodeMap(old2merged, true);
 
-    int fd = open(acc2taxidFileName.c_str(), O_RDONLY);
-    if (fd < 0) {
-        cout << "Cannot open file for mapping from accession to tax ID" << endl;
-        return;
-    }
-
-    // Get the size of the file
-    struct stat sb;
-    if (fstat(fd, &sb) == -1) {
-        cout << "Cannot get the size of the file for mapping from accession to tax ID" << endl;
-        close(fd);
-        return;
-    }
-
-    size_t fileSize = sb.st_size;
-
-    // Map the file to memory
-    char* fileData = static_cast<char*>(mmap(nullptr, fileSize, PROT_READ, MAP_PRIVATE, fd, 0));
-    if (fileData == MAP_FAILED) {
-        cout << "mmap failed" << endl;
-        close(fd);
-        return;
-    }
-    close(fd);  // Close the file descriptor as it is no longer needed after mmap.
-
-    // Parse the file
-    char* current = fileData;
-    char* end = fileData + fileSize;
-
-    // Skip the header line
-    while (current < end && *current != '\n') {
-        ++current;
-    }
-    ++current;  // Move past the newline
-
+    // One or more mapping files, comma-separated; each may be plain text or
+    // gzipped (gzopen reads uncompressed files transparently). When the same
+    // accession appears in several files, the last file listed wins.
+    vector<string> mappingFiles = Util::split(acc2taxidFileName, ",");
+    char lineBuf[16384];
     char accession[16384];
     TaxID taxID;
 
-    // First, label the accessions with external taxIDs
-    while (current < end) {
-        // Read a line
-        char* lineStart = current;
-        while (current < end && *current != '\n') {
-            ++current;
+    for (const string & mappingFile : mappingFiles) {
+        gzFile fp = gzopen(mappingFile.c_str(), "r");
+        if (fp == NULL) {
+            cout << "Cannot open " << mappingFile << " for mapping from accession to tax ID" << endl;
+            continue;
         }
-        std::string line(lineStart, current - lineStart);
+        cout << "Loading accession to tax ID mapping from " << mappingFile << endl;
 
-        // Parse the line
-        if (sscanf(line.c_str(), "%s\t%*s\t%d\t%*d", accession, &taxID) == 2) {
-            // Get the accession ID without version
-            // char* pos = strchr(accession, '.');
-            // if (pos != nullptr) {
-            //     *pos = '\0';
-            // }
-            auto it = accession2index.find(accession);
-            if (it != accession2index.end()) {
-                if (old2merged.count(taxID) > 0) {
-                    taxID = old2merged[taxID];
+        bool firstLine = true;
+        while (gzgets(fp, lineBuf, sizeof(lineBuf)) != NULL) {
+            // A line longer than the buffer would desynchronize parsing; drain
+            // the remainder so only this record is lost.
+            if (strchr(lineBuf, '\n') == NULL && !gzeof(fp)) {
+                int c;
+                while ((c = gzgetc(fp)) != -1 && c != '\n') {}
+            }
+            // Skip the NCBI-style header if present. Checked instead of
+            // unconditionally dropping the first line, so headerless custom
+            // files keep their first mapping.
+            if (firstLine) {
+                firstLine = false;
+                if (strncmp(lineBuf, "accession", 9) == 0) {
+                    continue;
                 }
-                observedAccessionsVec[it->second].taxID = taxID;
+            }
+            if (sscanf(lineBuf, "%s\t%*s\t%d\t%*d", accession, &taxID) == 2) {
+                auto it = accession2index.find(accession);
+                if (it != accession2index.end()) {
+                    if (old2merged.count(taxID) > 0) {
+                        taxID = old2merged[taxID];
+                    }
+                    observedAccessionsVec[it->second].taxID = taxID;
+                }
             }
         }
-        ++current;  // Move to the next line
-    }
-
-    if (munmap(fileData, fileSize) == -1) {
-        cout << "munmap failed" << endl;
+        gzclose(fp);
     }
 
     // Compact the internal tax-ID numbering so that IDs which can reach the info
