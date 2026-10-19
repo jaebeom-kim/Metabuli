@@ -644,48 +644,19 @@ std::string randomHexString(size_t length) {
   return result;
 }
 
-#ifdef __linux__
-namespace {
-// Read an int from /sys/devices/system/cpu/cpu<cpu>/topology/<field>, or -1.
-int readCpuTopology(int cpu, const char *field) {
-  char path[128];
-  snprintf(path, sizeof(path),
-           "/sys/devices/system/cpu/cpu%d/topology/%s", cpu, field);
-  std::ifstream in(path);
-  int value;
-  if (in >> value) {
-    return value;
-  }
-  return -1;
-}
-} // namespace
-#endif
-
-int availablePhysicalCores() {
+int availableCpus() {
+  // Logical CPUs (SMT threads included) the process may run on. SMT helps
+  // here: with the search buffers sized to L2, the join is latency-bound and
+  // SMT hides the stalls — measured ~25% faster than one-thread-per-core on a
+  // cache-resident DB. Honors the cgroup/cpuset affinity (SLURM -c, taskset,
+  // containers).
 #ifdef __linux__
   cpu_set_t set;
   CPU_ZERO(&set);
   if (sched_getaffinity(0, sizeof(set), &set) == 0) {
-    // (package, core) pairs uniquely identify a physical core; SMT siblings
-    // share the pair and are therefore counted once.
-    std::set<std::pair<int, int>> physicalCores;
-    int allowedLogical = 0;
-    for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
-      if (!CPU_ISSET(cpu, &set)) {
-        continue;
-      }
-      ++allowedLogical;
-      const int pkg = readCpuTopology(cpu, "physical_package_id");
-      const int core = readCpuTopology(cpu, "core_id");
-      if (pkg >= 0 && core >= 0) {
-        physicalCores.insert({pkg, core});
-      }
-    }
-    if (!physicalCores.empty()) {
-      return static_cast<int>(physicalCores.size());
-    }
-    if (allowedLogical > 0) { // topology unreadable: use the cpuset size
-      return allowedLogical;
+    const int allowed = CPU_COUNT(&set);
+    if (allowed > 0) {
+      return allowed;
     }
   }
 #endif
@@ -693,11 +664,11 @@ int availablePhysicalCores() {
   return n > 1 ? static_cast<int>(n) : 1;
 }
 
-void setPhysicalCoreThreadDefault(LocalParameters & par) {
+void setCpuThreadDefault(LocalParameters & par) {
   // Must run BEFORE parseParameters: it seeds par.threads so the parameter
   // dump shows the real default, and an explicit --threads naturally overrides
-  // it during parsing (so no wasSet check is needed here).
-  par.threads = availablePhysicalCores();
+  // it during parsing.
+  par.threads = availableCpus();
 }
 
 

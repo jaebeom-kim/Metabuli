@@ -13,7 +13,7 @@ int classifyCandidates(int argc, const char **argv, const Command& command) {
     par.storeKmerPos = 0;
     par.topSpecies = 0;
     par.mappingOutput = "";
-    setPhysicalCoreThreadDefault(par); // default threads = physical cores (pre-parse so --threads overrides)
+    setCpuThreadDefault(par); // default threads = available CPUs (pre-parse so --threads overrides)
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
 
     const std::string &candidateDb = par.filenames[0];
