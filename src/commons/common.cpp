@@ -693,14 +693,11 @@ int availablePhysicalCores() {
   return n > 1 ? static_cast<int>(n) : 1;
 }
 
-void applySmartThreadDefault(LocalParameters & par) {
-  if (par.PARAM_THREADS.wasSet) {
-    return; // explicit --threads wins
-  }
-  const int cores = availablePhysicalCores();
-  par.threads = cores;
-  std::cout << "Threads: " << cores
-            << " (one per physical core; override with --threads)" << std::endl;
+void setPhysicalCoreThreadDefault(LocalParameters & par) {
+  // Must run BEFORE parseParameters: it seeds par.threads so the parameter
+  // dump shows the real default, and an explicit --threads naturally overrides
+  // it during parsing (so no wasSet check is needed here).
+  par.threads = availablePhysicalCores();
 }
 
 

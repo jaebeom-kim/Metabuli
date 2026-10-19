@@ -460,9 +460,10 @@ std::string randomHexString(size_t length);
 // topology is unreadable (non-Linux, odd containers).
 int availablePhysicalCores();
 
-// If the user did not pass --threads, set par.threads to availablePhysicalCores().
-// An explicit --threads is always respected.
-void applySmartThreadDefault(LocalParameters & par);
+// Seed par.threads with availablePhysicalCores(). Call BEFORE parseParameters
+// so the value appears in the parameter dump and an explicit --threads
+// overrides it during parsing.
+void setPhysicalCoreThreadDefault(LocalParameters & par);
 
 int searchAccession2TaxID(const std::string & name, const std::unordered_map<std::string, int> & acc2taxid);
 

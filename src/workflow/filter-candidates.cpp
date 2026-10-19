@@ -515,8 +515,8 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     par.minUniqueReads = 2;
     par.tieRatio = 0.99;   // matches setClassifyDefaults (classify-candidates)
     par.minScore = 0.0f;   // matches setClassifyDefaults (classify-candidates)
+    setPhysicalCoreThreadDefault(par); // default threads = physical cores (pre-parse so --threads overrides)
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
-    applySmartThreadDefault(par); // default to one thread per physical core
 
     const std::string inputDb = par.filenames[0];
     const std::string dbDir = par.filenames[1];

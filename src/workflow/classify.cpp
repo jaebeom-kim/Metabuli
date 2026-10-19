@@ -54,8 +54,8 @@ void setClassifyDefaults(LocalParameters & par){
 int classify(int argc, const char **argv, const Command& command) {
     LocalParameters & par = LocalParameters::getLocalInstance();
     setClassifyDefaults(par);
+    setPhysicalCoreThreadDefault(par); // default threads = physical cores (pre-parse so --threads overrides)
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
-    applySmartThreadDefault(par); // default to one thread per physical core
 
     // Interleaved paired-end reads live in a single file but are processed as
     // paired-end; force paired processing while keeping the single-file layout.
