@@ -1492,11 +1492,11 @@ bool IndexCreator::extractKmerFromSixFrames(
             }
 
             // Process current split if buffer has enough space.
-            size_t posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
+            size_t posToWrite = kmerBuffer.reserveMemoryIfFits(estimatedKmerCnt);
             const size_t startPosToWrite = posToWrite;
             const size_t maxPos = startPosToWrite + estimatedKmerCnt; // exclusive write bound
             bool overflowed = false;
-            if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
+            if (posToWrite != Buffer<Kmer>::NOT_RESERVED) {
                 KSeqWrapper* kseq = KSeqFactory(fastaPaths[accessionBatches[batchIdx].whichFasta].c_str());
                 size_t seqCnt = 0;
                 size_t idx = 0;
@@ -1578,7 +1578,6 @@ bool IndexCreator::extractKmerFromSixFrames(
             } else {
                 batchChecker[batchIdx].store(false, std::memory_order_release);
                 hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
             }
         }
     }
@@ -1677,14 +1676,11 @@ size_t IndexCreator::fillTargetKmerBuffer2(
 
 
             // Process current species if buffer has enough space.
-            posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
+            posToWrite = kmerBuffer.reserveMemoryIfFits(estimatedKmerCnt);
             size_t startPosToWrite = posToWrite;
             const size_t maxPos = startPosToWrite + estimatedKmerCnt; // exclusive write bound
             bool overflowed = false;
-            if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
-                // Skip gene prediction for user-specified clades (--skip-prodigal-taxa):
-                // their sequences are k-merized as a single whole-sequence block instead
-                // of predicted ORFs, which also avoids Prodigal training/allocation.
+            if (posToWrite != Buffer<Kmer>::NOT_RESERVED) {
                 bool skipProdigal = !taxaToSkipProdigal.empty()
                     && taxonomy->isAunderB(spBatches[spIdx].speciesID, taxaToSkipProdigal);
 
@@ -1694,7 +1690,7 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                     prodigal = new ProdigalWrapper();
                     if (spBatches[spIdx].repGenomeSize < 100'000 ||
                         ((taxonomy->getEukaryotaTaxID() != 0) &&
-                         (taxonomy->IsAncestor(spBatches[spIdx].speciesID, taxonomy->getEukaryotaTaxID()))
+                         (taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), spBatches[spIdx].speciesID))
                         )) {
                         prodigal->is_meta = 1;
                         prodigal->trainMeta(fastaPaths[spBatches[spIdx].repGenomeFasta]);
@@ -1948,7 +1944,6 @@ size_t IndexCreator::fillTargetKmerBuffer2(
             } else {
                 batchChecker[spIdx].store(false, std::memory_order_release);
                 hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
             }
         }
         if (par.maskMode) {
@@ -2096,11 +2091,11 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
             trained = false;
 
             // Process current split if buffer has enough space.
-            posToWrite = kmerBuffer.reserveMemory(estimatedKmerCnt);
+            posToWrite = kmerBuffer.reserveMemoryIfFits(estimatedKmerCnt);
             const size_t startPosToWrite = posToWrite;          // reservation start
             const size_t maxPos = startPosToWrite + estimatedKmerCnt; // exclusive write bound
             bool overflowed = false;
-            if (posToWrite + estimatedKmerCnt < kmerBuffer.bufferSize) {
+            if (posToWrite != Buffer<Kmer>::NOT_RESERVED) {
                 KSeqWrapper* kseq = KSeqFactory(fastaPaths[accessionBatches[batchIdx].whichFasta].c_str());
                 size_t seqCnt = 0;
                 size_t idx = 0;
@@ -2237,7 +2232,7 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                 prodigal->is_meta = 0;
                                 if (lengthOfTrainingSeq < 100'000 || 
                                     ((taxonomy->getEukaryotaTaxID() != 0) && 
-                                     (taxonomy->IsAncestor(accessionBatches[batchIdx].speciesID, taxonomy->getEukaryotaTaxID()))
+                                     (taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), accessionBatches[batchIdx].speciesID))
                                     )) {
                                     prodigal->is_meta = 1;
                                     prodigal->trainMeta((unsigned char *) training_seq->entry.sequence.s, 
@@ -2348,7 +2343,6 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
             } else {
                 batchChecker[batchIdx].store(false, std::memory_order_release);
                 hasOverflow.fetch_add(1, std::memory_order_relaxed);
-                __sync_fetch_and_sub(&kmerBuffer.startIndexOfReserve, estimatedKmerCnt);
             }
             delete prodigal;   
         }
