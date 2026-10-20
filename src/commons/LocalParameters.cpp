@@ -749,6 +749,13 @@ LocalParameters::LocalParameters() :
                      typeid(std::string),
                         (void *) &subDbList,
                         "^.*$"),
+        OUT_SUB_DB(OUT_SUB_DB_ID,
+                   "--out-sub-db",
+                   "reformat-db: write result as a new sub-DB with this name (default: in-place)",
+                   "reformat-db only: write the re-encoded k-mer list to kmer-lists/<name>/ instead of overwriting the source, keeping the original for testing.",
+                     typeid(std::string),
+                        (void *) &outSubDb,
+                        "^.*$"),
         LAZY_INFO(LAZY_INFO_ID,
                    "--lazy-info",
                    "Fetch reference tax IDs only for matched k-mers (0: off, 1: on)",
@@ -909,6 +916,7 @@ LocalParameters::LocalParameters() :
 
     // Sub-DB selection
     subDbList = "";
+    outSubDb = "";
 
     // Lazy info reads
     lazyInfo = 1;
@@ -1207,6 +1215,8 @@ LocalParameters::LocalParameters() :
     expand_diffidx.push_back(&KMER_BEGIN);
     expand_diffidx.push_back(&KMER_END);
     expand_diffidx.push_back(&PARAM_THREADS);
+    expand_diffidx.push_back(&SUB_DB_LIST);
+    expand_diffidx.push_back(&OUT_SUB_DB);
 
     query2reference.push_back(&TEST_RANK);
 

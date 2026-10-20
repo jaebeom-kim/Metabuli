@@ -193,6 +193,9 @@ public:
     // Sub-DB selection (classify / create-candidates)
     PARAMETER(SUB_DB_LIST)
 
+    // reformat-db: write result as a new sub-DB instead of in-place
+    PARAMETER(OUT_SUB_DB)
+
     // Lazy reference-info reads during k-mer search
     PARAMETER(LAZY_INFO)
 
@@ -333,6 +336,9 @@ public:
 
     // Sub-DB selection: comma-separated sub-DB names to search ("" = all)
     std::string subDbList;
+
+    // reformat-db: name of the new sub-DB to write the result to ("" = in-place)
+    std::string outSubDb;
 
     // 1: fetch reference tax IDs only for AA-matched k-mer groups (default);
     // 0: stream them alongside the metamers (pre-lazy behavior)

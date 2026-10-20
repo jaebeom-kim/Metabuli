@@ -111,6 +111,17 @@ std::vector<Command> metabuliCommands = {
                 "<diffIdx> [maxBytes]",
                 CITATION_SPACEPHARER,
                 {{"diffIdx", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile}}},
+        {"reformat-db", reformatDb, &localPar.expand_diffidx, COMMAND_DATABASE_CREATION,
+                "Re-encode diffIdx to LEB128 (smaller for dense DBs; no rebuild)",
+                "Re-encode the diffIdx from the 15-bit fragment varint to LEB128 byte varint without rebuilding (auto-kept if not smaller).\n"
+                "In-place by default; --out-sub-db writes a new sub-DB and keeps the source for A/B testing.\n\n"
+                "metabuli reformat-db <DB dir>                         # all sub-DBs, in-place\n"
+                "metabuli reformat-db <DB dir> --sub-dbs base          # one sub-DB, in-place\n"
+                "metabuli reformat-db <DB dir> --sub-dbs base --out-sub-db base_leb   # new sub-DB, source kept",
+                "Jaebeom Kim <jbeom0731@gmail.com>",
+                "<DB dir>",
+                CITATION_SPACEPHARER,
+                {{"DB dir", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::directory}}},
         {"printInfo", printInfo, &localPar.printInfo, COMMAND_EXPERT,
                 "Print k-mer information",
                nullptr,

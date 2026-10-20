@@ -141,8 +141,14 @@ private:
     size_t valueCnt;
     uint64_t lastValue;
     
-    // To manage delta indices    
+    // To manage delta indices
     ReadBuffer<uint16_t> deltaIdxBuffer;
+    // diffIdx encoding: 0 = 15-bit fragment varint (default, all existing DBs);
+    // 1 = LEB128 byte varint (set by reformat-db for smaller dense DBs). For
+    // format 1 the delta stream is byte-granular, so a separate byte buffer is
+    // used and DiffIdxSplit::diffIdxOffset is a byte offset (not a uint16 count).
+    uint8_t diffIdxFormat = 0;
+    std::unique_ptr<ReadBuffer<uint8_t>> deltaByteBuffer;
     InfoIndexMetadata infoMetadata;
     bool infoIsPacked = false;
     // Only one info buffer is active. Plain DBs keep the old direct TaxID
@@ -383,6 +389,9 @@ private:
     }
 
     uint64_t getNextMetamer() {
+        if (unlikely(diffIdxFormat == 1)) {
+            return getNextMetamerLEB();
+        }
         if (unlikely(deltaIdxBuffer.end - deltaIdxBuffer.p < 5)) {
             size_t readCnt = deltaIdxBuffer.loadBuffer(deltaIdxBuffer.end - deltaIdxBuffer.p);
             if (readCnt == 0) {
@@ -404,7 +413,49 @@ private:
         return lastValue;
     }
 
+    // LEB128 (format 1): 7-bit groups, high group first, 0x80 set on the final
+    // byte (same end-flag polarity as the 15-bit scheme, 7 bits instead of 15).
+    uint64_t getNextMetamerLEB() {
+        if (unlikely(deltaByteBuffer->end - deltaByteBuffer->p < 10)) {
+            size_t readCnt = deltaByteBuffer->loadBuffer(deltaByteBuffer->end - deltaByteBuffer->p);
+            if (readCnt == 0) {
+                return UINT64_MAX;
+            }
+        }
+        uint8_t* p = deltaByteBuffer->p;
+        uint64_t diffIn64bit = 0;
+        uint8_t byte;
+        do {
+            byte = *p++;
+            diffIn64bit = (diffIn64bit << 7) | (byte & 0x7F);
+        } while ((byte & 0x80) == 0);
+        deltaByteBuffer->p = p;
+        lastValue += diffIn64bit;
+        return lastValue;
+    }
+
 public:
+    // Reads Diffidx_format from the sibling db.parameters of a diffIdx file.
+    static uint8_t loadDiffidxFormat(const std::string & diffIdxFileName) {
+        const size_t slash = diffIdxFileName.find_last_of('/');
+        const std::string paramFile = (slash == std::string::npos)
+            ? "db.parameters" : diffIdxFileName.substr(0, slash + 1) + "db.parameters";
+        std::ifstream in(paramFile);
+        if (!in.is_open()) {
+            return 0;
+        }
+        std::string line;
+        uint8_t fmt = 0;
+        while (std::getline(in, line)) {
+            const size_t tab = line.find('\t');
+            if (tab == std::string::npos) continue;
+            if (line.compare(0, tab, "Diffidx_format") == 0) {
+                fmt = static_cast<uint8_t>(std::stoul(line.substr(tab + 1)));
+            }
+        }
+        return fmt;
+    }
+
     DeltaIdxReader(
         std::string deltaIdxFileName,
         std::string infoFileName,
@@ -421,6 +472,13 @@ public:
         lastValue = 0;
         valueCnt = 0;
         valueBuffer = new Kmer[valueBufferSize];
+        diffIdxFormat = loadDiffidxFormat(deltaIdxFileName);
+        if (diffIdxFormat == 1) {
+            // readBufferSize is a uint16 count historically; keep the same byte
+            // budget for the byte-granular LEB128 stream.
+            deltaByteBuffer = std::make_unique<ReadBuffer<uint8_t>>(deltaIdxFileName,
+                                                                    readBufferSize * 2);
+        }
         infoIsPacked = infoMetadata.isPacked();
         // The on-demand fetch window is deliberately small: a seek costs one
         // window read, so dense regions stream as before while sparse regions
@@ -476,6 +534,11 @@ public:
         valueCnt = 0;
         valueBuffer = new Kmer[valueBufferSize];
         hasPos = true;
+        diffIdxFormat = loadDiffidxFormat(deltaIdxFileName);
+        if (diffIdxFormat == 1) {
+            deltaByteBuffer = std::make_unique<ReadBuffer<uint8_t>>(deltaIdxFileName,
+                                                                    readBufferSize * 2);
+        }
         // Position DBs pack their info index like any other DB; positions live
         // in a separate file read in lockstep with the (plain or packed) IDs.
         infoIsPacked = infoMetadata.isPacked();
@@ -568,7 +631,12 @@ public:
         // Seeking must clear EOF state from any previous scan.
         fileCompleted = false;
         valueBufferCompleted = false;
-        deltaIdxBuffer.loadBufferAt(offset.diffIdxOffset);
+        if (diffIdxFormat == 1) {
+            // Format 1 split offsets are byte positions into the LEB128 stream.
+            deltaByteBuffer->loadBufferAt(offset.diffIdxOffset);
+        } else {
+            deltaIdxBuffer.loadBufferAt(offset.diffIdxOffset);
+        }
         const size_t infoOffset = offset.infoIdxOffset - (offset.ADkmer != 0);
         if (lazyInfo) {
             // Only ordinal bookkeeping; the info file is touched by
