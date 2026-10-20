@@ -21,6 +21,7 @@ set(util_source_files
         util/compactInfoIndex.cpp
         util/validateDatabase.h
         util/printDeltaIdx.cpp
+        util/analyzeDiffIdx.cpp
         util/count_common_kmers.cpp
         util/create_common_kmer_list.cpp
         util/create_unique_kmer_list.cpp

@@ -32,7 +32,8 @@ extern int createnewtaxalist(int argc, const char **argv, const Command& command
 extern int classifiedRefiner(int argc, const char **argv, const Command& command);
 extern int validateDatabase(int argc, const char **argv, const Command& command);
 extern int compactInfoIndex(int argc, const char **argv, const Command& command);
-extern int printDeltaIdx(int argc, const char **argv, const Command& command); 
+extern int printDeltaIdx(int argc, const char **argv, const Command& command);
+extern int analyzeDiffIdx(int argc, const char **argv, const Command& command); 
 extern int makeBenchmarkSet(int argc, const char **argv, const Command &command);
 extern int makeQuerySet(int argc, const char **argv, const Command &command);
 extern int makeVirusBenchmarkSet(int argc, const char **argv, const Command &command);
