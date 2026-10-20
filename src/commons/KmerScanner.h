@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <deque>
+#include <cstdlib>
 
 #include "Kmer.h"
 #include "common.h"
@@ -39,6 +40,13 @@ public:
         this->seq = seq;
         this->seqStart = seqStart;
         this->seqEnd = seqEnd;
+        if (seqEnd + 1 < seqStart) {
+            std::cerr << "Error: invalid sequence block passed to the k-mer scanner (start="
+                      << static_cast<long long>(seqStart) << ", end=" << static_cast<long long>(seqEnd)
+                      << ", strand=" << (isForward ? "+" : "-") << "). Start is after end, so scanning it "
+                      << "would read past the sequence. This is a bug in ORF/block generation. Stopping." << std::endl;
+            exit(EXIT_FAILURE);
+        }
         this->seqLen = seqEnd - seqStart + 1;
         this->loadedCharCnt = 0;
         this->posStart = 0;

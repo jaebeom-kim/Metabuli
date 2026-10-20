@@ -208,6 +208,19 @@ struct Buffer {
         return __sync_fetch_and_add(&startIndexOfReserve, numOfKmer);
     };
 
+    static constexpr size_t NOT_RESERVED = SIZE_MAX;
+
+    size_t reserveMemoryIfFits(size_t numOfKmer) {
+        size_t cur = __atomic_load_n(&startIndexOfReserve, __ATOMIC_RELAXED);
+        do {
+            if (cur + numOfKmer >= bufferSize) {
+                return NOT_RESERVED;
+            }
+        } while (!__atomic_compare_exchange_n(&startIndexOfReserve, &cur, cur + numOfKmer,
+                                              true, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED));
+        return cur;
+    };
+
     void reallocateMemory(size_t sizeOfBuffer) {
         buffer = (T *) realloc(buffer, sizeof(T) * sizeOfBuffer);
         bufferSize = sizeOfBuffer;
@@ -245,9 +258,8 @@ struct Buffer {
     }
 
     static bool moveSmallToLarge(Buffer<T> * small, Buffer<T> * large) {
-        size_t posToWrite = large->reserveMemory(small->startIndexOfReserve);
-        if (unlikely(posToWrite + small->startIndexOfReserve >= large->bufferSize)) {
-            __sync_fetch_and_sub(&large->startIndexOfReserve, small->startIndexOfReserve);
+        size_t posToWrite = large->reserveMemoryIfFits(small->startIndexOfReserve);
+        if (unlikely(posToWrite == NOT_RESERVED)) {
             return false;
         }
         memcpy(large->buffer + posToWrite, small->buffer, sizeof(T) * small->startIndexOfReserve);
