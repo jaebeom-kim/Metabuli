@@ -51,6 +51,7 @@ public:
     std::vector<MMseqsParameter*> printInfo;
     std::vector<MMseqsParameter*> query2reference;
     std::vector<MMseqsParameter*> expand_diffidx;
+    std::vector<MMseqsParameter*> reformatDb;
     std::vector<MMseqsParameter*> taxdump;
     std::vector<MMseqsParameter*> accession2taxid;
     std::vector<MMseqsParameter*> editNames;

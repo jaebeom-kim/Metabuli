@@ -111,7 +111,7 @@ std::vector<Command> metabuliCommands = {
                 "<diffIdx> [maxBytes]",
                 CITATION_SPACEPHARER,
                 {{"diffIdx", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile}}},
-        {"reformat-db", reformatDb, &localPar.expand_diffidx, COMMAND_DATABASE_CREATION,
+        {"reformat-db", reformatDb, &localPar.reformatDb, COMMAND_DATABASE_CREATION,
                 "Re-encode diffIdx to LEB128 (smaller for dense DBs; no rebuild)",
                 "Re-encode the diffIdx from the 15-bit fragment varint to LEB128 byte varint without rebuilding (auto-kept if not smaller).\n"
                 "In-place by default; --out-sub-db writes a new sub-DB and keeps the source for A/B testing.\n\n"

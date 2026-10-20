@@ -744,15 +744,15 @@ LocalParameters::LocalParameters() :
                         "^.*$"),
         SUB_DB_LIST(SUB_DB_LIST_ID,
                    "--sub-dbs",
-                   "Comma-separated sub-DB names to search (default: all)",
-                   "Comma-separated sub-DB names to search. Default: every k-mer list in the DB directory.",
+                   "Comma-separated sub-DB names (default: all)",
+                   "Comma-separated sub-DB names to select. Default: every k-mer list in the DB directory.",
                      typeid(std::string),
                         (void *) &subDbList,
                         "^.*$"),
         OUT_SUB_DB(OUT_SUB_DB_ID,
                    "--out-sub-db",
-                   "reformat-db: write result as a new sub-DB with this name (default: in-place)",
-                   "reformat-db only: write the re-encoded k-mer list to kmer-lists/<name>/ instead of overwriting the source, keeping the original for testing.",
+                   "Write result as a new sub-DB, keeping the source (default: in-place)",
+                   "Write the re-encoded k-mer list to kmer-lists/<name>/ instead of overwriting the source, keeping the original for A/B testing.",
                      typeid(std::string),
                         (void *) &outSubDb,
                         "^.*$"),
@@ -1215,8 +1215,11 @@ LocalParameters::LocalParameters() :
     expand_diffidx.push_back(&KMER_BEGIN);
     expand_diffidx.push_back(&KMER_END);
     expand_diffidx.push_back(&PARAM_THREADS);
-    expand_diffidx.push_back(&SUB_DB_LIST);
-    expand_diffidx.push_back(&OUT_SUB_DB);
+
+    // reformat-db
+    reformatDb.push_back(&PARAM_THREADS);
+    reformatDb.push_back(&SUB_DB_LIST);
+    reformatDb.push_back(&OUT_SUB_DB);
 
     query2reference.push_back(&TEST_RANK);
 
