@@ -12,6 +12,7 @@
 #include "Util.h"
 #include "sys/mman.h"
 #include <fcntl.h>
+#include <zlib.h>
 #include <algorithm>
 #include <cmath>
 #include <dirent.h>
@@ -368,74 +369,54 @@ void getObservedAccessionList(
 
 void fillAcc2TaxIdMap(unordered_map<string, TaxID> & acc2taxid,
                       const string & acc2taxidFileName) {
-  cout << "Load mapping from accession ID to taxonomy ID ... " << flush;
-
-  // Open the file
-  int fd = open(acc2taxidFileName.c_str(), O_RDONLY);
-  if (fd < 0) {
-      cout << "Cannot open file for mapping from accession to tax ID" << endl;
-      return;
-  }
-
-  // Get the size of the file
-  struct stat sb;
-  if (fstat(fd, &sb) == -1) {
-      cout << "Cannot get the size of the file for mapping from accession to tax ID" << endl;
-      close(fd);
-      return;
-  }
-
-  size_t fileSize = sb.st_size;
-
-  // Map the file to memory
-  char* fileData = static_cast<char*>(mmap(nullptr, fileSize, PROT_READ, MAP_PRIVATE, fd, 0));
-  if (fileData == MAP_FAILED) {
-      cout << "mmap failed" << endl;
-      close(fd);
-      return;
-  }
-  close(fd);  // Close the file descriptor as it is no longer needed after mmap.
-
-  // Parse the file
-  char* current = fileData;
-  char* end = fileData + fileSize;
-
-  // Skip the header line
-  while (current < end && *current != '\n') {
-      ++current;
-  }
-  ++current;  // Move past the newline
-
+  // One or more mapping files, comma-separated; each may be plain text or
+  // gzipped (gzopen reads uncompressed files transparently). When the same
+  // accession appears in several files, the last file listed wins.
+  vector<string> mappingFiles = Util::split(acc2taxidFileName, ",");
+  char lineBuf[16384];
   char accession[16384];
   int taxID;
 
-  while (current < end) {
-      // Read a line
-      char* lineStart = current;
-      while (current < end && *current != '\n') {
-          ++current;
+  for (const string & mappingFile : mappingFiles) {
+      gzFile fp = gzopen(mappingFile.c_str(), "r");
+      if (fp == NULL) {
+          cout << "Cannot open " << mappingFile << " for mapping from accession to tax ID" << endl;
+          continue;
       }
-      std::string line(lineStart, current - lineStart);
-      // Parse the line
-      if (sscanf(line.c_str(), "%s\t%*s\t%d\t%*d", accession, &taxID) == 2) {
-        // Get the accession ID without version
-        char* pos = strchr(accession, '.');
-        if (pos != nullptr) {
-          *pos = '\0';
-        }
-        auto it = acc2taxid.find(accession);
-        if (it != acc2taxid.end()) {
-          acc2taxid[accession] = taxID;
-        }
-      }
-      ++current;  // Move to the next line
-  }
+      cout << "Load mapping from accession ID to taxonomy ID from " << mappingFile << " ... " << flush;
 
-  // Unmap the file
-  if (munmap(fileData, fileSize) == -1) {
-      cout << "munmap failed" << endl;
-  }                                        
-  cout << "Done" << endl;
+      bool firstLine = true;
+      while (gzgets(fp, lineBuf, sizeof(lineBuf)) != NULL) {
+          // A line longer than the buffer would desynchronize parsing; drain
+          // the remainder so only this record is lost.
+          if (strchr(lineBuf, '\n') == NULL && !gzeof(fp)) {
+              int c;
+              while ((c = gzgetc(fp)) != -1 && c != '\n') {}
+          }
+          // Skip the NCBI-style header if present. Checked instead of
+          // unconditionally dropping the first line, so headerless custom
+          // files keep their first mapping.
+          if (firstLine) {
+              firstLine = false;
+              if (strncmp(lineBuf, "accession", 9) == 0) {
+                  continue;
+              }
+          }
+          if (sscanf(lineBuf, "%16383s\t%*s\t%d\t%*d", accession, &taxID) == 2) {
+              // Get the accession ID without version
+              char* pos = strchr(accession, '.');
+              if (pos != nullptr) {
+                  *pos = '\0';
+              }
+              auto it = acc2taxid.find(accession);
+              if (it != acc2taxid.end()) {
+                  it->second = taxID;
+              }
+          }
+      }
+      gzclose(fp);
+      cout << "Done" << endl;
+  }
 }
 
 

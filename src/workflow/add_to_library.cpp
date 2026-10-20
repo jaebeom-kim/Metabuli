@@ -84,6 +84,14 @@ int addToLibrary(int argc, const char **argv, const Command &command){
     }
     else // ASSEMBLY
     {
+        // This branch reads the mapping file directly and supports only a
+        // single plain-text file, unlike fillAcc2TaxIdMap above.
+        if (mappingFileName.find(',') != string::npos) {
+            cerr << "Error: --is-assembly takes a single assembly-to-taxid mapping file, "
+                    "not a comma-separated list." << endl;
+            delete taxonomy;
+            return EXIT_FAILURE;
+        }
         // Load mapping file
         cout << "Load mapping from assembly accession to taxonomy ID" << endl;
         unordered_map<string, int> assembly2taxid;
