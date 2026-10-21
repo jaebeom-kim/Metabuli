@@ -191,13 +191,27 @@ bool KmerMatcher::matchKmers(
         for (size_t i = 0; i < querySplits.size(); i++) {
             if (hasOverflow.load(std::memory_order_acquire))
                 continue;
-            
+
             if (splitCheckList[i].exchange(true, std::memory_order_acq_rel))
-                continue; 
+                continue;
 
             deltaIdxReaders->setReadPosition(querySplits[i].diffIdxSplit);
-            Kmer tKmer = deltaIdxReaders->next();
-            uint64_t tKmerAA = AminoAcidPart(tKmer.value);
+            // Lazy mode streams bare metamer values (uint64 buffer); tax IDs
+            // arrive later via fetchInfos(). Non-lazy carries the ID along.
+            uint64_t tValue = 0;
+            uint32_t tId = 0;
+            uint64_t tKmerAA = 0;
+            auto nextTarget = [&]() {
+                if (lazyInfo) {
+                    tValue = deltaIdxReaders->nextValue();
+                } else {
+                    const Kmer k = deltaIdxReaders->next();
+                    tValue = k.value;
+                    tId = k.id;
+                }
+                tKmerAA = AminoAcidPart(tValue);
+            };
+            nextTarget();
             Kmer qKmer(UINT64_MAX, 0);
             uint64_t qKmerAA = UINT64_MAX;
             for (size_t j = querySplits[i].start; j < querySplits[i].end + 1; j++) {
@@ -248,26 +262,24 @@ bool KmerMatcher::matchKmers(
                 qKmerAA = currentQKmerAA;
 
                 // Skip target k-mers lexiocographically smaller at amino acid level
-                while (!deltaIdxReaders->isCompleted() 
+                while (!deltaIdxReaders->isCompleted()
                         && qKmerAA > tKmerAA) {
-                    tKmer = deltaIdxReaders->next();
-                    tKmerAA = AminoAcidPart(tKmer.value);
+                    nextTarget();
                 }
 
                 // No match found - skip to the next query
                 if (deltaIdxReaders->isCompleted() || qKmerAA != tKmerAA) {
                     continue;
-                } 
+                }
 
                 // Match found - load target k-mers matching at amino acid level
-                while (!deltaIdxReaders->isCompleted() 
+                while (!deltaIdxReaders->isCompleted()
                         && qKmerAA == tKmerAA) {
                     if (lazyInfo && candidates.empty()) {
                         groupStartOrdinal = deltaIdxReaders->lastOrdinal();
                     }
-                    candidates.emplace_back(tKmer.value, lazyInfo ? 0u : (tKmer.id & mask));
-                    tKmer = deltaIdxReaders->next();
-                    tKmerAA = AminoAcidPart(tKmer.value);
+                    candidates.emplace_back(tValue, lazyInfo ? 0u : (tId & mask));
+                    nextTarget();
                 }
 
                 // Candidates are consecutive k-mers of the sorted list; fetch

@@ -179,9 +179,13 @@ private:
     size_t totalValueNum;
     bool hasPos = false;
 
-    // To manage values
+    // To manage values. Non-lazy mode decodes into 16-byte Kmers (value + tax
+    // ID). Lazy mode never stores IDs in this buffer (fetchInfos() supplies
+    // them per candidate group), so it uses a bare uint64 array instead: half
+    // the stride, half the L2 footprint, and no dead id stores.
     size_t valueBufferSize;
-    Kmer * valueBuffer;
+    Kmer * valueBuffer = nullptr;          // non-lazy mode
+    uint64_t * lazyValueBuffer = nullptr;  // lazy mode
     size_t valueBufferIdx = 0;
     size_t valueCnt;
     uint64_t lastValue;
@@ -241,8 +245,7 @@ private:
                 fileCompleted = true;
                 break;
             }
-            valueBuffer[valueCnt].value = v;
-            valueBuffer[valueCnt].id = 0; // filled on demand via fetchInfos()
+            lazyValueBuffer[valueCnt] = v; // ids come from fetchInfos()
             ++decodeOrdinal;
         }
         if (decodeOrdinal >= totalValueNum) {
@@ -515,7 +518,11 @@ public:
     {
         lastValue = 0;
         valueCnt = 0;
-        valueBuffer = new Kmer[valueBufferSize];
+        if (lazyInfo) {
+            lazyValueBuffer = new uint64_t[valueBufferSize];
+        } else {
+            valueBuffer = new Kmer[valueBufferSize];
+        }
         diffIdxFormat = loadDiffidxFormat(deltaIdxFileName);
         if (diffIdxFormat == 1) {
             // readBufferSize is a uint16 count historically; keep the same byte
@@ -619,6 +626,7 @@ public:
 
     ~DeltaIdxReader() {
         delete[] valueBuffer;
+        delete[] lazyValueBuffer;
     }
 
     // void setPosBuffer(const std::string & posFileName) {
@@ -671,6 +679,21 @@ public:
         return valueBuffer[valueBufferIdx++];
     }
 
+    // Lazy mode only: bare metamer values (8-byte stride, no id copies).
+    // Check isCompleted() to detect the end; the EOF return value is a dummy.
+    uint64_t nextValue() {
+        if (unlikely(valueBufferIdx >= valueCnt)) {
+            valueCnt = 0;
+            valueBufferIdx = 0;
+            fillValueBuffer();
+        }
+        if (unlikely(valueCnt == 0)) {
+            valueBufferCompleted = true;
+            return UINT64_MAX;
+        }
+        return lazyValueBuffer[valueBufferIdx++];
+    }
+
     Kmer current() {
         if (unlikely(valueBufferIdx >= valueCnt)) {
             valueCnt = 0;
@@ -706,8 +729,7 @@ public:
                 bufferBaseOrdinal = 0;
             } else {
                 lastValue = offset.ADkmer;
-                valueBuffer[0].value = lastValue;
-                valueBuffer[0].id = 0;
+                lazyValueBuffer[0] = lastValue;
                 valueCnt = 1;
                 bufferBaseOrdinal = infoOffset;  // the anchor k-mer's ordinal
                 decodeOrdinal = infoOffset + 1;
