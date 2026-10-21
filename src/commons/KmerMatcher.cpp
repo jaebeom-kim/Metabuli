@@ -3,6 +3,7 @@
 #include "IndexCreator.h"
 #include "Kmer.h"
 #include "Mmap.h"
+#include <algorithm>
 #include <ostream>
 #include <vector>
 
@@ -157,24 +158,27 @@ bool KmerMatcher::matchKmers(
 
     unsigned int mask = ~((static_cast<unsigned int>(par.skipRedundancy == 0) << 31)); 
 
+    if (par.lazyInfo == 0) {
+        std::cout << "Note: --lazy-info 0 is deprecated and ignored; "
+                     "lazy info fetching is always used." << std::endl;
+    }
     std::cout << "Reference k-mer search : " << flush;
     time_t beforeSearch = time(nullptr);
     const uint64_t ioNanos0 = ioProfEnabled() ? ioProfNanos().load() : 0;
     const uint64_t ioBytes0 = ioProfEnabled() ? ioProfBytes().load() : 0;
-    const bool lazyInfo = par.lazyInfo != 0;
     #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
-    querySplits, qKmers, totalMatches, cout, mask, lazyInfo)
+    querySplits, qKmers, totalMatches, cout, mask)
     {
         Buffer<Match> localMatches(1024 * 1024);
-        // Lazy info (--lazy-info 1): tax IDs are fetched per AA-matched
-        // candidate group instead of being streamed alongside the metamers, so
-        // info-file regions that never match a query are never read.
+        // Lazy info: tax IDs are fetched per AA-matched candidate group
+        // instead of being streamed alongside the metamers, so info-file
+        // regions that never match a query are never read.
         DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(
             db + "/diffIdx",
             db + "/info",
             SEARCH_VALUE_BUFFER,
             SEARCH_DELTA_BUFFER,
-            lazyInfo,
+            true /* lazyInfo */,
             true /* deferInitialFill: setReadPosition() seeks before any read */,
             true /* prefetch-eligible (active with METABULI_PREFETCH=1) */);
         std::vector<Kmer> candidates;
@@ -196,22 +200,12 @@ bool KmerMatcher::matchKmers(
                 continue;
 
             deltaIdxReaders->setReadPosition(querySplits[i].diffIdxSplit);
-            // Lazy mode streams bare metamer values (uint64 buffer); tax IDs
-            // arrive later via fetchInfos(). Non-lazy carries the ID along.
-            uint64_t tValue = 0;
-            uint32_t tId = 0;
-            uint64_t tKmerAA = 0;
-            auto nextTarget = [&]() {
-                if (lazyInfo) {
-                    tValue = deltaIdxReaders->nextValue();
-                } else {
-                    const Kmer k = deltaIdxReaders->next();
-                    tValue = k.value;
-                    tId = k.id;
-                }
-                tKmerAA = AminoAcidPart(tValue);
-            };
-            nextTarget();
+            // Pointer-based scan over the decoded window of bare metamer
+            // values; tax IDs arrive later via fetchInfos().
+            const uint64_t * tCur;
+            const uint64_t * tEnd;
+            deltaIdxReaders->currentWindow(tCur, tEnd);
+            bool streamDone = (tCur == tEnd) && !deltaIdxReaders->nextWindow(tCur, tEnd);
             Kmer qKmer(UINT64_MAX, 0);
             uint64_t qKmerAA = UINT64_MAX;
             for (size_t j = querySplits[i].start; j < querySplits[i].end + 1; j++) {
@@ -261,35 +255,50 @@ bool KmerMatcher::matchKmers(
                 qKmer = currentQKmer;
                 qKmerAA = currentQKmerAA;
 
-                // Skip target k-mers lexiocographically smaller at amino acid level
-                while (!deltaIdxReaders->isCompleted()
-                        && qKmerAA > tKmerAA) {
-                    nextTarget();
+                // Skip target k-mers lexicographically smaller at amino acid
+                // level. AA bits are the high bits and qKmerAA has the DNA
+                // bits cleared, so AA(v) >= qKmerAA <=> v >= qKmerAA and the
+                // sorted window can be searched directly: a short linear probe
+                // for the common small gap, then a binary search for long ones.
+                while (!streamDone) {
+                    const uint64_t * probeEnd = (tEnd - tCur > 32) ? tCur + 32 : tEnd;
+                    while (tCur < probeEnd && *tCur < qKmerAA) {
+                        ++tCur;
+                    }
+                    if (tCur < tEnd && *tCur < qKmerAA) {
+                        tCur = std::lower_bound(tCur, tEnd, qKmerAA);
+                    }
+                    if (tCur < tEnd) {
+                        break;
+                    }
+                    streamDone = !deltaIdxReaders->nextWindow(tCur, tEnd);
                 }
 
                 // No match found - skip to the next query
-                if (deltaIdxReaders->isCompleted() || qKmerAA != tKmerAA) {
+                if (streamDone || AminoAcidPart(*tCur) != qKmerAA) {
                     continue;
                 }
 
-                // Match found - load target k-mers matching at amino acid level
-                while (!deltaIdxReaders->isCompleted()
-                        && qKmerAA == tKmerAA) {
-                    if (lazyInfo && candidates.empty()) {
-                        groupStartOrdinal = deltaIdxReaders->lastOrdinal();
+                // Match found - load target k-mers matching at amino acid
+                // level. The group is contiguous but may span window refills.
+                groupStartOrdinal = deltaIdxReaders->ordinalOf(tCur);
+                while (!streamDone) {
+                    while (tCur < tEnd && AminoAcidPart(*tCur) == qKmerAA) {
+                        candidates.emplace_back(*tCur, 0u);
+                        ++tCur;
                     }
-                    candidates.emplace_back(tValue, lazyInfo ? 0u : (tId & mask));
-                    nextTarget();
+                    if (tCur < tEnd) {
+                        break;
+                    }
+                    streamDone = !deltaIdxReaders->nextWindow(tCur, tEnd);
                 }
 
                 // Candidates are consecutive k-mers of the sorted list; fetch
                 // their tax IDs as one contiguous range.
-                if (lazyInfo && !candidates.empty()) {
-                    idScratch.resize(candidates.size());
-                    deltaIdxReaders->fetchInfos(groupStartOrdinal, candidates.size(), idScratch.data());
-                    for (size_t c = 0; c < candidates.size(); ++c) {
-                        candidates[c].id = idScratch[c] & mask;
-                    }
+                idScratch.resize(candidates.size());
+                deltaIdxReaders->fetchInfos(groupStartOrdinal, candidates.size(), idScratch.data());
+                for (size_t c = 0; c < candidates.size(); ++c) {
+                    candidates[c].id = idScratch[c] & mask;
                 }
 
                 filterCandidates(qKmer, candidates, filteredMatches, hammings);

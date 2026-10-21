@@ -679,19 +679,41 @@ public:
         return valueBuffer[valueBufferIdx++];
     }
 
-    // Lazy mode only: bare metamer values (8-byte stride, no id copies).
-    // Check isCompleted() to detect the end; the EOF return value is a dummy.
-    uint64_t nextValue() {
-        if (unlikely(valueBufferIdx >= valueCnt)) {
-            valueCnt = 0;
-            valueBufferIdx = 0;
-            fillValueBuffer();
-        }
+    // --- Lazy-mode window API ------------------------------------------------
+    // Instead of handing out one value per call, the reader lends the whole
+    // decoded window [begin, end) of bare metamer values for pointer-based
+    // scanning. The consumer walks its own cursor and asks for the next
+    // window only when the current one is fully consumed; per-value bounds
+    // checks and call overhead disappear from the join loop.
+
+    // Window as left by the constructor or setReadPosition() (nothing consumed).
+    void currentWindow(const uint64_t *&begin, const uint64_t *&end) const {
+        begin = lazyValueBuffer + valueBufferIdx;
+        end = lazyValueBuffer + valueCnt;
+    }
+
+    // The current window is fully consumed: decode the next one. Returns
+    // false (empty window) at the end of the stream. Invalidates pointers
+    // into the previous window.
+    bool nextWindow(const uint64_t *&begin, const uint64_t *&end) {
+        valueCnt = 0;
+        valueBufferIdx = 0;
+        fillValueBuffer();
         if (unlikely(valueCnt == 0)) {
             valueBufferCompleted = true;
-            return UINT64_MAX;
+            begin = lazyValueBuffer;
+            end = lazyValueBuffer;
+            return false;
         }
-        return lazyValueBuffer[valueBufferIdx++];
+        begin = lazyValueBuffer;
+        end = lazyValueBuffer + valueCnt;
+        return true;
+    }
+
+    // Ordinal (position in the full sorted k-mer list) of the value *p points
+    // at; valid only for pointers into the current window.
+    size_t ordinalOf(const uint64_t *p) const {
+        return bufferBaseOrdinal + static_cast<size_t>(p - lazyValueBuffer);
     }
 
     Kmer current() {
@@ -769,11 +791,6 @@ public:
         }
         valueBufferIdx = 0;
         fillValueBuffer();
-    }
-
-    // Ordinal of the k-mer returned by the most recent next() (lazy mode).
-    size_t lastOrdinal() const {
-        return bufferBaseOrdinal + valueBufferIdx - 1;
     }
 
     // Lazy mode: read n tax IDs starting at startOrdinal. Candidate groups are
