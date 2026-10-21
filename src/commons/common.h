@@ -18,7 +18,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <future>
+#include <thread>
 
 #include "LocalParameters.h"
 #include "TaxonomyWrapper.h"
@@ -319,13 +319,24 @@ struct ReadBuffer {
     // two halves alternate between "being drained" and "being filled by a
     // background fread". Each half keeps a small headroom in front so
     // loadBuffer(unused) can place the carried-over tail right before the
-    // prefetched data without moving it.
+    // prefetched data without moving it. A PERSISTENT worker thread serves the
+    // reads - spawning a task per chunk costs millions of thread creations per
+    // batch and dominates once reads hit the page cache.
     static constexpr size_t PREFETCH_HEADROOM = 16;
     T * allocBase = nullptr;
     T * half[2] = {nullptr, nullptr};
     int active = 0;
     bool prefetching = false;
-    std::future<size_t> pending;
+    enum class PfState : uint8_t { IDLE, REQUESTED, READY, QUIT };
+    std::thread pfWorker;
+    std::mutex pfMutex;
+    std::condition_variable pfCv;
+    PfState pfState = PfState::IDLE;
+    T * pfDst = nullptr;
+    size_t pfReadCount = 0;
+    // Fetch ahead only after two consecutive full sequential reads, so
+    // seek-heavy access does not keep reading chunks it then discards.
+    uint8_t pfSeqRuns = 0;
 
     ReadBuffer() : fp(nullptr), p(nullptr), size(0), capacity(0), start(nullptr), end(nullptr) {}
 
@@ -346,6 +357,7 @@ struct ReadBuffer {
             half[0] = allocBase;
             half[1] = allocBase + halfStride;
             start = half[0] + PREFETCH_HEADROOM;
+            pfWorker = std::thread(&ReadBuffer::pfLoop, this);
         } else {
             allocBase = (T *) calloc(sizeOfBuffer, sizeof(T));
             start = allocBase;
@@ -355,8 +367,15 @@ struct ReadBuffer {
     };
 
     ~ReadBuffer() {
-        if (pending.valid()) {
-            pending.get(); // never free/close under a running background read
+        if (pfWorker.joinable()) {
+            {
+                std::unique_lock<std::mutex> lock(pfMutex);
+                // Let an in-flight read finish; never free/close under it.
+                pfCv.wait(lock, [this] { return pfState != PfState::REQUESTED; });
+                pfState = PfState::QUIT;
+            }
+            pfCv.notify_all();
+            pfWorker.join();
         }
         if (fp) {
             fclose(fp);
@@ -366,23 +385,52 @@ struct ReadBuffer {
         }
     };
 
+    void pfLoop() {
+        std::unique_lock<std::mutex> lock(pfMutex);
+        for (;;) {
+            pfCv.wait(lock, [this] {
+                return pfState == PfState::REQUESTED || pfState == PfState::QUIT;
+            });
+            if (pfState == PfState::QUIT) {
+                return;
+            }
+            T * dst = pfDst;
+            lock.unlock();
+            const size_t n = profFread(dst, sizeof(T), capacity, fp);
+            lock.lock();
+            pfReadCount = n;
+            pfState = PfState::READY;
+            pfCv.notify_all();
+        }
+    }
+
     void kickPrefetch() {
-        T * dst = half[1 - active] + PREFETCH_HEADROOM;
-        FILE * f = fp;
-        const size_t cap = capacity;
-        pending = std::async(std::launch::async, [dst, f, cap]() {
-            return profFread(dst, sizeof(T), cap, f);
-        });
+        {
+            std::lock_guard<std::mutex> lock(pfMutex);
+            pfDst = half[1 - active] + PREFETCH_HEADROOM;
+            pfState = PfState::REQUESTED;
+        }
+        pfCv.notify_all();
+    }
+
+    // If a prefetch is in flight or done, wait for it and claim its result.
+    bool reapPrefetch(size_t & readCount) {
+        std::unique_lock<std::mutex> lock(pfMutex);
+        if (pfState == PfState::IDLE) {
+            return false;
+        }
+        pfCv.wait(lock, [this] { return pfState == PfState::READY; });
+        readCount = pfReadCount;
+        pfState = PfState::IDLE;
+        return true;
     }
 
     size_t loadBuffer(size_t unused = 0) {
         if (prefetching) {
             T * dst = half[1 - active] + PREFETCH_HEADROOM;
             size_t readCount;
-            if (pending.valid()) {
-                readCount = pending.get();
-            } else {
-                // Cold start (first fill, or resumed after a short read).
+            if (!reapPrefetch(readCount)) {
+                // No read in flight (cold start, after a seek, or past EOF).
                 readCount = profFread(dst, sizeof(T), capacity, fp);
             }
             if (unused > 0) { // carried tail fits in the headroom (max-size delta)
@@ -394,7 +442,14 @@ struct ReadBuffer {
             end = dst + readCount;
             size = readCount + unused;
             if (readCount == capacity) { // short read = EOF: nothing left to fetch
-                kickPrefetch();
+                if (pfSeqRuns < 2) {
+                    ++pfSeqRuns;
+                }
+                if (pfSeqRuns >= 2) {
+                    kickPrefetch();
+                }
+            } else {
+                pfSeqRuns = 0;
             }
             return readCount + unused;
         }
@@ -426,9 +481,9 @@ struct ReadBuffer {
     // seek.
     size_t loadBufferAt(size_t offset, size_t maxCount) {
         if (prefetching) {
-            if (pending.valid()) {
-                pending.get(); // repositioning: discard the fetched chunk
-            }
+            size_t discarded;
+            reapPrefetch(discarded); // repositioning: discard any fetched chunk
+            pfSeqRuns = 0;
             fseek(fp, offset * sizeof(T), SEEK_SET);
             T * dst = half[active] + PREFETCH_HEADROOM;
             size_t readCount = profFread(dst, sizeof(T), std::min(maxCount, capacity), fp);
@@ -436,9 +491,6 @@ struct ReadBuffer {
             start = dst;
             end = dst + readCount;
             p = start;
-            if (readCount == capacity) {
-                kickPrefetch();
-            }
             return readCount;
         }
         fseek(fp, offset * sizeof(T), SEEK_SET);
