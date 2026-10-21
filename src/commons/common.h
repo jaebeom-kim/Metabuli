@@ -281,16 +281,23 @@ inline std::atomic<uint64_t> & ioProfBytes() {
     static std::atomic<uint64_t> v{0};
     return v;
 }
-// --- Optional read-ahead (METABULI_PREFETCH=1) -------------------------------
-// Eligible ReadBuffers switch to a double-buffered mode: while the consumer
-// drains one half, a background task freads the next chunk into the other
-// half, overlapping disk reads with decoding/compute.
-inline bool ioPrefetchEnabled() {
-    static const bool enabled = []() {
+// --- Adaptive read-ahead (METABULI_PREFETCH) ---------------------------------
+// Eligible ReadBuffers can switch to a double-buffered mode: while the
+// consumer drains one half, a background worker freads the next chunk into
+// the other half, overlapping disk reads with decoding/compute. Overlap only
+// pays when reads actually block on the device; on page-cache hits it costs
+// handshakes, cross-core cache transfers, and extra memcpy CPU. By default
+// each stream therefore decides for itself from its measured fread speed
+// (auto). METABULI_PREFETCH=1 forces overlap on, =0 forces it off.
+inline int ioPrefetchMode() { // 0 = forced off, 1 = forced on, 2 = auto
+    static const int mode = []() {
         const char * v = getenv("METABULI_PREFETCH");
-        return v != nullptr && strcmp(v, "0") != 0;
+        if (v == nullptr) {
+            return 2;
+        }
+        return (strcmp(v, "0") == 0) ? 0 : 1;
     }();
-    return enabled;
+    return mode;
 }
 
 inline size_t profFread(void * buf, size_t size, size_t count, FILE * fp) {
@@ -334,9 +341,51 @@ struct ReadBuffer {
     PfState pfState = PfState::IDLE;
     T * pfDst = nullptr;
     size_t pfReadCount = 0;
+    double pfReadNs = 0.0;
     // Fetch ahead only after two consecutive full sequential reads, so
     // seek-heavy access does not keep reading chunks it then discards.
     uint8_t pfSeqRuns = 0;
+    // Auto mode: overlap only while reads are device-bound. Every fread (sync
+    // or worker) is timed; the EMA is updated by the consumer thread alone.
+    // Hysteresis: slower than ~3 GB/s turns overlap on, faster than ~6 GB/s
+    // (page-cache memcpy speed) turns it off; in between the mode sticks.
+    static constexpr double PF_ON_NS_PER_BYTE = 1.0 / 3.0;
+    static constexpr double PF_OFF_NS_PER_BYTE = 1.0 / 6.0;
+    uint8_t pfMode = 0;          // resolved METABULI_PREFETCH (0/1/2=auto)
+    bool pipelining = false;     // auto-mode decision; starts synchronous
+    double emaNsPerByte = 0.0;   // 0 = no sample yet
+
+    void updateEma(double ns, size_t bytes) {
+        if (bytes == 0) {
+            return;
+        }
+        const double nsPerByte = ns / double(bytes);
+        emaNsPerByte = (emaNsPerByte == 0.0)
+                           ? nsPerByte
+                           : 0.875 * emaNsPerByte + 0.125 * nsPerByte;
+    }
+
+    // Timed synchronous read on the consumer thread (feeds the EMA).
+    size_t timedFread(T * dst, size_t count) {
+        const auto t0 = std::chrono::steady_clock::now();
+        const size_t n = profFread(dst, sizeof(T), count, fp);
+        const double ns = (double) std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - t0).count();
+        updateEma(ns, n * sizeof(T));
+        return n;
+    }
+
+    bool wantPipeline() {
+        if (pfMode != 2) {
+            return pfMode == 1;
+        }
+        if (emaNsPerByte > PF_ON_NS_PER_BYTE) {
+            pipelining = true;
+        } else if (emaNsPerByte != 0.0 && emaNsPerByte < PF_OFF_NS_PER_BYTE) {
+            pipelining = false;
+        }
+        return pipelining;
+    }
 
     ReadBuffer() : fp(nullptr), p(nullptr), size(0), capacity(0), start(nullptr), end(nullptr) {}
 
@@ -348,7 +397,8 @@ struct ReadBuffer {
         }
         capacity = sizeOfBuffer;
         size = 0;
-        prefetching = prefetchEligible && ioPrefetchEnabled();
+        pfMode = (uint8_t) ioPrefetchMode();
+        prefetching = prefetchEligible && pfMode != 0;
         if (prefetching) {
             const size_t halfStride = PREFETCH_HEADROOM + capacity;
             // Small tail pad keeps wide (8-byte) decoder loads near EOF inside
@@ -396,9 +446,13 @@ struct ReadBuffer {
             }
             T * dst = pfDst;
             lock.unlock();
+            const auto t0 = std::chrono::steady_clock::now();
             const size_t n = profFread(dst, sizeof(T), capacity, fp);
+            const double ns = (double) std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - t0).count();
             lock.lock();
             pfReadCount = n;
+            pfReadNs = ns;
             pfState = PfState::READY;
             pfCv.notify_all();
         }
@@ -422,6 +476,8 @@ struct ReadBuffer {
         pfCv.wait(lock, [this] { return pfState == PfState::READY; });
         readCount = pfReadCount;
         pfState = PfState::IDLE;
+        lock.unlock();
+        updateEma(pfReadNs, readCount * sizeof(T)); // consumer-thread-only EMA
         return true;
     }
 
@@ -430,8 +486,9 @@ struct ReadBuffer {
             T * dst = half[1 - active] + PREFETCH_HEADROOM;
             size_t readCount;
             if (!reapPrefetch(readCount)) {
-                // No read in flight (cold start, after a seek, or past EOF).
-                readCount = profFread(dst, sizeof(T), capacity, fp);
+                // No read in flight (cold start, synchronous mode, after a
+                // seek, or past EOF).
+                readCount = timedFread(dst, capacity);
             }
             if (unused > 0) { // carried tail fits in the headroom (max-size delta)
                 std::memcpy(dst - unused, end - unused, unused * sizeof(T));
@@ -445,7 +502,7 @@ struct ReadBuffer {
                 if (pfSeqRuns < 2) {
                     ++pfSeqRuns;
                 }
-                if (pfSeqRuns >= 2) {
+                if (pfSeqRuns >= 2 && wantPipeline()) {
                     kickPrefetch();
                 }
             } else {
@@ -486,7 +543,7 @@ struct ReadBuffer {
             pfSeqRuns = 0;
             fseek(fp, offset * sizeof(T), SEEK_SET);
             T * dst = half[active] + PREFETCH_HEADROOM;
-            size_t readCount = profFread(dst, sizeof(T), std::min(maxCount, capacity), fp);
+            size_t readCount = timedFread(dst, std::min(maxCount, capacity));
             size = readCount;
             start = dst;
             end = dst + readCount;
