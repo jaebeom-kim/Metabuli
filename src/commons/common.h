@@ -281,6 +281,12 @@ inline std::atomic<uint64_t> & ioProfBytes() {
     static std::atomic<uint64_t> v{0};
     return v;
 }
+// Chunks fetched ahead by prefetch workers; shows whether adaptive read-ahead
+// decided to overlap (printed per search with METABULI_IO_PROF=1).
+inline std::atomic<uint64_t> & ioPrefetchChunks() {
+    static std::atomic<uint64_t> v{0};
+    return v;
+}
 // --- Adaptive read-ahead (METABULI_PREFETCH) ---------------------------------
 // Eligible ReadBuffers can switch to a double-buffered mode: while the
 // consumer drains one half, a background worker freads the next chunk into
@@ -347,10 +353,13 @@ struct ReadBuffer {
     uint8_t pfSeqRuns = 0;
     // Auto mode: overlap only while reads are device-bound. Every fread (sync
     // or worker) is timed; the EMA is updated by the consumer thread alone.
-    // Hysteresis: slower than ~3 GB/s turns overlap on, faster than ~6 GB/s
-    // (page-cache memcpy speed) turns it off; in between the mode sticks.
-    static constexpr double PF_ON_NS_PER_BYTE = 1.0 / 3.0;
-    static constexpr double PF_OFF_NS_PER_BYTE = 1.0 / 6.0;
+    // Thresholds are PER-THREAD speeds under full concurrency, where all
+    // search threads share the device/DRAM bandwidth: measured ~34 MB/s per
+    // thread on cold NVMe streams vs ~3.4 GB/s per thread on page-cache hits
+    // (128 threads). Hysteresis sits in that two-orders-of-magnitude gap:
+    // slower than 250 MB/s turns overlap on, faster than 1 GB/s turns it off.
+    static constexpr double PF_ON_NS_PER_BYTE = 4.0;  // < 250 MB/s
+    static constexpr double PF_OFF_NS_PER_BYTE = 1.0; // > 1 GB/s
     uint8_t pfMode = 0;          // resolved METABULI_PREFETCH (0/1/2=auto)
     bool pipelining = false;     // auto-mode decision; starts synchronous
     double emaNsPerByte = 0.0;   // 0 = no sample yet
@@ -465,6 +474,7 @@ struct ReadBuffer {
             pfState = PfState::REQUESTED;
         }
         pfCv.notify_all();
+        ioPrefetchChunks().fetch_add(1, std::memory_order_relaxed);
     }
 
     // If a prefetch is in flight or done, wait for it and claim its result.
