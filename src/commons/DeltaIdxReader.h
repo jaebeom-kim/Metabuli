@@ -128,11 +128,6 @@ public:
 };
 class DeltaIdxReader {
 private:
-    // Readahead window hinted to the kernel for the sequential diffIdx scan.
-    // Covers several NVMe requests in flight to lift effective bandwidth above
-    // the blocking-fread (queue-depth ~1) ceiling. Page-cache only, L2-safe.
-    static constexpr size_t DIFFIDX_PREFETCH_BYTES = 2u << 20; // 2 MB
-
     std::string deltaIdxFileName;
     std::string infoFileName;
     std::string posFileName;
@@ -483,9 +478,6 @@ public:
             // budget for the byte-granular LEB128 stream.
             deltaByteBuffer = std::make_unique<ReadBuffer<uint8_t>>(deltaIdxFileName,
                                                                     readBufferSize * 2);
-            deltaByteBuffer->enablePrefetch(DIFFIDX_PREFETCH_BYTES);
-        } else {
-            deltaIdxBuffer.enablePrefetch(DIFFIDX_PREFETCH_BYTES);
         }
         infoIsPacked = infoMetadata.isPacked();
         // The on-demand fetch window is deliberately small: a seek costs one
@@ -546,9 +538,6 @@ public:
         if (diffIdxFormat == 1) {
             deltaByteBuffer = std::make_unique<ReadBuffer<uint8_t>>(deltaIdxFileName,
                                                                     readBufferSize * 2);
-            deltaByteBuffer->enablePrefetch(DIFFIDX_PREFETCH_BYTES);
-        } else {
-            deltaIdxBuffer.enablePrefetch(DIFFIDX_PREFETCH_BYTES);
         }
         // Position DBs pack their info index like any other DB; positions live
         // in a separate file read in lockstep with the (plain or packed) IDs.
