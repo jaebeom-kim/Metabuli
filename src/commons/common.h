@@ -2,6 +2,8 @@
 #define ADCLASSIFIER2_COMMON_H
 #include <cstddef>
 #include <utility>
+#include <cstdio>
+#include <fcntl.h>
 
 #include <iostream>
 #include <unordered_set>
@@ -268,6 +270,24 @@ struct ReadBuffer {
     size_t capacity;
     T * start;
     T * end;
+    // Opt-in readahead: when prefetchBytes > 0, loadBuffer/loadBufferAt hint the
+    // kernel (POSIX_FADV_WILLNEED) to pull the upcoming region into page cache so
+    // the device keeps reads in flight instead of stalling per blocking fread.
+    // The hint touches page cache only, not this buffer, so it is L2-cache safe.
+    size_t prefetchBytes = 0;
+    long long nextAdviseOff = 0;
+
+    void enablePrefetch(size_t windowBytes) { prefetchBytes = windowBytes; }
+
+    inline void maybePrefetch() {
+#if defined(POSIX_FADV_WILLNEED)
+        if (prefetchBytes == 0 || fp == nullptr) return;
+        long long cur = (long long) ftello(fp);
+        if (cur < 0 || cur < nextAdviseOff) return;         // already advised ahead
+        posix_fadvise(fileno(fp), (off_t) cur, (off_t) prefetchBytes, POSIX_FADV_WILLNEED);
+        nextAdviseOff = cur + (long long)(prefetchBytes / 2); // re-advise after half a window
+#endif
+    }
 
     ReadBuffer() : fp(nullptr), p(nullptr), size(0), capacity(0), start(nullptr), end(nullptr) {}
 
@@ -301,6 +321,7 @@ struct ReadBuffer {
         size = readCount + unused;
         end = start + readCount + unused;
         p = start;
+        maybePrefetch();
         return readCount + unused;
     }
 
@@ -326,6 +347,8 @@ struct ReadBuffer {
         size = readCount;
         end = start + readCount;
         p = start;
+        nextAdviseOff = 0;   // seek broke the sequential window; re-advise from here
+        maybePrefetch();
         return readCount;
     }
 };
