@@ -496,17 +496,20 @@ public:
     // deferInitialFill: skip the constructor's decode of the first buffer from
     // file offset 0. Callers that always setReadPosition() before reading
     // (classify-time matchKmers*) would otherwise pay a wasted read + decode.
+    // prefetch: mark the stream buffers eligible for double-buffered
+    // read-ahead (active only with METABULI_PREFETCH=1; see common.h).
     DeltaIdxReader(
         std::string deltaIdxFileName,
         std::string infoFileName,
         size_t valueBufferSize = 32768,
         size_t readBufferSize = 8192,
         bool lazyInfo = false,
-        bool deferInitialFill = false)
+        bool deferInitialFill = false,
+        bool prefetch = false)
         : deltaIdxFileName(deltaIdxFileName),
         infoFileName(infoFileName),
         valueBufferSize(valueBufferSize),
-        deltaIdxBuffer(deltaIdxFileName, readBufferSize),
+        deltaIdxBuffer(deltaIdxFileName, readBufferSize, prefetch),
         infoMetadata(InfoIndex::loadMetadata(infoFileName)),
         lazyInfo(lazyInfo)
     {
@@ -518,7 +521,8 @@ public:
             // readBufferSize is a uint16 count historically; keep the same byte
             // budget for the byte-granular LEB128 stream.
             deltaByteBuffer = std::make_unique<ReadBuffer<uint8_t>>(deltaIdxFileName,
-                                                                    readBufferSize * 2);
+                                                                    readBufferSize * 2,
+                                                                    prefetch);
         }
         infoIsPacked = infoMetadata.isPacked();
         // The on-demand fetch window is deliberately small: a seek costs one
@@ -533,23 +537,27 @@ public:
             totalValueNum = infoMetadata.idCount;
             if (lazyInfo) {
                 fetchWordBuffer = std::make_unique<ReadBuffer<uint64_t>>(infoFileName,
-                                                                         FETCH_WINDOW_WORDS);
+                                                                         FETCH_WINDOW_WORDS,
+                                                                         prefetch);
             } else {
                 // readBufferSize is historically a count of 32-bit IDs. A half-size
                 // uint64 buffer keeps roughly the same byte budget for packed data.
                 const size_t wordBufferSize = std::max<size_t>(1, readBufferSize / 2);
                 packedInfoBuffer = std::make_unique<ReadBuffer<uint64_t>>(infoFileName,
-                                                                          wordBufferSize);
+                                                                          wordBufferSize,
+                                                                          prefetch);
                 packedLane = packedValuesPerWord;
             }
         } else {
             totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
             if (lazyInfo) {
                 fetchPlainBuffer = std::make_unique<ReadBuffer<TaxID>>(infoFileName,
-                                                                      FETCH_WINDOW_IDS);
+                                                                      FETCH_WINDOW_IDS,
+                                                                      prefetch);
             } else {
                 plainInfoBuffer = std::make_unique<ReadBuffer<TaxID>>(infoFileName,
-                                                                      readBufferSize);
+                                                                      readBufferSize,
+                                                                      prefetch);
             }
         }
         if (!deferInitialFill) {
@@ -565,14 +573,15 @@ public:
         std::string posFileName,
         size_t valueBufferSize = 32768,
         size_t readBufferSize = 8192,
-        bool deferInitialFill = false)
+        bool deferInitialFill = false,
+        bool prefetch = false)
         : deltaIdxFileName(deltaIdxFileName),
         infoFileName(infoFileName),
         posFileName(posFileName),
         valueBufferSize(valueBufferSize),
-        deltaIdxBuffer(deltaIdxFileName, readBufferSize),
+        deltaIdxBuffer(deltaIdxFileName, readBufferSize, prefetch),
         infoMetadata(InfoIndex::loadMetadata(infoFileName)),
-        posBuffer(posFileName, readBufferSize)
+        posBuffer(posFileName, readBufferSize, prefetch)
     {
         lastValue = 0;
         valueCnt = 0;
@@ -581,7 +590,8 @@ public:
         diffIdxFormat = loadDiffidxFormat(deltaIdxFileName);
         if (diffIdxFormat == 1) {
             deltaByteBuffer = std::make_unique<ReadBuffer<uint8_t>>(deltaIdxFileName,
-                                                                    readBufferSize * 2);
+                                                                    readBufferSize * 2,
+                                                                    prefetch);
         }
         // Position DBs pack their info index like any other DB; positions live
         // in a separate file read in lockstep with the (plain or packed) IDs.
@@ -592,12 +602,14 @@ public:
             packedIdMask = InfoIndex::maskForBits(packedIdBits);
             const size_t wordBufferSize = std::max<size_t>(1, readBufferSize / 2);
             packedInfoBuffer = std::make_unique<ReadBuffer<uint64_t>>(infoFileName,
-                                                                      wordBufferSize);
+                                                                      wordBufferSize,
+                                                                      prefetch);
             packedLane = packedValuesPerWord;
             totalValueNum = infoMetadata.idCount;
         } else {
             plainInfoBuffer = std::make_unique<ReadBuffer<TaxID>>(infoFileName,
-                                                                  readBufferSize);
+                                                                  readBufferSize,
+                                                                  prefetch);
             totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
         }
         if (!deferInitialFill) {

@@ -175,7 +175,8 @@ bool KmerMatcher::matchKmers(
             SEARCH_VALUE_BUFFER,
             SEARCH_DELTA_BUFFER,
             lazyInfo,
-            true /* deferInitialFill: setReadPosition() seeks before any read */);
+            true /* deferInitialFill: setReadPosition() seeks before any read */,
+            true /* prefetch-eligible (active with METABULI_PREFETCH=1) */);
         std::vector<Kmer> candidates;
         std::vector<Match> filteredMatches;
         std::vector<uint8_t> hammings;
@@ -348,7 +349,8 @@ bool KmerMatcher::matchKmersWithPos(
                 targetKmerPosFileName,
                 SEARCH_VALUE_BUFFER,
                 SEARCH_DELTA_BUFFER,
-                true /* deferInitialFill: setReadPosition() seeks before any read */);
+                true /* deferInitialFill: setReadPosition() seeks before any read */,
+                true /* prefetch-eligible (active with METABULI_PREFETCH=1) */);
         std::vector<Kmer> candidates;
         std::vector<MatchWithPos> filteredMatches;
         std::vector<uint8_t> hammings;
@@ -560,7 +562,8 @@ bool KmerMatcher::matchKmers_AA(
             = new DeltaIdxReader(db + "/diffIdx",
                                  db + "/info",
                                  SEARCH_VALUE_BUFFER, SEARCH_DELTA_BUFFER, false,
-                                 true /* deferInitialFill: setReadPosition() seeks before any read */);
+                                 true /* deferInitialFill: setReadPosition() seeks before any read */,
+                                 true /* prefetch-eligible (active with METABULI_PREFETCH=1) */);
         std::vector<Match_AA> tempMatches;  
     
         #pragma omp for schedule(dynamic, 1)

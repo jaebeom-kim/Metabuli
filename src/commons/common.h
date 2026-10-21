@@ -17,6 +17,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
+#include <future>
 
 #include "LocalParameters.h"
 #include "TaxonomyWrapper.h"
@@ -279,6 +281,18 @@ inline std::atomic<uint64_t> & ioProfBytes() {
     static std::atomic<uint64_t> v{0};
     return v;
 }
+// --- Optional read-ahead (METABULI_PREFETCH=1) -------------------------------
+// Eligible ReadBuffers switch to a double-buffered mode: while the consumer
+// drains one half, a background task freads the next chunk into the other
+// half, overlapping disk reads with decoding/compute.
+inline bool ioPrefetchEnabled() {
+    static const bool enabled = []() {
+        const char * v = getenv("METABULI_PREFETCH");
+        return v != nullptr && strcmp(v, "0") != 0;
+    }();
+    return enabled;
+}
+
 inline size_t profFread(void * buf, size_t size, size_t count, FILE * fp) {
     if (likely(!ioProfEnabled())) {
         return fread(buf, size, count, fp);
@@ -301,32 +315,89 @@ struct ReadBuffer {
     size_t capacity;
     T * start;
     T * end;
+    // Double-buffered read-ahead (constructor-eligible + METABULI_PREFETCH=1):
+    // two halves alternate between "being drained" and "being filled by a
+    // background fread". Each half keeps a small headroom in front so
+    // loadBuffer(unused) can place the carried-over tail right before the
+    // prefetched data without moving it.
+    static constexpr size_t PREFETCH_HEADROOM = 16;
+    T * allocBase = nullptr;
+    T * half[2] = {nullptr, nullptr};
+    int active = 0;
+    bool prefetching = false;
+    std::future<size_t> pending;
 
     ReadBuffer() : fp(nullptr), p(nullptr), size(0), capacity(0), start(nullptr), end(nullptr) {}
 
-    explicit ReadBuffer(std::string file, size_t sizeOfBuffer=100) {
+    explicit ReadBuffer(std::string file, size_t sizeOfBuffer=100, bool prefetchEligible=false) {
         fp = fopen(file.c_str(), "rb");
         if (!fp) {
             std::cerr << "Error opening file: " << file << std::endl;
             exit(EXIT_FAILURE);
         }
-        p = (T *) calloc(sizeOfBuffer, sizeof(T));
         capacity = sizeOfBuffer;
         size = 0;
-        start = p;
-        end = p;
+        prefetching = prefetchEligible && ioPrefetchEnabled();
+        if (prefetching) {
+            const size_t halfStride = PREFETCH_HEADROOM + capacity;
+            // Small tail pad keeps wide (8-byte) decoder loads near EOF inside
+            // the allocation when the last half ends flush with it.
+            allocBase = (T *) calloc(2 * halfStride + PREFETCH_HEADROOM, sizeof(T));
+            half[0] = allocBase;
+            half[1] = allocBase + halfStride;
+            start = half[0] + PREFETCH_HEADROOM;
+        } else {
+            allocBase = (T *) calloc(sizeOfBuffer, sizeof(T));
+            start = allocBase;
+        }
+        p = start;
+        end = start;
     };
 
     ~ReadBuffer() {
+        if (pending.valid()) {
+            pending.get(); // never free/close under a running background read
+        }
         if (fp) {
             fclose(fp);
         }
-        if (start) {
-            free(start);
+        if (allocBase) {
+            free(allocBase);
         }
     };
 
+    void kickPrefetch() {
+        T * dst = half[1 - active] + PREFETCH_HEADROOM;
+        FILE * f = fp;
+        const size_t cap = capacity;
+        pending = std::async(std::launch::async, [dst, f, cap]() {
+            return profFread(dst, sizeof(T), cap, f);
+        });
+    }
+
     size_t loadBuffer(size_t unused = 0) {
+        if (prefetching) {
+            T * dst = half[1 - active] + PREFETCH_HEADROOM;
+            size_t readCount;
+            if (pending.valid()) {
+                readCount = pending.get();
+            } else {
+                // Cold start (first fill, or resumed after a short read).
+                readCount = profFread(dst, sizeof(T), capacity, fp);
+            }
+            if (unused > 0) { // carried tail fits in the headroom (max-size delta)
+                std::memcpy(dst - unused, end - unused, unused * sizeof(T));
+            }
+            active = 1 - active;
+            start = dst - unused;
+            p = start;
+            end = dst + readCount;
+            size = readCount + unused;
+            if (readCount == capacity) { // short read = EOF: nothing left to fetch
+                kickPrefetch();
+            }
+            return readCount + unused;
+        }
         memmove(start,                   // dest
                 start + (size - unused), // src
                 unused * sizeof(T));     // bytes
@@ -340,7 +411,7 @@ struct ReadBuffer {
     inline T getNext() {
         if (p >= end) {
             if(loadBuffer() == 0) {
-               return T(); // Return default value if no more data 
+               return T(); // Return default value if no more data
             }
         }
         return *p++;
@@ -354,6 +425,22 @@ struct ReadBuffer {
     // caller doing sparse random reads avoid paying a full-capacity read per
     // seek.
     size_t loadBufferAt(size_t offset, size_t maxCount) {
+        if (prefetching) {
+            if (pending.valid()) {
+                pending.get(); // repositioning: discard the fetched chunk
+            }
+            fseek(fp, offset * sizeof(T), SEEK_SET);
+            T * dst = half[active] + PREFETCH_HEADROOM;
+            size_t readCount = profFread(dst, sizeof(T), std::min(maxCount, capacity), fp);
+            size = readCount;
+            start = dst;
+            end = dst + readCount;
+            p = start;
+            if (readCount == capacity) {
+                kickPrefetch();
+            }
+            return readCount;
+        }
         fseek(fp, offset * sizeof(T), SEEK_SET);
         size_t readCount = profFread(start, sizeof(T), std::min(maxCount, capacity), fp);
         size = readCount;
