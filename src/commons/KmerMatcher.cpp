@@ -152,7 +152,13 @@ bool KmerMatcher::matchKmers(
         // Lazy info (--lazy-info 1): tax IDs are fetched per AA-matched
         // candidate group instead of being streamed alongside the metamers, so
         // info-file regions that never match a query are never read.
-        DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(db + "/diffIdx", db + "/info", SEARCH_VALUE_BUFFER, SEARCH_DELTA_BUFFER, lazyInfo);
+        DeltaIdxReader * deltaIdxReaders = new DeltaIdxReader(
+            db + "/diffIdx",
+            db + "/info",
+            SEARCH_VALUE_BUFFER,
+            SEARCH_DELTA_BUFFER,
+            lazyInfo,
+            true /* deferInitialFill: setReadPosition() seeks before any read */);
         std::vector<Kmer> candidates;
         std::vector<Match> filteredMatches;
         std::vector<uint8_t> hammings;
@@ -321,7 +327,8 @@ bool KmerMatcher::matchKmersWithPos(
                 targetInfoFileName,
                 targetKmerPosFileName,
                 SEARCH_VALUE_BUFFER,
-                SEARCH_DELTA_BUFFER);
+                SEARCH_DELTA_BUFFER,
+                true /* deferInitialFill: setReadPosition() seeks before any read */);
         std::vector<Kmer> candidates;
         std::vector<MatchWithPos> filteredMatches;
         std::vector<uint8_t> hammings;
@@ -471,13 +478,20 @@ std::vector<QueryKmerSplit> KmerMatcher::makeQueryKmerSplits(
         }
     }
 
-    // Divide query k-mer list into blocks for multi threading.
+    // Divide query k-mer list into blocks for multi threading. Oversplit
+    // relative to the thread count so schedule(dynamic) can balance
+    // match-dense regions and the number of concurrent I/O streams does not
+    // decay to the few threads holding the slowest splits. Each extra split
+    // rescans from its anchor, so the overhead is bounded by the anchor count.
+    size_t numSplits = std::min(static_cast<size_t>(par.threads) * 4, numOfDiffIdxSplits_use);
+    numSplits = std::max(numSplits, static_cast<size_t>(par.threads)); // at least one split per thread
+    numSplits = std::max<size_t>(std::min(numSplits, queryKmerNum), 1);
     std::vector<QueryKmerSplit> querySplits;
-    size_t quotient = queryKmerNum / par.threads;
-    size_t remainder = queryKmerNum % par.threads;
+    size_t quotient = queryKmerNum / numSplits;
+    size_t remainder = queryKmerNum % numSplits;
     size_t startIdx = blankCnt;
     size_t endIdx = 0; // endIdx is inclusive
-    for (int i = 0; i < par.threads; i++) {
+    for (size_t i = 0; i < numSplits; i++) {
         endIdx = startIdx + quotient - 1;
         if (remainder > 0) {
             endIdx++;
@@ -521,10 +535,11 @@ bool KmerMatcher::matchKmers_AA(
     #pragma omp parallel default(none), shared(totalOverFlowCnt, db, querySplits, qKmers, totalMatches, cout)
     {
         Buffer<Match_AA> localMatches(1024 * 1024 * 2);  // 16 Mb
-        DeltaIdxReader * deltaIdxReaders 
+        DeltaIdxReader * deltaIdxReaders
             = new DeltaIdxReader(db + "/diffIdx",
-                                 db + "/info", 
-                                 SEARCH_VALUE_BUFFER, SEARCH_DELTA_BUFFER);
+                                 db + "/info",
+                                 SEARCH_VALUE_BUFFER, SEARCH_DELTA_BUFFER, false,
+                                 true /* deferInitialFill: setReadPosition() seeks before any read */);
         std::vector<Match_AA> tempMatches;  
     
         #pragma omp for schedule(dynamic, 1)

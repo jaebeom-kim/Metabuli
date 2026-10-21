@@ -456,12 +456,16 @@ public:
         return fmt;
     }
 
+    // deferInitialFill: skip the constructor's decode of the first buffer from
+    // file offset 0. Callers that always setReadPosition() before reading
+    // (classify-time matchKmers*) would otherwise pay a wasted read + decode.
     DeltaIdxReader(
         std::string deltaIdxFileName,
         std::string infoFileName,
         size_t valueBufferSize = 32768,
         size_t readBufferSize = 8192,
-        bool lazyInfo = false)
+        bool lazyInfo = false,
+        bool deferInitialFill = false)
         : deltaIdxFileName(deltaIdxFileName),
         infoFileName(infoFileName),
         valueBufferSize(valueBufferSize),
@@ -511,7 +515,9 @@ public:
                                                                       readBufferSize);
             }
         }
-        fillValueBuffer();
+        if (!deferInitialFill) {
+            fillValueBuffer();
+        }
     }
 
     // Position-index variant: a plain (unpacked) info index read in lockstep
@@ -521,7 +527,8 @@ public:
         std::string infoFileName,
         std::string posFileName,
         size_t valueBufferSize = 32768,
-        size_t readBufferSize = 8192)
+        size_t readBufferSize = 8192,
+        bool deferInitialFill = false)
         : deltaIdxFileName(deltaIdxFileName),
         infoFileName(infoFileName),
         posFileName(posFileName),
@@ -556,7 +563,9 @@ public:
                                                                   readBufferSize);
             totalValueNum = FileUtil::getFileSize(infoFileName) / sizeof(TaxID);
         }
-        fillValueBuffer();
+        if (!deferInitialFill) {
+            fillValueBuffer();
+        }
     }
 
     ~DeltaIdxReader() {
