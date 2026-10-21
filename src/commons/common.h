@@ -14,6 +14,9 @@
 #include <mutex>
 #include <condition_variable>
 #include <cmath>
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
 
 #include "LocalParameters.h"
 #include "TaxonomyWrapper.h"
@@ -260,6 +263,36 @@ struct Buffer {
     }
 };
 
+// --- Optional I/O profiling (METABULI_IO_PROF=1) -----------------------------
+// Accumulates wall time spent blocked in ReadBuffer freads and bytes read,
+// summed across threads. KmerMatcher prints per-search deltas when the env
+// var is set; otherwise the only overhead is a cached-bool check per refill.
+inline bool ioProfEnabled() {
+    static const bool enabled = getenv("METABULI_IO_PROF") != nullptr;
+    return enabled;
+}
+inline std::atomic<uint64_t> & ioProfNanos() {
+    static std::atomic<uint64_t> v{0};
+    return v;
+}
+inline std::atomic<uint64_t> & ioProfBytes() {
+    static std::atomic<uint64_t> v{0};
+    return v;
+}
+inline size_t profFread(void * buf, size_t size, size_t count, FILE * fp) {
+    if (likely(!ioProfEnabled())) {
+        return fread(buf, size, count, fp);
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    const size_t readCount = fread(buf, size, count, fp);
+    ioProfNanos().fetch_add(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - t0).count(),
+        std::memory_order_relaxed);
+    ioProfBytes().fetch_add(readCount * size, std::memory_order_relaxed);
+    return readCount;
+}
+
 template<typename T>
 struct ReadBuffer {
     FILE * fp;
@@ -297,7 +330,7 @@ struct ReadBuffer {
         memmove(start,                   // dest
                 start + (size - unused), // src
                 unused * sizeof(T));     // bytes
-        size_t readCount = fread(start + unused, sizeof(T), capacity - unused, fp);
+        size_t readCount = profFread(start + unused, sizeof(T), capacity - unused, fp);
         size = readCount + unused;
         end = start + readCount + unused;
         p = start;
@@ -322,7 +355,7 @@ struct ReadBuffer {
     // seek.
     size_t loadBufferAt(size_t offset, size_t maxCount) {
         fseek(fp, offset * sizeof(T), SEEK_SET);
-        size_t readCount = fread(start, sizeof(T), std::min(maxCount, capacity), fp);
+        size_t readCount = profFread(start, sizeof(T), std::min(maxCount, capacity), fp);
         size = readCount;
         end = start + readCount;
         p = start;

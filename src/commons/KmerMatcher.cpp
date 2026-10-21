@@ -17,6 +17,21 @@
 static constexpr size_t SEARCH_VALUE_BUFFER = 1024 * 16;  // 16K Kmers = 256 KB
 static constexpr size_t SEARCH_DELTA_BUFFER = 1024 * 64;  // 64K uint16 = 128 KB
 
+// METABULI_IO_PROF=1: per-search breakdown of time spent blocked in freads
+// (summed over threads) vs the parallel search wall time.
+static void printIoProf(double wallSec, int threads,
+                        uint64_t ioNanos0, uint64_t ioBytes0) {
+    if (!ioProfEnabled()) {
+        return;
+    }
+    const double waitSec = (ioProfNanos().load() - ioNanos0) / 1e9;
+    const double gib = (ioProfBytes().load() - ioBytes0) / 1073741824.0;
+    const double share = (wallSec > 0 && threads > 0)
+                             ? waitSec / (wallSec * threads) * 100.0 : 0.0;
+    std::cout << "I/O wait (thread sum)  : " << waitSec << " s, " << gib
+              << " GiB read, " << share << "% of search thread-time" << std::endl;
+}
+
 constexpr uint16_t KmerMatcher::HAMMING_LUT0[64];
 constexpr uint16_t KmerMatcher::HAMMING_LUT1[64];
 constexpr uint16_t KmerMatcher::HAMMING_LUT2[64];
@@ -144,6 +159,8 @@ bool KmerMatcher::matchKmers(
 
     std::cout << "Reference k-mer search : " << flush;
     time_t beforeSearch = time(nullptr);
+    const uint64_t ioNanos0 = ioProfEnabled() ? ioProfNanos().load() : 0;
+    const uint64_t ioBytes0 = ioProfEnabled() ? ioProfBytes().load() : 0;
     const bool lazyInfo = par.lazyInfo != 0;
     #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
     querySplits, qKmers, totalMatches, cout, mask, lazyInfo)
@@ -294,6 +311,7 @@ bool KmerMatcher::matchKmers(
         return false;
     }
     std::cout << double(time(nullptr) - beforeSearch) << " s" << std::endl;
+    printIoProf(double(time(nullptr) - beforeSearch), par.threads, ioNanos0, ioBytes0);
     lastMatchCnt = totalMatches->startIndexOfReserve - matchCntBefore;
     totalMatchCnt += lastMatchCnt;
     return true;
@@ -317,6 +335,8 @@ bool KmerMatcher::matchKmersWithPos(
 
     std::cout << "Reference k-mer search : " << flush;
     time_t beforeSearch = time(nullptr);
+    const uint64_t ioNanos0 = ioProfEnabled() ? ioProfNanos().load() : 0;
+    const uint64_t ioBytes0 = ioProfEnabled() ? ioProfBytes().load() : 0;
     #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
     querySplits, qKmers, totalMatches, cout, \
     targetDiffIdxFileName, targetInfoFileName, targetKmerPosFileName)
@@ -448,6 +468,7 @@ bool KmerMatcher::matchKmersWithPos(
         return false;
     }
     std::cout << double(time(nullptr) - beforeSearch) << " s" << std::endl;
+    printIoProf(double(time(nullptr) - beforeSearch), par.threads, ioNanos0, ioBytes0);
     lastMatchCnt = totalMatches->startIndexOfReserve - matchCntBefore;
     totalMatchCnt += lastMatchCnt;
     return true;
