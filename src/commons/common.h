@@ -411,12 +411,13 @@ struct ReadBuffer {
         if (prefetching) {
             const size_t halfStride = PREFETCH_HEADROOM + capacity;
             // Small tail pad keeps wide (8-byte) decoder loads near EOF inside
-            // the allocation when the last half ends flush with it.
+            // the allocation when the last half ends flush with it. The worker
+            // thread is spawned lazily on the first kick, so a stream that
+            // stays synchronous costs no extra thread.
             allocBase = (T *) calloc(2 * halfStride + PREFETCH_HEADROOM, sizeof(T));
             half[0] = allocBase;
             half[1] = allocBase + halfStride;
             start = half[0] + PREFETCH_HEADROOM;
-            pfWorker = std::thread(&ReadBuffer::pfLoop, this);
         } else {
             allocBase = (T *) calloc(sizeOfBuffer, sizeof(T));
             start = allocBase;
@@ -468,6 +469,9 @@ struct ReadBuffer {
     }
 
     void kickPrefetch() {
+        if (!pfWorker.joinable()) {
+            pfWorker = std::thread(&ReadBuffer::pfLoop, this);
+        }
         {
             std::lock_guard<std::mutex> lock(pfMutex);
             pfDst = half[1 - active] + PREFETCH_HEADROOM;
@@ -479,6 +483,9 @@ struct ReadBuffer {
 
     // If a prefetch is in flight or done, wait for it and claim its result.
     bool reapPrefetch(size_t & readCount) {
+        if (!pfWorker.joinable()) { // worker never started: nothing in flight
+            return false;
+        }
         std::unique_lock<std::mutex> lock(pfMutex);
         if (pfState == PfState::IDLE) {
             return false;
@@ -493,17 +500,27 @@ struct ReadBuffer {
 
     size_t loadBuffer(size_t unused = 0) {
         if (prefetching) {
-            T * dst = half[1 - active] + PREFETCH_HEADROOM;
             size_t readCount;
-            if (!reapPrefetch(readCount)) {
-                // No read in flight (cold start, synchronous mode, after a
-                // seek, or past EOF).
+            T * dst = half[1 - active] + PREFETCH_HEADROOM;
+            if (reapPrefetch(readCount)) {
+                // Fresh data sits in the other half; move the carried tail
+                // over and swap. (The carry fits in the headroom.)
+                if (unused > 0) {
+                    std::memcpy(dst - unused, end - unused, unused * sizeof(T));
+                }
+                active = 1 - active;
+            } else {
+                // Synchronous read (cold start, sync mode, after a seek, or
+                // past EOF): reuse the CURRENT half so a stream that stays
+                // synchronous touches the same memory as non-prefetch mode.
+                // Save the carry into the headroom before overwriting it
+                // (end == dst after an EOF tail: already in place, skip).
+                dst = half[active] + PREFETCH_HEADROOM;
+                if (unused > 0 && end != dst) {
+                    std::memcpy(dst - unused, end - unused, unused * sizeof(T));
+                }
                 readCount = timedFread(dst, capacity);
             }
-            if (unused > 0) { // carried tail fits in the headroom (max-size delta)
-                std::memcpy(dst - unused, end - unused, unused * sizeof(T));
-            }
-            active = 1 - active;
             start = dst - unused;
             p = start;
             end = dst + readCount;
