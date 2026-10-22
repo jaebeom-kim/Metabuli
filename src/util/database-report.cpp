@@ -1,6 +1,7 @@
 #include "TaxonomyWrapper.h"
 #include "LocalParameters.h"
 #include <Command.h>
+#include <algorithm>
 #include <string>
 #include <iostream>
 #include "IndexCreator.h"
@@ -26,26 +27,45 @@ int databaseReport(int argc, const char **argv, const Command &command) {
     TaxonomyWrapper * taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
     bool internalTaxid = taxonomy->hasInternalTaxID();
 
-    Reporter reporter(par, taxonomy, dbDir + "/database_report.tsv");
+    // --sub-dbs selects which k-mer lists to report on; the report file name
+    // carries the selection so per-sub-DB reports don't overwrite each other.
+    string reportName = "database_report.tsv";
+    if (!par.subDbList.empty()) {
+        string suffix = par.subDbList;
+        std::replace(suffix.begin(), suffix.end(), ',', '_');
+        reportName = "database_report_" + suffix + ".tsv";
+    }
+    const string reportPath = dbDir + "/" + reportName;
+    Reporter reporter(par, taxonomy, reportPath);
 
     vector<int> taxids;
     if (internalTaxid) {
         cout << "Using internal tax IDs." << endl;
-        string taxIdList = dbDir + "/taxID_list";
-        if (!FileUtil::fileExists(taxIdList.c_str())) {
-            cerr << "Error: taxID_list file " << taxIdList << " does not exist in the provided DBDIR." << endl;
-            return 1;
+        // Each sub-DB keeps its own taxID_list; a legacy single-list database
+        // resolves to one "base" entry whose dir is dbDir itself.
+        vector<SubDbEntry> subDbs = resolveSubDbs(dbDir, par.subDbList);
+        for (const SubDbEntry & sub : subDbs) {
+            const string taxIdList = sub.dir + "/taxID_list";
+            ifstream taxIdListFile(taxIdList);
+            if (!taxIdListFile.is_open()) {
+                cerr << "Error: could not open taxID_list file " << taxIdList << endl;
+                return 1;
+            }
+            string line;
+            while (getline(taxIdListFile, line)) {
+                if (!line.empty()) {
+                    taxids.push_back(stoi(line));
+                }
+            }
         }
-        ifstream taxIdListFile(taxIdList);
-        if (!taxIdListFile.is_open()) {
-            cerr << "Error: could not open taxID_list file " << taxIdList << endl;
-            return 1;
-        }
-        string line;
-        while (getline(taxIdListFile, line)) {
-            taxids.push_back(stoi(line));
-        }
+        // The same taxon may appear in several sub-DBs; count it once.
+        std::sort(taxids.begin(), taxids.end());
+        taxids.erase(std::unique(taxids.begin(), taxids.end()), taxids.end());
     } else {
+        if (!par.subDbList.empty()) {
+            cerr << "Warning: --sub-dbs is ignored for databases without internal tax IDs "
+                    "(taxa come from the top-level acc2taxid.map)." << endl;
+        }
         string acc2taxid = dbDir + "/acc2taxid.map";
         if (!FileUtil::fileExists(acc2taxid.c_str())) {
             cerr << "Error: acc2taxid.map file " << acc2taxid << " does not exist in the provided DBDIR." << endl;
@@ -86,7 +106,7 @@ int databaseReport(int argc, const char **argv, const Command &command) {
     }
     // Write new report
     ofstream db_report_file;
-    db_report_file.open(dbDir + "/" + "database_report.tsv");
+    db_report_file.open(reportPath);
     if (db_report_file.is_open()) {
         std::unordered_map<TaxID, std::vector<TaxID>> parentToChildren = taxonomy->getParentToChildren();
         unordered_map<TaxID, TaxonCounts> cladeCounts = taxonomy->getCladeCounts(taxonCounts, parentToChildren);

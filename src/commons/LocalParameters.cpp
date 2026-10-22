@@ -1205,6 +1205,7 @@ LocalParameters::LocalParameters() :
 
     // db report
     databaseReport.push_back(&TAXONOMY_PATH);
+    databaseReport.push_back(&SUB_DB_LIST);
 
     // printInfo
     printInfo.push_back(&INFO_BEGIN);
