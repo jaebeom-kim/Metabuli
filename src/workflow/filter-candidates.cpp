@@ -5,6 +5,7 @@
 #include "CandidateDBReader.h"
 #include "CandidateDBWriter.h"
 #include "DBReader.h"
+#include "TaxonomyWrapper.h"
 
 #include <algorithm>
 #include <atomic>
@@ -58,14 +59,24 @@ std::unordered_map<TaxID, uint64_t> loadGenomeSizes(const std::string &dbDir) {
     return sp2genomeSize;
 }
 
-// Number of distinct species in a read's tie set: the top candidate plus any
-// candidate within its tie margin. Mirrors chooseBestTaxonFromCandidates
-// (score-dependent myTieRatio), so we can predict whether classify-candidates
-// would resolve the read to a single species (size 1) or an LCA of >=2 species.
-// Approximation: uses idScore only (not subScore/priority taxa), so callers
-// should use the same --tie-ratio / --min-score they pass to classify-candidates.
+// True when the lookup is active (--prefer-valid-names) and marks sp as a
+// properly named species (see TaxonomyWrapper::getValidNameSpeciesLookup).
+inline bool isValidNamed(const std::vector<uint8_t> &lookup, TaxID sp) {
+    return sp >= 0 && static_cast<size_t>(sp) < lookup.size() && lookup[sp] != 0;
+}
+
+// Number of distinct species in a read's EFFECTIVE tie set: the top candidate
+// plus any candidate within its tie margin, reduced to its properly named
+// members when --prefer-valid-names is on and the tie mixes valid and
+// placeholder species. Mirrors chooseBestTaxonFromCandidates (score-dependent
+// myTieRatio + the valid-name reduction), so we can predict whether
+// classify-candidates would resolve the read to a single species (size 1) or
+// an LCA of >=2 species. Approximation: uses idScore only (not subScore/
+// priority taxa), so callers should use the same --tie-ratio / --min-score /
+// --prefer-valid-names they pass to classify-candidates.
 size_t tieSetDistinctSpecies(const std::vector<SpeciesCandidate> &cands,
-                             float tieRatio, float minScore) {
+                             float tieRatio, float minScore,
+                             const std::vector<uint8_t> &validLookup) {
     float best = -1.0f;
     for (const SpeciesCandidate &c : cands) {          // candidates are best-first
         if (c.idScore >= minScore) { best = c.idScore; break; }
@@ -79,6 +90,15 @@ size_t tieSetDistinctSpecies(const std::vector<SpeciesCandidate> &cands,
         if (c.idScore < minScore) continue;
         if (c.idScore >= threshold) tied.insert(c.speciesId);
         else break;                                    // best-first: the rest are lower
+    }
+    if (!validLookup.empty()) {
+        size_t validCnt = 0;
+        for (const TaxID sp : tied) {
+            validCnt += isValidNamed(validLookup, sp) ? 1 : 0;
+        }
+        if (validCnt > 0) {
+            return validCnt;
+        }
     }
     return tied.size();
 }
@@ -96,8 +116,14 @@ size_t tieSetDistinctSpecies(const std::vector<SpeciesCandidate> &cands,
 // reads, or when its unique-top fraction (reads it wins as the sole top / reads it
 // wins) is below --min-unique-ratio -- which removes genome-subset "shadow" species
 // that are only ever tied with a true species and would otherwise force genus-level
-// LCAs. The uniqueness gate is applied only to species with at least
-// --min-unique-count top hits, since the fraction is unreliable on thin evidence.
+// LCAs. With --prefer-valid-names, "unique" uses the EFFECTIVE tie set (a tie mixing
+// properly named species with NCBI placeholder labels reduces to its valid members,
+// matching classify-candidates): the sole valid species of a mixed tie gets the
+// unique credit, so a cluster of duplicate taxids of one organism no longer drags
+// the valid species below the uniqueness gate, while the placeholders -- which then
+// almost never win uniquely -- are removed by it. The uniqueness gate is applied
+// only to species with at least --min-unique-count top hits, since the fraction is
+// unreliable on thin evidence.
 // All active gates are conjunctive (AND). Reads whose winner is dropped are
 // rescued onto their next-best survivor. The loop repeats to a fixpoint. Coverage/evenness
 // (--min-adj-evenness, needs k-mer positions + genome sizes) is a coarser outer gate:
@@ -108,7 +134,8 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     CandidateDBReader &reader,
     size_t entryCount,
     const std::unordered_map<TaxID, uint64_t> &sp2genomeSize,
-    const LocalParameters &par)
+    const LocalParameters &par,
+    const std::vector<uint8_t> &validLookup)
 {
     const float minAvgScore = par.minAvgScore;
     const float minAdjEvenness = par.minAdjEvenness;
@@ -134,6 +161,8 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     std::cout << "Score tie ratio        : " << tieRatio
               << (tieRatio >= 1.0f ? " (top hit per read only)" : " (credit hits within margin of the top)") << std::endl;
     std::cout << "Coverage aggregation   : " << (useAllHits ? "all candidate hits" : "top hit per read only") << std::endl;
+    std::cout << "Prefer valid names     : " << (validLookup.empty() ? "off"
+              : "on (mixed valid/placeholder ties count as unique for the sole valid species)") << std::endl;
 
     // --- Load each read's candidate (speciesId, idScore) list once, best-first ---
     // Score and count are then iterated in RAM (no k-mer positions retained);
@@ -155,12 +184,21 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
         }
     }
     const size_t distinctSpecies = alive.size();
+    size_t validNamedSpecies = 0;
+    if (!validLookup.empty()) {
+        for (const TaxID sp : alive) {
+            validNamedSpecies += isValidNamed(validLookup, sp) ? 1 : 0;
+        }
+        std::cout << "Candidate species names: " << validNamedSpecies << " properly named, "
+                  << (distinctSpecies - validNamedSpecies) << " placeholder-named" << std::endl;
+    }
 
     // Per-species score/count from the most recent assignment (kept for reporting).
     std::unordered_map<TaxID, double> speciesScoreSum;
     std::unordered_map<TaxID, uint64_t> speciesScoreCount;
     std::unordered_map<TaxID, uint64_t> speciesUniqueCount; // reads where sp is the sole top (no tie)
     size_t removedByScore = 0, removedByCount = 0, removedByNoReads = 0, removedByEvenness = 0, removedByUniqueRatio = 0;
+    size_t removedPlaceholderByUniqueRatio = 0; // subset of removedByUniqueRatio (only tracked with --prefer-valid-names)
     size_t scoreRounds = 0, coverageRounds = 0;
 
     // Iterate to a fixpoint: reassign each read to its best surviving candidate,
@@ -177,7 +215,9 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
                 float bestScore = -1.0f;
                 float tieThreshold = -1.0f; // bestScore * tieMarginFactor, set once the top is known
                 TaxID topSp = 0;
+                TaxID validTopSp = 0;       // best-scoring properly named species within the margin
                 size_t withinMargin = 0;
+                size_t validWithinMargin = 0;
                 for (const std::pair<TaxID, float> &hit : r) {
                     if (alive.count(hit.first) == 0) {
                         continue; // dropped species do not contribute
@@ -198,12 +238,24 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
                     speciesScoreSum[hit.first] += hit.second;
                     speciesScoreCount[hit.first] += 1;
                     ++withinMargin;
+                    if (!validLookup.empty() && isValidNamed(validLookup, hit.first)) {
+                        if (validWithinMargin == 0) {
+                            validTopSp = hit.first;
+                        }
+                        ++validWithinMargin;
+                    }
                 }
-                // Unique top: exactly one surviving species is within the tie margin,
-                // i.e. the top hit has no tie. A genome-subset "shadow" species is
-                // always tied with its true species, so it wins reads but almost
-                // never uniquely -> a near-zero unique fraction flags it.
-                if (withinMargin == 1) {
+                // Unique top: the read's EFFECTIVE tie set has exactly one member.
+                // A genome-subset "shadow" species is always tied with its true
+                // species, so it wins reads but almost never uniquely -> a
+                // near-zero unique fraction flags it. With --prefer-valid-names,
+                // a tie mixing properly named species with placeholder labels
+                // reduces to its valid members (matching classify-candidates'
+                // resolution), so the sole valid species is credited and the
+                // placeholders are exposed to the uniqueness gate.
+                if (validWithinMargin == 1) {
+                    speciesUniqueCount[validTopSp] += 1;
+                } else if (validWithinMargin == 0 && withinMargin == 1) {
                     speciesUniqueCount[topSp] += 1;
                 }
             }
@@ -237,6 +289,9 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
                     if (uniqueFraction < static_cast<double>(minUniqueRatio)) {
                         toRemove.push_back(sp);
                         ++removedByUniqueRatio;
+                        if (!validLookup.empty() && !isValidNamed(validLookup, sp)) {
+                            ++removedPlaceholderByUniqueRatio;
+                        }
                         continue;
                     }
                 }
@@ -326,7 +381,11 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
     }
     std::cout << "Species removed (score)     : " << removedByScore << std::endl;
     std::cout << "Species removed (count)     : " << removedByCount << std::endl;
-    std::cout << "Species removed (uniqueness): " << removedByUniqueRatio << std::endl;
+    std::cout << "Species removed (uniqueness): " << removedByUniqueRatio;
+    if (!validLookup.empty()) {
+        std::cout << " (" << removedPlaceholderByUniqueRatio << " placeholder-named)";
+    }
+    std::cout << std::endl;
     std::cout << "Species removed (no reads)  : " << removedByNoReads << std::endl;
     std::cout << "Species removed (evenness)  : " << removedByEvenness << std::endl;
     std::cout << "Species kept                : " << alive.size() << std::endl;
@@ -372,7 +431,8 @@ std::unordered_set<TaxID> filterByScoreAndCoverage(
 std::unordered_set<TaxID> filterByEvidenceAndUniqueness(
     CandidateDBReader &reader,
     size_t entryCount,
-    const LocalParameters &par)
+    const LocalParameters &par,
+    const std::vector<uint8_t> &validLookup)
 {
     const float minStrongScore = par.minStrongScore;
     const uint64_t minStrongReads = par.minStrongReads < 0 ? 0 : static_cast<uint64_t>(par.minStrongReads);
@@ -384,6 +444,8 @@ std::unordered_set<TaxID> filterByEvidenceAndUniqueness(
     std::cout << "Min. strong reads      : " << minStrongReads << std::endl;
     std::cout << "Min. unique-top reads  : " << minUniqueReads << std::endl;
     std::cout << "Tie ratio (uniqueness) : " << tieRatio << std::endl;
+    std::cout << "Prefer valid names     : " << (validLookup.empty() ? "off"
+              : "on (mixed valid/placeholder ties count as unique for the sole valid species)") << std::endl;
 
     struct EvidenceStats {
         uint64_t occurrences = 0;   // number of reads this species is a candidate for
@@ -404,14 +466,37 @@ std::unordered_set<TaxID> filterByEvidenceAndUniqueness(
             continue;
         }
 
-        // Candidates are stored best-first: the read's top candidate is unique when
-        // the runner-up is clearly below it (not within the tie margin).
+        // Candidates are stored best-first: the read's tie set is the prefix
+        // within the tie margin (same scaled margin as classify-candidates).
+        // With --prefer-valid-names, a tie mixing properly named species with
+        // placeholder labels reduces to its valid members, so the sole valid
+        // species of a mixed tie gets the unique-top credit (matching
+        // classify-candidates' resolution) instead of nobody.
         const float topScore = cands[0].idScore;
-        const float secondScore = (cands.size() > 1) ? cands[1].idScore : 0.0f;
-        // Same scaled tie margin as classify-candidates: the top is unique when the
-        // runner-up is not strictly above best * tieMarginFactor.
-        const bool topIsUnique = (cands.size() == 1)
-            || (secondScore <= topScore * tieMarginFactor(topScore, tieRatio));
+        const float tieThreshold = topScore * tieMarginFactor(topScore, tieRatio);
+        size_t tieCnt = 1;
+        while (tieCnt < cands.size() && cands[tieCnt].idScore > tieThreshold) {
+            ++tieCnt;
+        }
+        size_t uniqueIdx = cands.size(); // index of the sole effective tie member, if any
+        if (!validLookup.empty()) {
+            size_t validCnt = 0, validIdx = 0;
+            for (size_t idx = 0; idx < tieCnt; ++idx) {
+                if (isValidNamed(validLookup, cands[idx].speciesId)) {
+                    if (validCnt == 0) {
+                        validIdx = idx;
+                    }
+                    ++validCnt;
+                }
+            }
+            if (validCnt == 1) {
+                uniqueIdx = validIdx;
+            } else if (validCnt == 0 && tieCnt == 1) {
+                uniqueIdx = 0;
+            }
+        } else if (tieCnt == 1) {
+            uniqueIdx = 0;
+        }
 
         for (size_t idx = 0; idx < cands.size(); ++idx) {
             const SpeciesCandidate &candidate = cands[idx];
@@ -423,7 +508,7 @@ std::unordered_set<TaxID> filterByEvidenceAndUniqueness(
             if (candidate.idScore >= minStrongScore) {
                 st.strongReads += 1;
             }
-            if (idx == 0 && topIsUnique) {
+            if (idx == uniqueIdx) {
                 st.uniqueTop += 1;
             }
         }
@@ -515,6 +600,7 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     par.minUniqueReads = 2;
     par.tieRatio = 0.99;   // matches setClassifyDefaults (classify-candidates)
     par.minScore = 0.0f;   // matches setClassifyDefaults (classify-candidates)
+    par.preferValidNames = 0;
     setCpuThreadDefault(par); // default threads = available CPUs (pre-parse so --threads overrides)
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
 
@@ -560,13 +646,23 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
     const size_t entryCount = reader.size();
     std::cout << "Candidate DB entries   : " << entryCount << std::endl;
 
+    // --prefer-valid-names: lookup of properly named species (indexed by the
+    // candidate DB's tax IDs; empty = off). Needs the DB's taxonomy, which this
+    // command otherwise never loads, so load (and free) it only when enabled.
+    std::vector<uint8_t> validNameLookup;
+    if (par.preferValidNames) {
+        TaxonomyWrapper *taxonomy = loadTaxonomy(dbDir, par.taxonomyPath);
+        validNameLookup = taxonomy->getValidNameSpeciesLookup();
+        delete taxonomy;
+    }
+
     // --- Select filter method and decide which species to keep ---
     std::unordered_set<TaxID> keptSpecies;
     if (par.filterMethod == 1) {
-        keptSpecies = filterByEvidenceAndUniqueness(reader, entryCount, par);
+        keptSpecies = filterByEvidenceAndUniqueness(reader, entryCount, par, validNameLookup);
     } else {
         const std::unordered_map<TaxID, uint64_t> sp2genomeSize = loadGenomeSizes(dbDir);
-        keptSpecies = filterByScoreAndCoverage(reader, entryCount, sp2genomeSize, par);
+        keptSpecies = filterByScoreAndCoverage(reader, entryCount, sp2genomeSize, par, validNameLookup);
     }
 
     // --- Pass 2: write the filtered candidate DB (method-agnostic) ---
@@ -592,7 +688,7 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
 #ifdef OPENMP
 #pragma omp parallel default(none) shared(reader, writer, entryCount, keptSpecies, \
         keptCandidateCnt, removedCandidateCnt, resolvedQueryCnt, rescuedQueryCnt, \
-        discardedQueryCnt, dropEmptied, tieRatio, minScore)
+        discardedQueryCnt, dropEmptied, tieRatio, minScore, validNameLookup)
 #endif
         {
             int threadIdx = 0;
@@ -641,7 +737,7 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
                     if (!dropEmptied && !entry.candidates.empty()) {
                         // Case 2 only when >=2 tied species would form a real higher-rank
                         // LCA; a unique hit to one removed species (Case 3) is discarded.
-                        rescue = tieSetDistinctSpecies(entry.candidates, tieRatio, minScore) >= 2;
+                        rescue = tieSetDistinctSpecies(entry.candidates, tieRatio, minScore, validNameLookup) >= 2;
                     }
                     if (rescue) {
                         query.speciesCandidates = std::move(entry.candidates);

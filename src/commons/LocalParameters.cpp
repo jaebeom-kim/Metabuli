@@ -353,7 +353,7 @@ LocalParameters::LocalParameters() :
         PREFER_VALID_NAMES(PREFER_VALID_NAMES_ID,
                  "--prefer-valid-names",
                  "Break species ties toward properly named species over NCBI placeholder labels",
-                 "classify-candidates: when the tied best species mix properly named species with NCBI placeholder labels (\"<genus> sp. <strain>\", \"<higher taxon> bacterium/archaeon\", \"uncultured ...\", nodes under \"unclassified ...\"), classify to the properly named species instead of their LCA. Placeholder labels are often historical duplicates of the same organism under other tax IDs, which otherwise push such reads to genus/family rank. 0: off, 1: on",
+                 "When the tied best species mix properly named species with NCBI placeholder labels (\"<genus> sp. <strain>\", \"<higher taxon> bacterium/archaeon\", \"uncultured ...\", nodes under \"unclassified ...\"), reduce the tie to the properly named species. Placeholder labels are often historical duplicates of the same organism under other tax IDs, which otherwise push such reads to genus/family rank. classify-candidates: classify such ties to the valid species instead of their LCA. filter-candidates: count such ties as unique-top for the sole valid species, so --min-unique-ratio / --min-unique-reads keep it and drop the placeholders. Use the same setting in both commands. 0: off, 1: on",
                  typeid(int),
                  (void *) &preferValidNames,
                  "^[0-1]$"),
@@ -1109,6 +1109,7 @@ LocalParameters::LocalParameters() :
     filterCandidates.push_back(&MIN_COUNT);
     filterCandidates.push_back(&MIN_UNIQUE_RATIO);
     filterCandidates.push_back(&MIN_UNIQUE_COUNT);
+    filterCandidates.push_back(&PREFER_VALID_NAMES);
     filterCandidates.push_back(&DROP_EMPTIED);
     // method 1: best-evidence + uniqueness
     filterCandidates.push_back(&MIN_STRONG_SCORE);
