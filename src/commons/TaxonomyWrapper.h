@@ -213,8 +213,10 @@ public:
     // Lookup (indexed by internal tax ID, 1 = keep) of species-rank nodes whose
     // scientific name is a proper published name, i.e. NOT an NCBI placeholder:
     // "<genus> sp. <strain>", "<higher taxon> bacterium/archaeon", "uncultured/
-    // unidentified ...", "... metagenome", "...symbiont of ...", or any node under
-    // an "unclassified ..." / "environmental samples" container node.
+    // unidentified ...", "... metagenome", "...symbiont of ...". Judged by the
+    // name alone; placement under an "unclassified ..." container is NOT used
+    // (those subtrees also hold properly named species, e.g. Candidatus
+    // binomials, so demoting them wholesale is too aggressive).
     // Used by --prefer-valid-names to break ties between duplicate taxids of the
     // same organism (placeholder labels vs its valid name).
     std::vector<uint8_t> getValidNameSpeciesLookup() const;

@@ -516,7 +516,10 @@ bool containsWord(const char *name, const char *word) {
 }
 
 // NCBI placeholder species name conventions. "Candidatus <binomial>" matches
-// none of these and is kept as a proper name.
+// none of these and is kept as a proper name. Deliberately name-only: a node's
+// placement under an "unclassified ..." container is NOT used as a signal --
+// those subtrees are huge and also hold properly named species (e.g. Candidatus
+// binomials), so demoting the whole subtree is far too aggressive.
 bool isPlaceholderSpeciesName(const char *name) {
     return strstr(name, " sp.") != nullptr                // "<genus> sp. <strain>"
         || containsWord(name, "bacterium")                // "<higher taxon> bacterium <strain>"
@@ -527,20 +530,10 @@ bool isPlaceholderSpeciesName(const char *name) {
         || strstr(name, "symbiont of ") != nullptr;       // "[endo]symbiont of <host>"
 }
 
-// Container nodes NCBI parks provisional taxa under.
-bool isPlaceholderContainerName(const char *name) {
-    return strncmp(name, "unclassified", 12) == 0
-        || strcmp(name, "environmental samples") == 0;
-}
-
 } // namespace
 
 std::vector<uint8_t> TaxonomyWrapper::getValidNameSpeciesLookup() const {
     std::vector<uint8_t> lookup(static_cast<size_t>(maxTaxID) + 1, 0);
-    // Per-node memo for the ancestor walk: 0 = unknown, 1 = clean to root,
-    // 2 = is / is under a placeholder container node.
-    std::vector<uint8_t> containerState(static_cast<size_t>(maxTaxID) + 1, 0);
-    std::vector<TaxID> path;
     for (size_t i = 0; i < maxNodes; ++i) {
         const TaxonNode &node = taxonNodes[i];
         if (strcmp(getString(node.rankIdx), "species") != 0) {
@@ -549,32 +542,7 @@ std::vector<uint8_t> TaxonomyWrapper::getValidNameSpeciesLookup() const {
         if (isPlaceholderSpeciesName(getString(node.nameIdx))) {
             continue;
         }
-        path.clear();
-        TaxID cur = node.taxId;
-        uint8_t state = 1;
-        while (true) {
-            if (containerState[cur] != 0) {
-                state = containerState[cur];
-                break;
-            }
-            const TaxonNode *n = taxonNode(cur, true);
-            if (isPlaceholderContainerName(getString(n->nameIdx))) {
-                containerState[cur] = 2;
-                state = 2;
-                break;
-            }
-            path.push_back(cur);
-            if (n->parentTaxId == cur) { // root
-                break;
-            }
-            cur = n->parentTaxId;
-        }
-        for (const TaxID t : path) {
-            containerState[t] = state;
-        }
-        if (state == 1) {
-            lookup[node.taxId] = 1;
-        }
+        lookup[node.taxId] = 1;
     }
     return lookup;
 }

@@ -353,7 +353,7 @@ LocalParameters::LocalParameters() :
         PREFER_VALID_NAMES(PREFER_VALID_NAMES_ID,
                  "--prefer-valid-names",
                  "Break species ties toward properly named species over NCBI placeholder labels",
-                 "When the tied best species mix properly named species with NCBI placeholder labels (\"<genus> sp. <strain>\", \"<higher taxon> bacterium/archaeon\", \"uncultured ...\", nodes under \"unclassified ...\"), reduce the tie to the properly named species. Placeholder labels are often historical duplicates of the same organism under other tax IDs, which otherwise push such reads to genus/family rank. classify-candidates: classify such ties to the valid species instead of their LCA. filter-candidates: count such ties as unique-top for the sole valid species, so --min-unique-ratio / --min-unique-reads keep it and drop the placeholders. Use the same setting in both commands. 0: off, 1: on",
+                 "When the tied best species mix properly named species with NCBI placeholder labels (\"<genus> sp. <strain>\", \"<higher taxon> bacterium/archaeon\", \"uncultured ...\"; judged by the name only), reduce the tie to the properly named species. Placeholder labels are often historical duplicates of the same organism under other tax IDs, which otherwise push such reads to genus/family rank. classify-candidates: classify such ties to the valid species instead of their LCA. filter-candidates: count such ties as unique-top for the sole valid species, so --min-unique-ratio / --min-unique-reads keep it and drop the placeholders. Use the same setting in both commands. 0: off, 1: on",
                  typeid(int),
                  (void *) &preferValidNames,
                  "^[0-1]$"),
