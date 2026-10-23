@@ -39,19 +39,28 @@ int build(int argc, const char **argv, const Command &command){
     setDefaults_build(par);
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
     const string dbDir = par.filenames[0]; // copy; filenames[0] is retargeted below
-    if (!FileUtil::directoryExists(dbDir.c_str())) {
-        FileUtil::makeDir(dbDir.c_str());
+    // makeDir is a plain mkdir (no parents); ignoring its failure used to let the
+    // build run on until it segfaulted on a NULL FILE* deep in IndexCreator.
+    if (!FileUtil::directoryExists(dbDir.c_str())
+        && !FileUtil::makeDir(dbDir.c_str())) {
+        cout << "Error: could not create database directory " << dbDir << "." << endl;
+        cout << "       Please check that its parent directory exists and is writable." << endl;
+        return 1;
     }
     // The k-mer list goes to kmer-lists/base; database-level files (taxonomyDB,
     // acc2taxid.map, db.parameters) stay at the top. add-sub-db adds sibling
     // lists, and classify/create-candidates search all of them by default.
     const string listsDir = dbDir + "/" + SUBDB_DIR_NAME;
-    if (!FileUtil::directoryExists(listsDir.c_str())) {
-        FileUtil::makeDir(listsDir.c_str());
+    if (!FileUtil::directoryExists(listsDir.c_str())
+        && !FileUtil::makeDir(listsDir.c_str())) {
+        cout << "Error: could not create directory " << listsDir << "." << endl;
+        return 1;
     }
     const string baseDir = listsDir + "/" + SUBDB_BASE_NAME;
-    if (!FileUtil::directoryExists(baseDir.c_str())) {
-        FileUtil::makeDir(baseDir.c_str());
+    if (!FileUtil::directoryExists(baseDir.c_str())
+        && !FileUtil::makeDir(baseDir.c_str())) {
+        cout << "Error: could not create directory " << baseDir << "." << endl;
+        return 1;
     }
 
     // One or more accession2taxid files, comma-separated; plain or gzipped.

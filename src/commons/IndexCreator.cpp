@@ -887,6 +887,10 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
     } else {
         acc2taxidFile = fopen(mappingFileName.c_str(), "w");
     }
+    if (acc2taxidFile == nullptr) {
+        cout << "Error: could not open " << mappingFileName << " for writing." << endl;
+        exit(1);
+    }
     for (size_t i = 0; i < observedAccessionsVec.size(); ++i) {
         if (observedAccessionsVec[i].taxID == 0) {
             continue;
@@ -898,6 +902,10 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
         cout << "All accessions are mapped to taxonomy" << endl;
     } else {
         FILE *file = fopen((dbDir + "/unmapped.txt").c_str(), "w");
+        if (file == nullptr) {
+            cout << "Error: could not open " << dbDir + "/unmapped.txt" << " for writing." << endl;
+            exit(1);
+        }
         for (const auto & i : unmappedAccessions) {
             fprintf(file, "%s\n", i.c_str());
         }
