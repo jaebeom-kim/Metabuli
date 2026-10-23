@@ -132,6 +132,11 @@ protected:
     // Parameters
     const LocalParameters & par;
     bool isUpdating;
+    // add-sub-db only: no pre-existing k-mer lists are merged in, so the info
+    // index can pack to the max of this run's writable tax IDs even though the
+    // numbering is not renumbered. Must stay false for updateDB, whose merge
+    // re-writes IDs from the existing DB's info file.
+    bool capInfoIdsToObserved = false;
     int kmerFormat;
     int kmerLen;
     int windowSize;
@@ -430,6 +435,7 @@ public:
 
     // Setters
     void setIsUpdating(bool isUpdating) { this->isUpdating = isUpdating; }
+    void setCapInfoIdsToObserved(bool cap) { this->capInfoIdsToObserved = cap; }
     void setIsNewFormat(int kmerFormat) { this->kmerFormat = kmerFormat; }
     void addFilesToMerge(string diffIdxFileName, string infoFileName, string posFileName = "");
     void updateTaxId2SpeciesTaxId(const string & taxIdListFileName);

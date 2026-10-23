@@ -777,12 +777,16 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
         gzclose(fp);
     }
 
-    // Compact the internal tax-ID numbering so that IDs which can reach the info
-    // index (observed taxa and their ancestors up to the species representative)
-    // get small values. This lets the info index pack to fewer bits with no
-    // read-time translation. Fresh builds only; updateDB must keep the existing
-    // DB's numbering.
-    if (par.packInfo != 0 && !isUpdating) {
+    // Collect the IDs which can reach the info index (observed taxa and their
+    // ancestors up to the species representative). Fresh builds compact the
+    // internal tax-ID numbering so these get small values, letting the info
+    // index pack to fewer bits with no read-time translation. add-sub-db must
+    // keep the numbering shared with the base DB, but since no pre-existing
+    // lists are merged in, its info index can still pack to the set's maximum
+    // under the existing numbering (capInfoIdsToObserved). updateDB gets
+    // neither: its merge re-writes IDs from the existing DB's info file, which
+    // this set does not bound.
+    if (par.packInfo != 0 && (!isUpdating || capInfoIdsToObserved)) {
         std::unordered_map<TaxID, TaxID> ext2int;
         taxonomy->getExternal2internalTaxID(ext2int);
         std::unordered_set<TaxID> writable;
@@ -822,7 +826,17 @@ void IndexCreator::getTaxonomyOfAccessions(vector<Accession> & observedAccession
                 writable.insert(sp);
             }
         }
-        taxonomy->renumberWritableFirst(writable);
+        if (!isUpdating) {
+            taxonomy->renumberWritableFirst(writable);
+        } else {
+            TaxID maxWritable = 0;
+            for (TaxID id : writable) {
+                maxWritable = std::max(maxWritable, id);
+            }
+            if (maxWritable > 0) {
+                taxonomy->setWritableMaxTaxID(maxWritable);
+            }
+        }
     }
 
     // Second, convert external taxIDs to internal taxIDs
@@ -2324,9 +2338,11 @@ uint8_t IndexCreator::chooseInfoIdBits() const {
     if (par.packInfo == 0) {
         return 32; // legacy raw uint32
     }
-    // Only IDs up to the writable maximum can reach the info index (after
-    // renumberWritableFirst() compacts the writable set into the low range this
-    // is much smaller than maxTaxID; otherwise it equals maxTaxID). Either way
+    // Only IDs up to the writable maximum can reach the info index. Fresh
+    // builds compact the writable set into the low range (renumberWritableFirst)
+    // and add-sub-db caps it at the observed maximum under the base numbering
+    // (setWritableMaxTaxID), both much smaller than maxTaxID; updateDB falls
+    // back to maxTaxID, which bounds the old DB's merged-in IDs too. Either way
     // it fits every ID the info index can hold, with no measuring pass.
     return InfoIndex::chooseIdBits(static_cast<uint32_t>(taxonomy->getWritableMaxTaxID()));
 }

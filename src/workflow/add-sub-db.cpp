@@ -183,6 +183,10 @@ int addSubDb(int argc, const char **argv, const Command &command){
     par.filenames[0] = subDir;
     IndexCreator idxCre(par, taxonomy, par.kmerFormat);
     idxCre.setIsUpdating(true);
+    // Unlike updateDB, no pre-existing k-mer lists are merged in, so the info
+    // index only ever holds this run's writable tax IDs; let it pack to their
+    // maximum instead of the taxonomy-wide maxTaxID.
+    idxCre.setCapInfoIdsToObserved(true);
     idxCre.createIndex();
 
     // Finalize the sub-DB's k-mer list from its flushed chunks. Unlike

@@ -89,6 +89,15 @@ public:
         return writableMaxTaxID > 0 ? writableMaxTaxID : maxTaxID;
     }
 
+    // Declare the largest internal tax ID that can reach the info index without
+    // renumbering. Used by add-sub-db: the existing numbering must stay shared
+    // with the base DB, but only the sub-DB's own observed taxa (and their
+    // ancestors up to the species representative) can be written, so the info
+    // index can still pack to their maximum instead of maxTaxID.
+    void setWritableMaxTaxID(TaxID maxWritable) {
+        writableMaxTaxID = maxWritable;
+    }
+
     // Relabel internal tax IDs so every ID in `writableInternalIds` (the tax IDs
     // that can reach the info index: observed taxa and their ancestors up to
     // their species representative) gets a small value, while root stays at 1.
