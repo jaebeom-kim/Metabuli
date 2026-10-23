@@ -225,6 +225,41 @@ public:
         }
     }
 
+    // Bulk path for pre-packed words. The caller placed idCount contiguous IDs
+    // at their final lane positions: words[0] carries the IDs for lanes
+    // [lane, valuesPerWord) with the lower lanes zero, and the last word the
+    // IDs for its low lanes. Byte-identical to feeding write() one ID at a
+    // time; ID-range validation is the caller's job (it knows the batch max).
+    void writeWords(const uint64_t *words, size_t nWords, size_t idCount) {
+        if (idCount == 0) {
+            return;
+        }
+        const uint8_t endLane = (uint8_t)((lane + idCount) % valuesPerWord);
+        currentWord |= words[0];
+        if (nWords == 1) {
+            if (endLane == 0) {
+                wordBuffer.write(&currentWord);
+                currentWord = 0;
+                lane = 0;
+            } else {
+                lane = endLane;
+            }
+            return;
+        }
+        wordBuffer.write(&currentWord);
+        if (endLane == 0) {
+            wordBuffer.writeBulk(words + 1, nWords - 1);
+            currentWord = 0;
+            lane = 0;
+        } else { // keep the partial last word pending
+            wordBuffer.writeBulk(words + 1, nWords - 2);
+            currentWord = words[nWords - 1];
+            lane = endLane;
+        }
+    }
+
+    uint8_t currentLane() const { return lane; }
+
     void close() {
         if (closed) {
             return;
@@ -277,6 +312,35 @@ public:
             plain->write(&id);
         }
         ++writeCnt;
+    }
+
+    // Bulk ingestion of idCount IDs pre-packed at their final lane positions
+    // (lane width = idBits; idBits == 32 holds two IDs per word, which is
+    // byte-identical to the legacy uint32 stream on little-endian). The
+    // caller must have packed relative to this writer's current writeCnt.
+    void writeWords(const uint64_t *words, size_t nWords, size_t idCount,
+                    uint32_t batchMaxId) {
+        if (idCount == 0) {
+            return;
+        }
+        if (batchMaxId > maxId) {
+            maxId = batchMaxId;
+        }
+        if (packed) {
+            // Same loud failure as the per-ID path when an ID exceeds the width.
+            if (unlikely((static_cast<uint64_t>(batchMaxId) &
+                          ~InfoIndex::maskForBits(idBits)) != 0)) {
+                std::cerr << "Info ID " << batchMaxId << " exceeds "
+                          << static_cast<int>(idBits) << " packed bits\n";
+                std::exit(EXIT_FAILURE);
+            }
+            packed->writeWords(words, nWords, idCount);
+        } else {
+            const size_t startLane = writeCnt % 2;
+            plain->writeBulk(reinterpret_cast<const uint32_t *>(words) + startLane,
+                             idCount);
+        }
+        writeCnt += idCount;
     }
 
     void close() {

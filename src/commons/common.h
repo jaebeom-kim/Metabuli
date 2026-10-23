@@ -644,6 +644,16 @@ struct WriteBuffer {
         size += dataNum;
         writeCnt += dataNum;
     }
+
+    // Large already-assembled blocks go straight to the file instead of being
+    // chopped through the staging buffer.
+    void writeBulk(const T *data, size_t dataNum) {
+        if (size > 0) {
+            flush();
+        }
+        fwrite(data, sizeof(T), dataNum, fp);
+        writeCnt += dataNum;
+    }
 };
 
 inline bool fileExist(const std::string& name) {

@@ -455,6 +455,26 @@ public:
     }
 };
 
+// --- Merge-write helpers (parallel delta/info encoding) ----------------------
+// Fragment count of one 15-bit varint delta; matches getDiffIdx() exactly.
+static inline size_t deltaFragmentCount(uint64_t delta) {
+    if (delta == 0) {
+        return 1;
+    }
+    const int bits = 64 - __builtin_clzll(delta);
+    return static_cast<size_t>((bits + 14) / 15);
+}
+
+// Encode one delta as big-fragment-first 15-bit groups with the end flag on
+// the last fragment; byte-identical to getDiffIdx(). Returns fragment count.
+static inline size_t encodeDeltaFragments(uint64_t delta, uint16_t * out) {
+    const size_t n = deltaFragmentCount(delta);
+    for (size_t f = 0; f + 1 < n; ++f) {
+        out[f] = static_cast<uint16_t>((delta >> (15 * (n - 1 - f))) & 0x7FFF);
+    }
+    out[n - 1] = static_cast<uint16_t>(0x8000u | (delta & 0x7FFF));
+    return n;
+}
 
 template <FilterMode M>
 void IndexCreator::mergeTargetFiles() {
@@ -529,6 +549,13 @@ void IndexCreator::mergeTargetFiles() {
         uniqKmerIdx = new size_t[kmerBuffer.bufferSize];
     }
     vector<size_t> splitToProcess;
+    // Round-persistent scratch for the parallel write phase (grown once).
+    vector<size_t> rangePrefix;
+    vector<size_t> chunkFrag;
+    vector<uint32_t> chunkMax;
+    vector<uint16_t> roundDiff;
+    vector<uint64_t> roundWords;
+    vector<size_t> fragCkpt;
     while (remainingSplits > 0) {
         kmerBuffer.init();
         
@@ -610,27 +637,208 @@ void IndexCreator::mergeTargetFiles() {
                 }
             }
         } else {
-            memset(uniqKmerIdx, 0, kmerBuffer.bufferSize * sizeof(size_t));
+            // filterKmers overwrites every slot of the index ranges it reports,
+            // so uniqKmerIdx needs no zeroing (an 8 GB memset per round).
             filterKmers<M>(kmerBuffer, uniqKmerIdx, uniqKmerCnt, uniqKmerIdxRanges);
             reduction = time(nullptr);
             cout << "Filtering k-mers    : " << (double) (reduction - afterSort) << " s" << endl;
             cout << "Selected count      : " << uniqKmerCnt << endl;
 
-            for (size_t i = 0; i < uniqKmerIdxRanges.size(); i ++) {
-                for (size_t j = uniqKmerIdxRanges[i].first; j < uniqKmerIdxRanges[i].second; j ++) {
-                    infoBuffer.write(kmerBuffer.buffer[uniqKmerIdx[j]].id);
-                    getDiffIdx(lastKmer, kmerBuffer.buffer[uniqKmerIdx[j]].value, diffBuffer);
-                    // Write split info
-                    if (AminoAcidPart(lastKmer) != AAofTempSplitOffset && splitCheck == 1) {
-                        splitList[splitListIdx++] = {lastKmer, diffBuffer.writeCnt, infoBuffer.writeCnt};
-                        splitCheck = 0;
+            // ---- Write the selected k-mers (parallel chunked encode) ----
+            // The output streams only look serial: a chunk's first delta needs
+            // just the previous SELECTED k-mer's value (random-accessible), and
+            // a packed-info bit position is a pure function of the global
+            // ordinal. So chunks encode independently into one round buffer at
+            // exact offsets from a counting pass, byte-identical to the old
+            // one-at-a-time loop.
+            const size_t nRanges = uniqKmerIdxRanges.size();
+            rangePrefix.assign(nRanges + 1, 0);
+            for (size_t r = 0; r < nRanges; ++r) {
+                rangePrefix[r + 1] = rangePrefix[r] +
+                    (uniqKmerIdxRanges[r].second - uniqKmerIdxRanges[r].first);
+            }
+            const size_t totalSel = rangePrefix[nRanges];
+            if (totalSel > 0) {
+                const Kmer * kb = kmerBuffer.buffer;
+                // j-th selected k-mer (sparse accesses only).
+                auto selAt = [&](size_t j) -> const Kmer & {
+                    const size_t r = (size_t)(std::upper_bound(rangePrefix.begin(),
+                        rangePrefix.end(), j) - rangePrefix.begin()) - 1;
+                    return kb[uniqKmerIdx[uniqKmerIdxRanges[r].first + (j - rangePrefix[r])]];
+                };
+                // Sequential walker over the selected indices (ranges may be empty).
+                struct SelWalk {
+                    const size_t * idx;
+                    const vector<pair<size_t, size_t>> * ranges;
+                    size_t r = 0;
+                    size_t pos = 0;
+                    void seek(const vector<size_t> & prefix, size_t j) {
+                        r = (size_t)(std::upper_bound(prefix.begin(), prefix.end(), j)
+                                     - prefix.begin()) - 1;
+                        pos = (*ranges)[r].first + (j - prefix[r]);
                     }
-                    if (infoBuffer.writeCnt == offsetList[offsetListIdx]) {
-                        AAofTempSplitOffset = AminoAcidPart(lastKmer);
-                        splitCheck = 1;
-                        offsetListIdx++;
+                    size_t next() {
+                        while (pos >= (*ranges)[r].second) {
+                            ++r;
+                            pos = (*ranges)[r].first;
+                        }
+                        return idx[pos++];
+                    }
+                };
+
+                const uint8_t vpw = InfoIndex::idsPerWord(infoIdBits);
+                const size_t baseOrd = infoBuffer.writeCnt;
+                const size_t diffBase = diffBuffer.writeCnt;
+                const uint64_t roundStartKmer = lastKmer;
+                const size_t firstWord = baseOrd / vpw;
+                const size_t nWords = (baseOrd + totalSel + vpw - 1) / vpw - firstWord;
+
+                size_t nChunks = (size_t) par.threads;
+                const size_t maxChunks = totalSel / 4096 + 1;
+                if (nChunks > maxChunks) {
+                    nChunks = maxChunks;
+                }
+
+                roundWords.resize(nWords);
+                #pragma omp parallel for schedule(static)
+                for (size_t w = 0; w < nWords; ++w) {
+                    roundWords[w] = 0;
+                }
+
+                // Pass 1: per-chunk fragment totals and ID maxima.
+                chunkFrag.assign(nChunks + 1, 0);
+                chunkMax.assign(nChunks, 0);
+                #pragma omp parallel for schedule(static, 1)
+                for (size_t c = 0; c < nChunks; ++c) {
+                    const size_t j0 = totalSel * c / nChunks;
+                    const size_t j1 = totalSel * (c + 1) / nChunks;
+                    if (j0 >= j1) {
+                        continue;
+                    }
+                    SelWalk walk{uniqKmerIdx, &uniqKmerIdxRanges};
+                    walk.seek(rangePrefix, j0);
+                    uint64_t prev = (j0 == 0) ? roundStartKmer : selAt(j0 - 1).value;
+                    size_t frags = 0;
+                    uint32_t mx = 0;
+                    for (size_t j = j0; j < j1; ++j) {
+                        const Kmer & k = kb[walk.next()];
+                        frags += deltaFragmentCount(k.value - prev);
+                        prev = k.value;
+                        if (k.id > mx) {
+                            mx = k.id;
+                        }
+                    }
+                    chunkFrag[c + 1] = frags;
+                    chunkMax[c] = mx;
+                }
+                uint32_t roundMax = 0;
+                for (size_t c = 0; c < nChunks; ++c) {
+                    chunkFrag[c + 1] += chunkFrag[c];
+                    if (chunkMax[c] > roundMax) {
+                        roundMax = chunkMax[c];
                     }
                 }
+                const size_t roundFrags = chunkFrag[nChunks];
+                roundDiff.resize(roundFrags);
+                fragCkpt.assign((totalSel >> 16) + 1, 0);
+
+                // Pass 2: encode deltas and OR-pack IDs at their final offsets.
+                #pragma omp parallel for schedule(static, 1)
+                for (size_t c = 0; c < nChunks; ++c) {
+                    const size_t j0 = totalSel * c / nChunks;
+                    const size_t j1 = totalSel * (c + 1) / nChunks;
+                    if (j0 >= j1) {
+                        continue;
+                    }
+                    SelWalk walk{uniqKmerIdx, &uniqKmerIdxRanges};
+                    walk.seek(rangePrefix, j0);
+                    uint64_t prev = (j0 == 0) ? roundStartKmer : selAt(j0 - 1).value;
+                    size_t fragOff = chunkFrag[c];
+                    // Words at chunk boundaries are shared with a neighbor and
+                    // need atomic merging; interior words are exclusive.
+                    const size_t cFirstW = (baseOrd + j0) / vpw - firstWord;
+                    const size_t cLastW = (baseOrd + j1 - 1) / vpw - firstWord;
+                    uint64_t curWord = 0;
+                    size_t curW = SIZE_MAX;
+                    for (size_t j = j0; j < j1; ++j) {
+                        if ((j & 0xFFFF) == 0) {
+                            fragCkpt[j >> 16] = fragOff; // for sparse F() lookups
+                        }
+                        const Kmer & k = kb[walk.next()];
+                        fragOff += encodeDeltaFragments(k.value - prev, roundDiff.data() + fragOff);
+                        prev = k.value;
+                        const size_t ord = baseOrd + j;
+                        const size_t w = ord / vpw - firstWord;
+                        if (w != curW) {
+                            if (curW != SIZE_MAX) {
+                                if (curW == cFirstW || curW == cLastW) {
+                                    __atomic_or_fetch(&roundWords[curW], curWord, __ATOMIC_RELAXED);
+                                } else {
+                                    roundWords[curW] = curWord;
+                                }
+                            }
+                            curW = w;
+                            curWord = 0;
+                        }
+                        curWord |= static_cast<uint64_t>(k.id) << ((ord % vpw) * infoIdBits);
+                    }
+                    // The final word is always a boundary word.
+                    __atomic_or_fetch(&roundWords[curW], curWord, __ATOMIC_RELAXED);
+                }
+
+                // Fragment-count prefix of the first k selected k-mers, from the
+                // nearest checkpoint (used only around the few split anchors).
+                auto fragPrefixAt = [&](size_t k) -> size_t { // k >= 1
+                    size_t j = ((k - 1) >> 16) << 16;
+                    size_t frags = fragCkpt[(k - 1) >> 16];
+                    uint64_t prev = (j == 0) ? roundStartKmer : selAt(j - 1).value;
+                    for (; j < k; ++j) {
+                        const uint64_t v = selAt(j).value;
+                        frags += deltaFragmentCount(v - prev);
+                        prev = v;
+                    }
+                    return frags;
+                };
+
+                // Split anchors: replay the serial state machine, but touch only
+                // the k-mers around each threshold (anchors are rare). The
+                // serial loop checks the anchor BEFORE the threshold on the same
+                // k-mer, so the anchor scan includes the threshold position.
+                size_t scanJ = 0;
+                while (true) {
+                    size_t thrJ = totalSel; // next threshold inside this round
+                    if (offsetList[offsetListIdx] >= baseOrd + 1 &&
+                        offsetList[offsetListIdx] <= baseOrd + totalSel) {
+                        thrJ = offsetList[offsetListIdx] - baseOrd - 1;
+                    }
+                    if (splitCheck == 1) {
+                        bool found = false;
+                        for (size_t s = scanJ; s < totalSel && s <= thrJ; ++s) {
+                            const uint64_t v = selAt(s).value;
+                            if (AminoAcidPart(v) != AAofTempSplitOffset) {
+                                splitList[splitListIdx++] =
+                                    {v, diffBase + fragPrefixAt(s + 1), baseOrd + s + 1};
+                                splitCheck = 0;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found && thrJ >= totalSel) {
+                            break; // pending anchor carries over to the next round
+                        }
+                    }
+                    if (thrJ >= totalSel) {
+                        break;
+                    }
+                    AAofTempSplitOffset = AminoAcidPart(selAt(thrJ).value);
+                    splitCheck = 1;
+                    offsetListIdx++;
+                    scanJ = thrJ + 1;
+                }
+
+                diffBuffer.writeBulk(roundDiff.data(), roundFrags);
+                infoBuffer.writeWords(roundWords.data(), nWords, totalSel, roundMax);
+                lastKmer = selAt(totalSel - 1).value;
             }
         }
 
