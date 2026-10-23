@@ -88,7 +88,8 @@ Taxonomer<MatchType>::Taxonomer(
     const LocalParameters &par,
     TaxonomyWrapper *taxonomy,
     const MetamerPattern *metamerPattern,
-    const std::vector<uint8_t> *priorityTaxonLookup) :
+    const std::vector<uint8_t> *priorityTaxonLookup,
+    const std::vector<uint8_t> *validNameLookup) :
     par(par), 
     taxonomy(taxonomy), 
     metamerPattern(metamerPattern), 
@@ -173,6 +174,12 @@ Taxonomer<MatchType>::Taxonomer(
     } else {
         ownedPriorityTaxonLookup = makePriorityTaxonLookup(par, taxonomy);
         this->priorityTaxonLookup = &ownedPriorityTaxonLookup;
+    }
+
+    if (validNameLookup != nullptr) {
+        this->validNameLookup = validNameLookup;
+    } else if (par.preferValidNames) {
+        ownedValidNameLookup = taxonomy->getValidNameSpeciesLookup();
     }
 }
 
@@ -274,6 +281,39 @@ void Taxonomer<MatchType>::chooseBestTaxonFromCandidates(
             maxSpecies.assign(tempPrioritySpecies.begin(), tempPrioritySpecies.end());
             tiedIndices.assign(tempPriorityIndices.begin(), tempPriorityIndices.end());
             tiedScore = priorityScore;
+        }
+    }
+
+    // --prefer-valid-names: a tie mixing properly named species with NCBI
+    // placeholder labels ("<genus> sp. <strain>", "<higher taxon> bacterium", ...)
+    // usually means the same organism is present under several historical tax IDs,
+    // so resolve to the properly named species instead of an inflated LCA.
+    // Ties among only-placeholder or only-valid names are left untouched.
+    const std::vector<uint8_t> &validLookup = *validNameLookup;
+    if (maxSpecies.size() > 1 && !validLookup.empty()) {
+        tempPrioritySpecies.clear();
+        tempPriorityIndices.clear();
+        MatchScore validScore;
+
+        for (size_t i = 0; i < maxSpecies.size(); ++i) {
+            TaxID speciesId = maxSpecies[i];
+            if (speciesId >= 0
+                && static_cast<size_t>(speciesId) < validLookup.size()
+                && validLookup[speciesId] != 0) {
+                tempPrioritySpecies.push_back(maxSpecies[i]);
+                tempPriorityIndices.push_back(tiedIndices[i]);
+
+                const SpeciesCandidate &candidate = candidateEntry.candidates[tiedIndices[i]];
+                MatchScore score(candidate.idScore, candidate.subScore);
+                score.logE = candidate.logE;
+                validScore += score;
+            }
+        }
+
+        if (!tempPrioritySpecies.empty()) {
+            maxSpecies.assign(tempPrioritySpecies.begin(), tempPrioritySpecies.end());
+            tiedIndices.assign(tempPriorityIndices.begin(), tempPriorityIndices.end());
+            tiedScore = validScore;
         }
     }
 

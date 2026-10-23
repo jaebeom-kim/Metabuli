@@ -350,6 +350,13 @@ LocalParameters::LocalParameters() :
                  typeid(std::string),
                  (void *) &priorityTaxa,
                  "^.*$"),
+        PREFER_VALID_NAMES(PREFER_VALID_NAMES_ID,
+                 "--prefer-valid-names",
+                 "Break species ties toward properly named species over NCBI placeholder labels",
+                 "classify-candidates: when the tied best species mix properly named species with NCBI placeholder labels (\"<genus> sp. <strain>\", \"<higher taxon> bacterium/archaeon\", \"uncultured ...\", nodes under \"unclassified ...\"), classify to the properly named species instead of their LCA. Placeholder labels are often historical duplicates of the same organism under other tax IDs, which otherwise push such reads to genus/family rank. 0: off, 1: on",
+                 typeid(int),
+                 (void *) &preferValidNames,
+                 "^[0-1]$"),
         TOP_SPECIES(TOP_SPECIES_ID,
                  "--top-species",
                  "Write top N species candidates per query to binary mapping output",
@@ -1058,6 +1065,7 @@ LocalParameters::LocalParameters() :
     classifyCandidates.push_back(&PRINT_LINEAGE);
     classifyCandidates.push_back(&MAX_E_VALUE);
     classifyCandidates.push_back(&TIE_BRAKER);
+    classifyCandidates.push_back(&PREFER_VALID_NAMES);
     classifyCandidates.push_back(&DB_TOTAL_LENGTH);
     classifyCandidates.push_back(&UNCLASSIFIED);
     classifyCandidates.push_back(&QUERY_FILE);

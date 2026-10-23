@@ -65,6 +65,9 @@ private:
     int eukaryotaTaxId;
     std::vector<uint8_t> ownedPriorityTaxonLookup;
     const std::vector<uint8_t> *priorityTaxonLookup = &ownedPriorityTaxonLookup;
+    // --prefer-valid-names: species with proper published names (empty = off)
+    std::vector<uint8_t> ownedValidNameLookup;
+    const std::vector<uint8_t> *validNameLookup = &ownedValidNameLookup;
 
     // Internal
     int denominator;
@@ -194,10 +197,11 @@ public:
     unordered_map<TaxID, uint64_t> sp2totalReadLength;
 
     Taxonomer(
-        const LocalParameters & par, 
-        TaxonomyWrapper * taxonomy, 
+        const LocalParameters & par,
+        TaxonomyWrapper * taxonomy,
         const MetamerPattern *metamerPattern,
-        const std::vector<uint8_t> *priorityTaxonLookup = nullptr);
+        const std::vector<uint8_t> *priorityTaxonLookup = nullptr,
+        const std::vector<uint8_t> *validNameLookup = nullptr);
         
     ~Taxonomer();
 

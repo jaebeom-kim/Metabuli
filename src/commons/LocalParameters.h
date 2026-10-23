@@ -115,6 +115,7 @@ public:
     PARAMETER(USE_ALL_MATCHES)
     PARAMETER(MAX_HDIST)
     PARAMETER(TIE_BRAKER)
+    PARAMETER(PREFER_VALID_NAMES)
     PARAMETER(TOP_SPECIES)
     PARAMETER(MAPPING_OUTPUT)
     PARAMETER(UNCLASSIFIED)
@@ -266,6 +267,7 @@ public:
     int minAaMatch;
     int minAaMatchEuk;
     std::string priorityTaxa;
+    int preferValidNames = 0; // --prefer-valid-names (classify-candidates): break species ties toward properly named species over NCBI placeholder labels
     int topSpecies;
     std::string mappingOutput;
     int unclassified = 0;      // --unclassified: also write out the reads left unclassified

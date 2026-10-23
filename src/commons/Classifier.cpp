@@ -1175,6 +1175,15 @@ bool Classifier::assignTaxonomyFromCandidateDB(
     queryList.resize(entryCount);
 
     std::vector<uint8_t> priorityTaxonLookup = Taxonomer<MatchType>::makePriorityTaxonLookup(par, taxonomy);
+    std::vector<uint8_t> validNameLookup;
+    if (par.preferValidNames) {
+        validNameLookup = taxonomy->getValidNameSpeciesLookup();
+        size_t validCnt = 0;
+        for (const uint8_t v : validNameLookup) {
+            validCnt += v;
+        }
+        std::cout << "(prefer valid names: " << validCnt << " properly named species) " << std::flush;
+    }
     TaxonomyWrapper *localTaxonomy = taxonomy;
     const MetamerPattern *localMetamerPattern = metamerPattern;
 #ifdef OPENMP
@@ -1183,14 +1192,14 @@ bool Classifier::assignTaxonomyFromCandidateDB(
 
     if (entryCount > 0) {
 #ifdef OPENMP
-#pragma omp parallel num_threads(localThreadCount) default(none), shared(candidateReader, queryList, par, priorityTaxonLookup, entryCount, localTaxonomy, localMetamerPattern)
+#pragma omp parallel num_threads(localThreadCount) default(none), shared(candidateReader, queryList, par, priorityTaxonLookup, validNameLookup, entryCount, localTaxonomy, localMetamerPattern)
 #endif
         {
             int threadIdx = 0;
 #ifdef OPENMP
             threadIdx = omp_get_thread_num();
 #endif
-            Taxonomer<MatchType> taxonomer(par, localTaxonomy, localMetamerPattern, &priorityTaxonLookup);
+            Taxonomer<MatchType> taxonomer(par, localTaxonomy, localMetamerPattern, &priorityTaxonLookup, &validNameLookup);
             CandidateDBEntry candidateEntry;
 
 #ifdef OPENMP

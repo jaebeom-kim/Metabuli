@@ -37,6 +37,7 @@ void setClassifyDefaults(LocalParameters & par){
     par.minAaMatch = 11;
     par.minAaMatchEuk = 11;
     par.priorityTaxa = "";
+    par.preferValidNames = 0;
     par.minAvgScore = 0;
     par.topSpecies = 0;
     par.mappingOutput = "";

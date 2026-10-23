@@ -210,6 +210,15 @@ public:
         }
     }
 
+    // Lookup (indexed by internal tax ID, 1 = keep) of species-rank nodes whose
+    // scientific name is a proper published name, i.e. NOT an NCBI placeholder:
+    // "<genus> sp. <strain>", "<higher taxon> bacterium/archaeon", "uncultured/
+    // unidentified ...", "... metagenome", "...symbiont of ...", or any node under
+    // an "unclassified ..." / "environmental samples" container node.
+    // Used by --prefer-valid-names to break ties between duplicate taxids of the
+    // same organism (placeholder labels vs its valid name).
+    std::vector<uint8_t> getValidNameSpeciesLookup() const;
+
     std::unordered_map<TaxID, TaxonProbs> getCladeProbs(
         const std::unordered_map<TaxID, double> & taxonProbs, 
         const std::unordered_map<TaxID, std::vector<TaxID>>& parentToChildren) const; 
