@@ -28,7 +28,7 @@ int analyzeDiffIdx(int argc, const char **argv, const Command &command) {
     const size_t BUF = 1u << 22; // 4M uint16 = 8 MB
     vector<uint16_t> buf(BUF);
 
-    uint64_t nKmer = 0, nFragments = 0;
+    uint64_t nKmer = 0, nFragments = 0, nZeroDelta = 0;
     uint64_t fragHist[6] = {0};
     uint64_t bitHist[65] = {0};
     uint64_t curBytes = 0, leb128Bytes = 0, flaglessBytes = 0;
@@ -54,6 +54,7 @@ int analyzeDiffIdx(int argc, const char **argv, const Command &command) {
             delta = (delta << 15) | (uint16_t)(w & 0x7FFF);
             if (w & 0x8000) {
                 ++nKmer;
+                if (delta == 0) ++nZeroDelta; // identical k-mer (same value as previous)
                 if (fragsThisDelta <= 5) ++fragHist[fragsThisDelta];
                 int bits = 0; uint64_t d = delta; while (d) { ++bits; d >>= 1; }
                 bitHist[bits]++;
@@ -72,6 +73,8 @@ int analyzeDiffIdx(int argc, const char **argv, const Command &command) {
 
     printf("=== diffIdx delta analysis%s ===\n", capped ? " (CAPPED sample)" : "");
     printf("k-mers (deltas)      : %llu\n", (unsigned long long)nKmer);
+    printf("identical k-mers (0) : %llu  (%.2f%%)\n", (unsigned long long)nZeroDelta,
+           nKmer ? 100.0*nZeroDelta/nKmer : 0);
     printf("total fragments      : %llu\n", (unsigned long long)nFragments);
     printf("avg fragments/kmer   : %.3f\n", nKmer ? (double)nFragments/nKmer : 0);
     printf("bytes scanned        : %.2f GB\n", bytesRead/1e9);
