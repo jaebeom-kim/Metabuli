@@ -236,6 +236,7 @@ private:
     static constexpr size_t FETCH_SEEK_READ = 512; // elements per cold seek (4 KB)
 
     void fillValueBufferLazy() {
+        CpuPhaseTimer timer(&tlsDecodeNanos);
         if (valueCnt == 0) {
             bufferBaseOrdinal = decodeOrdinal;
         }
@@ -798,6 +799,7 @@ public:
     // continue the window (dense regions, streamed as before) or seek forward
     // (sparse regions, skipping unread info bytes).
     void fetchInfos(size_t startOrdinal, size_t n, uint32_t *out) {
+        CpuPhaseTimer timer(&tlsFetchNanos);
         if (infoIsPacked) {
             if (startOrdinal != fetchCursorOrdinal) {
                 const size_t wordOffset = startOrdinal / packedValuesPerWord;

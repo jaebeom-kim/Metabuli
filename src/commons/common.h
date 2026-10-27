@@ -287,6 +287,49 @@ inline std::atomic<uint64_t> & ioPrefetchChunks() {
     static std::atomic<uint64_t> v{0};
     return v;
 }
+// --- Optional CPU-phase profiling (METABULI_CPU_PROF=1) ----------------------
+// Breaks the reference k-mer search's thread time into decode (varint ->
+// values), info fetch, and hamming/filter phases. Hot functions accumulate
+// into thread-locals (no atomics on the hot path); the search loop flushes
+// them into the global counters once per thread per batch.
+inline bool cpuProfEnabled() {
+    static const bool enabled = getenv("METABULI_CPU_PROF") != nullptr;
+    return enabled;
+}
+inline std::atomic<uint64_t> & cpuProfDecodeNanos() {
+    static std::atomic<uint64_t> v{0};
+    return v;
+}
+inline std::atomic<uint64_t> & cpuProfFetchNanos() {
+    static std::atomic<uint64_t> v{0};
+    return v;
+}
+inline std::atomic<uint64_t> & cpuProfHammingNanos() {
+    static std::atomic<uint64_t> v{0};
+    return v;
+}
+inline thread_local uint64_t tlsDecodeNanos = 0;
+inline thread_local uint64_t tlsFetchNanos = 0;
+inline thread_local uint64_t tlsHammingNanos = 0;
+
+// RAII timer adding elapsed ns to a thread-local slot (no-op when disabled).
+struct CpuPhaseTimer {
+    uint64_t * slot;
+    bool on;
+    std::chrono::steady_clock::time_point t0;
+    explicit CpuPhaseTimer(uint64_t * slot) : slot(slot), on(cpuProfEnabled()) {
+        if (on) {
+            t0 = std::chrono::steady_clock::now();
+        }
+    }
+    ~CpuPhaseTimer() {
+        if (on) {
+            *slot += (uint64_t) std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - t0).count();
+        }
+    }
+};
+
 // --- Adaptive read-ahead (METABULI_PREFETCH) ---------------------------------
 // Eligible ReadBuffers can switch to a double-buffered mode: while the
 // consumer drains one half, a background worker freads the next chunk into

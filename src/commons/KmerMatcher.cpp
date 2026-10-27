@@ -36,6 +36,25 @@ static void printIoProf(double wallSec, int threads,
               << std::endl;
 }
 
+// METABULI_CPU_PROF=1: per-search thread-time breakdown of the big compute
+// phases, to size what k-mer dedup (decode, hamming) could save.
+static void printCpuProf(double wallSec, int threads,
+                         uint64_t dec0, uint64_t fetch0, uint64_t ham0) {
+    if (!cpuProfEnabled()) {
+        return;
+    }
+    const double dec = (cpuProfDecodeNanos().load() - dec0) / 1e9;
+    const double fetch = (cpuProfFetchNanos().load() - fetch0) / 1e9;
+    const double ham = (cpuProfHammingNanos().load() - ham0) / 1e9;
+    const double total = wallSec * threads;
+    const double other = total - dec - fetch - ham;
+    std::cout << "CPU prof (thread sum)  : decode " << dec
+              << " s, fetchInfos " << fetch
+              << " s, hamming/filter " << ham
+              << " s, scan/other " << (other > 0 ? other : 0)
+              << " s  (of " << total << " thread-s)" << std::endl;
+}
+
 constexpr uint16_t KmerMatcher::HAMMING_LUT0[64];
 constexpr uint16_t KmerMatcher::HAMMING_LUT1[64];
 constexpr uint16_t KmerMatcher::HAMMING_LUT2[64];
@@ -170,9 +189,16 @@ bool KmerMatcher::matchKmers(
     const uint64_t ioNanos0 = ioProfEnabled() ? ioProfNanos().load() : 0;
     const uint64_t ioBytes0 = ioProfEnabled() ? ioProfBytes().load() : 0;
     const uint64_t pfChunks0 = ioProfEnabled() ? ioPrefetchChunks().load() : 0;
+    const uint64_t cpuDec0 = cpuProfEnabled() ? cpuProfDecodeNanos().load() : 0;
+    const uint64_t cpuFetch0 = cpuProfEnabled() ? cpuProfFetchNanos().load() : 0;
+    const uint64_t cpuHam0 = cpuProfEnabled() ? cpuProfHammingNanos().load() : 0;
     #pragma omp parallel default(none), shared(splitCheckList, hasOverflow, db, \
     querySplits, qKmers, totalMatches, cout, mask)
     {
+        // Phase timers accumulate per thread; flushed once at region end.
+        tlsDecodeNanos = 0;
+        tlsFetchNanos = 0;
+        tlsHammingNanos = 0;
         Buffer<Match> localMatches(1024 * 1024);
         // Lazy info: tax IDs are fetched per AA-matched candidate group
         // instead of being streamed alongside the metamers, so info-file
@@ -331,13 +357,19 @@ bool KmerMatcher::matchKmers(
             }
         } // End of omp for (Iterating for splits)
         delete deltaIdxReaders;
+        if (cpuProfEnabled()) {
+            cpuProfDecodeNanos().fetch_add(tlsDecodeNanos, std::memory_order_relaxed);
+            cpuProfFetchNanos().fetch_add(tlsFetchNanos, std::memory_order_relaxed);
+            cpuProfHammingNanos().fetch_add(tlsHammingNanos, std::memory_order_relaxed);
+        }
     } // End of omp parallel
-        
+
     if (hasOverflow.load(std::memory_order_acquire) > 0) {
         return false;
     }
     std::cout << double(time(nullptr) - beforeSearch) << " s" << std::endl;
     printIoProf(double(time(nullptr) - beforeSearch), par.threads, ioNanos0, ioBytes0, pfChunks0);
+    printCpuProf(double(time(nullptr) - beforeSearch), par.threads, cpuDec0, cpuFetch0, cpuHam0);
     lastMatchCnt = totalMatches->startIndexOfReserve - matchCntBefore;
     totalMatchCnt += lastMatchCnt;
     return true;
@@ -688,6 +720,7 @@ void KmerMatcher::filterCandidates(
 ) {
     const size_t numCandidates = candidates.size();
     if (numCandidates == 0) return;
+    CpuPhaseTimer cpuTimer(&tlsHammingNanos);
 
     const uint64_t qVal = qKmer.value;
     const Kmer* candPtr = candidates.data();
