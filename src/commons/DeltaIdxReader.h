@@ -240,18 +240,79 @@ private:
         if (valueCnt == 0) {
             bufferBaseOrdinal = decodeOrdinal;
         }
-        for (; valueCnt < valueBufferSize && decodeOrdinal < totalValueNum; ++valueCnt) {
-            const uint64_t v = getNextMetamer();
-            if (unlikely(v == UINT64_MAX)) {
-                fileCompleted = true;
-                break;
+        if (diffIdxFormat == 1) {
+            fillValueBufferLazyLEB();
+        } else {
+            for (; valueCnt < valueBufferSize && decodeOrdinal < totalValueNum; ++valueCnt) {
+                const uint64_t v = getNextMetamer();
+                if (unlikely(v == UINT64_MAX)) {
+                    fileCompleted = true;
+                    break;
+                }
+                lazyValueBuffer[valueCnt] = v; // ids come from fetchInfos()
+                ++decodeOrdinal;
             }
-            lazyValueBuffer[valueCnt] = v; // ids come from fetchInfos()
-            ++decodeOrdinal;
         }
         if (decodeOrdinal >= totalValueNum) {
             fileCompleted = true;
         }
+    }
+
+    // Batched-window LEB decode: one 8-byte load yields every delta that ENDS
+    // inside it (avg ~4 deltas at ~2 B/delta), so the serial
+    // load->ctz->pointer-advance chain a per-delta decoder pays per value is
+    // amortized over the whole window; per delta only register shifts remain.
+    // Values are capped by both the buffer and totalValueNum, so stale bytes
+    // past EOF (readable allocation slack) can never emit a value.
+    void fillValueBufferLazyLEB() {
+        ReadBuffer<uint8_t> & rb = *deltaByteBuffer;
+        uint8_t * p = rb.p;
+        const uint8_t * end = rb.end;
+        size_t cnt = valueCnt;
+        uint64_t last = lastValue;
+        size_t ord = decodeOrdinal;
+        while (cnt < valueBufferSize && ord < totalValueNum) {
+            if (unlikely(end - p < 10)) { // keep one max-size delta loadable
+                rb.p = p;
+                if (rb.loadBuffer(end - p) == 0) {
+                    fileCompleted = true;
+                    break;
+                }
+                p = rb.p;
+                end = rb.end;
+            }
+            uint64_t x;
+            std::memcpy(&x, p, 8);
+            const uint64_t endFlags = x & 0x8080808080808080ULL;
+            if (unlikely(endFlags == 0)) { // >56-bit delta: per-delta fallback
+                last += decodeDelta7(p);
+                lazyValueBuffer[cnt++] = last;
+                ++ord;
+                continue;
+            }
+            // Compact the eight 7-bit payloads once per window (big fragment
+            // on top), then slice each delta out with shifts and masks.
+            uint64_t z = __builtin_bswap64(x) & 0x7F7F7F7F7F7F7F7FULL;
+            z = (z & 0x007F007F007F007FULL) | ((z & 0x7F007F007F007F00ULL) >> 1);
+            z = (z & 0x00003FFF00003FFFULL) | ((z & 0x3FFF00003FFF0000ULL) >> 2);
+            z = (z & 0x000000000FFFFFFFULL) | ((z & 0x0FFFFFFF00000000ULL) >> 4);
+            uint64_t flags = endFlags;
+            unsigned prev = 0;
+            do {
+                const unsigned idx = (unsigned)(__builtin_ctzll(flags) >> 3);
+                const unsigned nf = idx - prev + 1;
+                last += (z >> (7u * (7u - idx))) & ((1ULL << (7u * nf)) - 1);
+                lazyValueBuffer[cnt++] = last;
+                ++ord;
+                flags &= flags - 1;
+                prev = idx + 1;
+            } while (flags != 0 && cnt < valueBufferSize && ord < totalValueNum);
+            p += prev; // only fragments of consumed deltas; the rest re-decode next fill
+        }
+        rb.p = p;
+        valueCnt = cnt;
+        lastValue = last;
+        decodeOrdinal = ord;
     }
 
     // Reads one position in lockstep with the info stream, refilling as needed.
