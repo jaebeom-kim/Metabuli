@@ -111,6 +111,13 @@ std::vector<Command> metabuliCommands = {
                 "<diffIdx> [maxBytes]",
                 CITATION_SPACEPHARER,
                 {{"diffIdx", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::flatfile}}},
+        {"analyze-info", analyzeInfo, &localPar.expand_diffidx, COMMAND_HIDDEN,
+                "Size the info-index reduction levers: entropy, in-group deltas, set dictionary (developer tool)",
+               nullptr,
+                "Jaebeom Kim <jbeom0731@gmail.com>",
+                "<DB dir with diffIdx/info/split>",
+                CITATION_SPACEPHARER,
+                {{"DB dir", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::directory}}},
         {"reformat-db", reformatDb, &localPar.reformatDb, COMMAND_DATABASE_CREATION,
                 "Re-encode diffIdx to LEB128 (smaller for dense DBs; no rebuild)",
                 "Re-encode the diffIdx from the 15-bit fragment varint to LEB128 byte varint without rebuilding (auto-kept if not smaller).\n"
