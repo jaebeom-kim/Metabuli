@@ -756,6 +756,13 @@ LocalParameters::LocalParameters() :
                      typeid(std::string),
                         (void *) &outSubDb,
                         "^.*$"),
+        DEDUP_KMERS(DEDUP_KMERS_ID,
+                   "--dedup",
+                   "Store each distinct k-mer once plus a same-value bitmap (format 2)",
+                   "Identical k-mer values (shared across species) are stored once in diffIdx; a 1-bit-per-entry bitmap marks entries whose value equals the previous entry's. Needs a format 0 source.",
+                     typeid(int),
+                        (void *) &dedupKmers,
+                        "^[0-1]{1}$"),
         LAZY_INFO(LAZY_INFO_ID,
                    "--lazy-info",
                    "Fetch reference tax IDs only for matched k-mers (0: off, 1: on)",
@@ -917,6 +924,7 @@ LocalParameters::LocalParameters() :
     // Sub-DB selection
     subDbList = "";
     outSubDb = "";
+    dedupKmers = 0;
 
     // Lazy info reads
     lazyInfo = 1;
@@ -1221,6 +1229,7 @@ LocalParameters::LocalParameters() :
     reformatDb.push_back(&PARAM_THREADS);
     reformatDb.push_back(&SUB_DB_LIST);
     reformatDb.push_back(&OUT_SUB_DB);
+    reformatDb.push_back(&DEDUP_KMERS);
 
     query2reference.push_back(&TEST_RANK);
 

@@ -124,7 +124,8 @@ std::vector<Command> metabuliCommands = {
                 "In-place by default; --out-sub-db writes a new sub-DB and keeps the source for A/B testing.\n\n"
                 "metabuli reformat-db <DB dir>                         # all sub-DBs, in-place\n"
                 "metabuli reformat-db <DB dir> --sub-dbs base          # one sub-DB, in-place\n"
-                "metabuli reformat-db <DB dir> --sub-dbs base --out-sub-db base_leb   # new sub-DB, source kept",
+                "metabuli reformat-db <DB dir> --sub-dbs base --out-sub-db base_leb   # new sub-DB, source kept\n"
+                "metabuli reformat-db <DB dir> --dedup 1               # format 2: distinct k-mers + bitmap",
                 "Jaebeom Kim <jbeom0731@gmail.com>",
                 "<DB dir>",
                 CITATION_SPACEPHARER,

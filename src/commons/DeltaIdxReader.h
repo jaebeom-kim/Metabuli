@@ -193,11 +193,21 @@ private:
     // To manage delta indices
     ReadBuffer<uint16_t> deltaIdxBuffer;
     // diffIdx encoding: 0 = 15-bit fragment varint (default, all existing DBs);
-    // 1 = LEB128 byte varint (set by reformat-db for smaller dense DBs). For
-    // format 1 the delta stream is byte-granular, so a separate byte buffer is
-    // used and DiffIdxSplit::diffIdxOffset is a byte offset (not a uint16 count).
+    // 1 = LEB128 byte varint (set by reformat-db for smaller dense DBs);
+    // 2 = dedup: LEB128 deltas of DISTINCT values only, plus a sibling dupBits
+    // bitmap with one bit per entry (1 = same value as the previous entry).
+    // For formats 1 and 2 the delta stream is byte-granular, so a separate
+    // byte buffer is used and DiffIdxSplit::diffIdxOffset is a byte offset
+    // (not a uint16 count); infoIdxOffset stays an entry ordinal, which is
+    // also the bit position where the bitmap resumes.
     uint8_t diffIdxFormat = 0;
     std::unique_ptr<ReadBuffer<uint8_t>> deltaByteBuffer;
+    // Format 2 bitmap state: current word/lane and entries consumed (the
+    // entry cap doubles as EOF detection; bitmap padding bits are never read).
+    std::unique_ptr<ReadBuffer<uint64_t>> dupBitsBuffer;
+    uint64_t dupWord = 0;
+    uint8_t dupLane = 64;
+    size_t dedupEntriesRead = 0;
     InfoIndexMetadata infoMetadata;
     bool infoIsPacked = false;
     // Only one info buffer is active. Plain DBs keep the old direct TaxID
@@ -498,7 +508,41 @@ private:
         }
     }
 
+    // Format 2: one bitmap bit per entry decides whether to repeat the
+    // previous value (bit 1) or decode the next distinct delta (bit 0), so
+    // every consumer sees the same per-entry value stream as formats 0/1.
+    uint64_t getNextMetamerDedup() {
+        if (unlikely(dedupEntriesRead >= totalValueNum)) {
+            return UINT64_MAX;
+        }
+        if (unlikely(dupLane == 64)) {
+            if (unlikely(dupBitsBuffer->p >= dupBitsBuffer->end)) {
+                if (dupBitsBuffer->loadBuffer() == 0) {
+                    return UINT64_MAX;
+                }
+            }
+            dupWord = *dupBitsBuffer->p++;
+            dupLane = 0;
+        }
+        const bool dup = (dupWord >> dupLane) & 1;
+        ++dupLane;
+        ++dedupEntriesRead;
+        if (!dup) {
+            if (unlikely(deltaByteBuffer->end - deltaByteBuffer->p < 10)) {
+                size_t readCnt = deltaByteBuffer->loadBuffer(deltaByteBuffer->end - deltaByteBuffer->p);
+                if (readCnt == 0) {
+                    return UINT64_MAX;
+                }
+            }
+            lastValue += decodeDelta7(deltaByteBuffer->p);
+        }
+        return lastValue;
+    }
+
     uint64_t getNextMetamer() {
+        if (unlikely(diffIdxFormat == 2)) {
+            return getNextMetamerDedup();
+        }
         if (unlikely(diffIdxFormat == 1)) {
             return getNextMetamerLEB();
         }
@@ -537,6 +581,13 @@ private:
     }
 
 public:
+    // Format 2 keeps its same-value bitmap next to the diffIdx file.
+    static std::string dupBitsFileName(const std::string & diffIdxFileName) {
+        const size_t slash = diffIdxFileName.find_last_of('/');
+        return (slash == std::string::npos)
+            ? "dupBits" : diffIdxFileName.substr(0, slash + 1) + "dupBits";
+    }
+
     // Reads Diffidx_format from the sibling db.parameters of a diffIdx file.
     static uint8_t loadDiffidxFormat(const std::string & diffIdxFileName) {
         const size_t slash = diffIdxFileName.find_last_of('/');
@@ -586,12 +637,16 @@ public:
             valueBuffer = new Kmer[valueBufferSize];
         }
         diffIdxFormat = loadDiffidxFormat(deltaIdxFileName);
-        if (diffIdxFormat == 1) {
+        if (diffIdxFormat >= 1) {
             // readBufferSize is a uint16 count historically; keep the same byte
             // budget for the byte-granular LEB128 stream.
             deltaByteBuffer = std::make_unique<ReadBuffer<uint8_t>>(deltaIdxFileName,
                                                                     readBufferSize * 2,
                                                                     prefetch);
+        }
+        if (diffIdxFormat == 2) {
+            dupBitsBuffer = std::make_unique<ReadBuffer<uint64_t>>(
+                dupBitsFileName(deltaIdxFileName), readBufferSize / 4, prefetch);
         }
         infoIsPacked = infoMetadata.isPacked();
         // The on-demand fetch window is deliberately small: a seek costs one
@@ -657,10 +712,14 @@ public:
         valueBuffer = new Kmer[valueBufferSize];
         hasPos = true;
         diffIdxFormat = loadDiffidxFormat(deltaIdxFileName);
-        if (diffIdxFormat == 1) {
+        if (diffIdxFormat >= 1) {
             deltaByteBuffer = std::make_unique<ReadBuffer<uint8_t>>(deltaIdxFileName,
                                                                     readBufferSize * 2,
                                                                     prefetch);
+        }
+        if (diffIdxFormat == 2) {
+            dupBitsBuffer = std::make_unique<ReadBuffer<uint64_t>>(
+                dupBitsFileName(deltaIdxFileName), readBufferSize / 4, prefetch);
         }
         // Position DBs pack their info index like any other DB; positions live
         // in a separate file read in lockstep with the (plain or packed) IDs.
@@ -796,11 +855,24 @@ public:
         // Seeking must clear EOF state from any previous scan.
         fileCompleted = false;
         valueBufferCompleted = false;
-        if (diffIdxFormat == 1) {
-            // Format 1 split offsets are byte positions into the LEB128 stream.
+        if (diffIdxFormat >= 1) {
+            // Format 1/2 split offsets are byte positions into the LEB128 stream.
             deltaByteBuffer->loadBufferAt(offset.diffIdxOffset);
         } else {
             deltaIdxBuffer.loadBufferAt(offset.diffIdxOffset);
+        }
+        if (diffIdxFormat == 2) {
+            // The bitmap resumes at the entry AFTER the anchor k-mer: its
+            // remaining duplicates carry bit 1 and re-emit ADkmer.
+            const size_t bitPos = offset.infoIdxOffset;
+            dupBitsBuffer->loadBufferAt(bitPos / 64);
+            if (bitPos % 64 != 0 && dupBitsBuffer->p < dupBitsBuffer->end) {
+                dupWord = *dupBitsBuffer->p++;
+                dupLane = (uint8_t)(bitPos % 64);
+            } else {
+                dupLane = 64; // next read loads a fresh word
+            }
+            dedupEntriesRead = bitPos;
         }
         const size_t infoOffset = offset.infoIdxOffset - (offset.ADkmer != 0);
         if (lazyInfo) {
