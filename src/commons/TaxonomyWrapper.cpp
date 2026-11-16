@@ -162,9 +162,19 @@ size_t TaxonomyWrapper::loadNodes(std::vector<TaxonNode> &tmpNodes,
     int currentNodeId = 0;
     std::string line;
     while (std::getline(ss, line)) {
-        std::vector<std::string> result = splitByDelimiter(line, "\t|\t", 3);
+        // Cols 0..6: tax_id, parent, rank, embl, division, inherited-div, genetic-code.
+        std::vector<std::string> result = splitByDelimiter(line, "\t|\t", 7);
         TaxID orgTaxId = (TaxID) strtol(result[0].c_str(), NULL, 10);
         TaxID orgParentTaxId = (TaxID) strtol(result[1].c_str(), NULL, 10);
+        if (result.size() > 6) {
+            const int gc = (int) strtol(result[6].c_str(), NULL, 10);
+            if (gc > 0 && orgTaxId >= 0) {
+                if ((size_t) orgTaxId >= orgTaxId2geneticCode.size()) {
+                    orgTaxId2geneticCode.resize(orgTaxId + 1, 0);
+                }
+                orgTaxId2geneticCode[orgTaxId] = (uint8_t) gc;
+            }
+        }
         TaxID internalTaxId;
         TaxID internalParentTaxId;
         if (original2internalTaxId.find(orgTaxId) == original2internalTaxId.end()) {
@@ -643,6 +653,7 @@ TaxonomyWrapper* TaxonomyWrapper::getEditableCopy(const TaxonomyWrapper * t, int
         newT->internal2orgTaxId = new int[newT->maxTaxID + 1];
         std::memcpy(newT->internal2orgTaxId, t->internal2orgTaxId, (t->maxTaxID + 1) * sizeof(int));
     }
+    newT->orgTaxId2geneticCode = t->orgTaxId2geneticCode; // keyed by original tax ID
     newT->taxonNodes = new TaxonNode[newT->maxNodes];
     std::copy(t->taxonNodes, t->taxonNodes + t->maxNodes, newT->taxonNodes);
     newT->block = new StringBlock<unsigned int>(t->block);

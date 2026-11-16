@@ -53,7 +53,8 @@ ProdigalWrapper::ProdigalWrapper() {
     }
 }
 
-void ProdigalWrapper::trainSingleGenome(std::string & genomeFileName) {
+void ProdigalWrapper::trainSingleGenome(std::string & genomeFileName, int transTable) {
+    tinf.trans_table = transTable;
     fptr input_ptr = INPUT_OPEN(genomeFileName.c_str(), "r");
     if(input_ptr == NULL) {
       fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
@@ -180,17 +181,17 @@ void ProdigalWrapper::trainSingleGenome(std::string & genomeFileName) {
     nn = 0; slen = 0; ipath = 0; nmask = 0;
 }
 
-void ProdigalWrapper::trainASpecies(std::string & genomeFileName) {
+void ProdigalWrapper::trainASpecies(std::string & genomeFileName, int transTable) {
     KSeqWrapper* kseq = KSeqFactory(genomeFileName.c_str());
     std::string concatSeq;
     while (kseq->ReadEntry()) {
         concatSeq += std::string(kseq->entry.sequence.s, kseq->entry.sequence.l);
     }
-    trainASpecies((unsigned char *)concatSeq.c_str(), concatSeq.length());
+    trainASpecies((unsigned char *)concatSeq.c_str(), concatSeq.length(), transTable);
     delete kseq;
 }
 
-void ProdigalWrapper::trainASpecies(unsigned char * genome, size_t seqLength) {
+void ProdigalWrapper::trainASpecies(unsigned char * genome, size_t seqLength, int transTable) {
     // Initialize memories to reuse them
     memset(seq, 0, (slen / 4 + 1) * sizeof(unsigned char));
     memset(rseq, 0, (slen / 4 + 1) * sizeof(unsigned char));
@@ -202,7 +203,7 @@ void ProdigalWrapper::trainASpecies(unsigned char * genome, size_t seqLength) {
     memset(mlist, 0, MAX_MASKS*sizeof(mask));
     memset(&tinf, 0, sizeof(struct _training));
     tinf.st_wt = 4.35;
-    tinf.trans_table = 11;
+    tinf.trans_table = transTable;
 
     slen = getNextSeq(genome, 1, seqLength);
 
@@ -265,13 +266,13 @@ void ProdigalWrapper::trainASpecies(unsigned char * genome, size_t seqLength) {
     if(tinf.uses_sd == 0) train_starts_nonsd(seq, rseq, slen, nodes, nn, &tinf); 
 }
 
-void ProdigalWrapper::trainMeta(std::string & genomeFileName) {
+void ProdigalWrapper::trainMeta(std::string & genomeFileName, int transTable) {
     KSeqWrapper* kseq = KSeqFactory(genomeFileName.c_str());
     std::string concatSeq;
     while (kseq->ReadEntry()) {
         concatSeq += std::string(kseq->entry.sequence.s, kseq->entry.sequence.l);
     }
-    trainMeta((unsigned char *)concatSeq.c_str(), concatSeq.length());
+    trainMeta((unsigned char *)concatSeq.c_str(), concatSeq.length(), transTable);
     delete kseq;
     // fptr input_ptr = INPUT_OPEN(genomeFileName.c_str(), "r");
     // if(input_ptr == NULL) {
@@ -325,7 +326,7 @@ void ProdigalWrapper::trainMeta(std::string & genomeFileName) {
     // }
 }
 
-void ProdigalWrapper::trainMeta(unsigned char *genome, size_t seqLength) {
+void ProdigalWrapper::trainMeta(unsigned char *genome, size_t seqLength, int transTable) {
     // Initialize memories to reuse them
     memset(seq, 0, (slen / 4 + 1) * sizeof(unsigned char));
     memset(rseq, 0, (slen / 4 + 1) * sizeof(unsigned char));
@@ -336,7 +337,7 @@ void ProdigalWrapper::trainMeta(unsigned char *genome, size_t seqLength) {
     // Initialize training information
     memset(&tinf, 0, sizeof(struct _training));
     tinf.st_wt = 4.35;
-    tinf.trans_table = 11;
+    tinf.trans_table = transTable;
     
     if (is_first_meta == 1) {
         initialize_metagenomic_bins(meta);

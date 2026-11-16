@@ -75,7 +75,19 @@ public:
             std::cout << internalTaxID << " isn't used." << std::endl;
             EXIT(EXIT_FAILURE);
         }
-        return internal2orgTaxId[internalTaxID]; 
+        return internal2orgTaxId[internalTaxID];
+    }
+
+    // NCBI genetic code id for a species (translation table for Prodigal
+    // training). Falls back to 11 (bacterial/archaeal) when unknown, e.g. the
+    // taxon has no entry or the taxonomy was not built from dump files.
+    int getGeneticCode(TaxID internalTaxID) const {
+        const TaxID org = getOriginalTaxID(internalTaxID);
+        if (org >= 0 && (size_t) org < orgTaxId2geneticCode.size()
+            && orgTaxId2geneticCode[org] != 0) {
+            return orgTaxId2geneticCode[org];
+        }
+        return 11;
     }
 
     TaxID getMaxTaxID() const {
@@ -306,6 +318,12 @@ protected:
     TaxID writableMaxTaxID = 0;
     int *internal2orgTaxId;
     bool useInternalTaxID;
+    // NCBI genetic code id per ORIGINAL tax ID (nodes.dmp col 7), indexed by
+    // original tax ID so it survives internal-ID renumbering. 0 = unset.
+    // Populated only when the taxonomy is built from dump files (loadNodes).
+    // Used at build time to pick the Prodigal training translation table per
+    // species; not serialized (classify does not need it).
+    std::vector<uint8_t> orgTaxId2geneticCode;
     size_t loadNodes(std::vector<TaxonNode> &tmpNodes,
                      const std::string &nodesFile,
                      std::unordered_map<TaxID, TaxID> & original2internalTaxId,

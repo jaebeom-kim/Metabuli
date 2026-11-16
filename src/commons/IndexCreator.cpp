@@ -1673,9 +1673,11 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                          (taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), spBatches[spIdx].speciesID))
                         )) {
                         prodigal->is_meta = 1;
-                        prodigal->trainMeta(fastaPaths[spBatches[spIdx].repGenomeFasta]);
+                        prodigal->trainMeta(fastaPaths[spBatches[spIdx].repGenomeFasta],
+                                            taxonomy->getGeneticCode(spBatches[spIdx].speciesID));
                     } else {
-                        prodigal->trainASpecies(fastaPaths[spBatches[spIdx].repGenomeFasta]);
+                        prodigal->trainASpecies(fastaPaths[spBatches[spIdx].repGenomeFasta],
+                                                taxonomy->getGeneticCode(spBatches[spIdx].speciesID));
                     }
 
                     // Make intergenic k-mer list to guide ORF extension
@@ -2216,11 +2218,13 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                      (taxonomy->IsAncestor(taxonomy->getEukaryotaTaxID(), accessionBatches[batchIdx].speciesID))
                                     )) {
                                     prodigal->is_meta = 1;
-                                    prodigal->trainMeta((unsigned char *) training_seq->entry.sequence.s, 
-                                                        training_seq->entry.sequence.l);
+                                    prodigal->trainMeta((unsigned char *) training_seq->entry.sequence.s,
+                                                        training_seq->entry.sequence.l,
+                                                        taxonomy->getGeneticCode(accessionBatches[batchIdx].speciesID));
                                 } else {
                                     prodigal->trainASpecies((unsigned char *) training_seq->entry.sequence.s,
-                                                            training_seq->entry.sequence.l);
+                                                            training_seq->entry.sequence.l,
+                                                            taxonomy->getGeneticCode(accessionBatches[batchIdx].speciesID));
                                 }
 
                                 // Generate intergenic 23-mer list. It is used to determine extension direction of intergenic sequences.

@@ -65,11 +65,13 @@ public:
     void setTrainingInfo(_training &tinf);
     void getPredictedGenes(unsigned char * genome, size_t seqLength);
     void removeCompletelyOverlappingGenes();
-    void trainSingleGenome(std::string & genomeFileName);
-    void trainASpecies(unsigned char * genome, size_t seqLength);
-    void trainASpecies(std::string & genomeFileName);
-    void trainMeta(std::string & genomeFileName);
-    void trainMeta(unsigned char * genome, size_t seqLength);
+    // transTable: NCBI genetic code for gene prediction (default 11,
+    // bacterial/archaeal). Only affects ORF boundaries, not metamer extraction.
+    void trainSingleGenome(std::string & genomeFileName, int transTable = 11);
+    void trainASpecies(unsigned char * genome, size_t seqLength, int transTable = 11);
+    void trainASpecies(std::string & genomeFileName, int transTable = 11);
+    void trainMeta(std::string & genomeFileName, int transTable = 11);
+    void trainMeta(unsigned char * genome, size_t seqLength, int transTable = 11);
     int getNextSeq(unsigned char * seq, int training, size_t length);
     void printGenes();
     ProdigalWrapper();
