@@ -1,4 +1,5 @@
 #include "IndexCreator.h"
+#include "reformatDb.h"
 #include "LocalParameters.h"
 #include <Command.h>
 #include "FileUtil.h"
@@ -168,6 +169,15 @@ int updateDB(int argc, const char **argv, const Command &command){
     idxCre.printFilesToMerge();
     idxCre.setMergedFileNames(newDbDir + "/diffIdx", newDbDir + "/info", newDbDir + "/split");
     idxCre.mergeTargetFiles<FilterMode::DB_CREATION>();
+
+    // Final diffIdx encoding (--diffidx-format, default 2 = dedup LEB128).
+    if (par.diffidxFormat != 0) {
+        cout << "Re-encoding k-mer index (--diffidx-format " << par.diffidxFormat << ") ..." << endl;
+        if (reformatKmerList(newDbDir, par.threads, par.diffidxFormat == 2) != 0) {
+            cerr << "Error: re-encoding the k-mer index failed." << endl;
+            return 1;
+        }
+    }
     
     delete taxonomy;
     cout << "Index creation completed." << endl;

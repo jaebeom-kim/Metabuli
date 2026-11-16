@@ -1,5 +1,6 @@
 #include "IndexCreator.h"
 #include "LocalParameters.h"
+#include "reformatDb.h"
 #include <Command.h>
 #include "FileUtil.h"
 #include "accession2taxid.h"
@@ -177,6 +178,16 @@ int build(int argc, const char **argv, const Command &command){
     appendDbParameter(dbDir, SUBDB_KEY_LINEAGE, lineage);
     appendDbParameter(baseDir, SUBDB_KEY_LINEAGE, lineage);
     appendDbParameter(baseDir, SUBDB_KEY_MAX_TAXID, to_string(taxonomy->getMaxTaxID()));
+
+    // Final diffIdx encoding (--diffidx-format, default 2 = dedup LEB128).
+    // Re-encodes in place; auto-keeps format 0 when not smaller.
+    if (par.diffidxFormat != 0) {
+        cout << "Re-encoding k-mer index (--diffidx-format " << par.diffidxFormat << ") ..." << endl;
+        if (reformatKmerList(baseDir, par.threads, par.diffidxFormat == 2) != 0) {
+            cerr << "Error: re-encoding the k-mer index failed." << endl;
+            return 1;
+        }
+    }
 
     delete taxonomy;
     cout << "Index creation completed." << endl;

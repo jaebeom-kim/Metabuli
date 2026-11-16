@@ -644,6 +644,13 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &gvBins,
                 "^[0-1]{1}$"),
+        DIFFIDX_FORMAT(DIFFIDX_FORMAT_ID,
+                "--diffidx-format",
+                "Final k-mer index encoding (0: legacy 15-bit, 1: LEB128, 2: dedup LEB128)",
+                "Encoding of the final diffIdx. 0: legacy 15-bit fragment varint (byte-identical to older versions). 1: LEB128 byte varint. 2: LEB128 of distinct k-mers plus a same-value bitmap (default, smallest). 1/2 re-encode in place after the build and automatically keep 0 when not smaller; classify reads every format.",
+                typeid(int),
+                (void *) &diffidxFormat,
+                "^[0-2]{1}$"),
         MIN_EUK_CONTIG_LEN(MIN_EUK_CONTIG_LEN_ID,
                 "--min-euk-contig-len",
                 "Skip eukaryotic scaffolds shorter than this length (bp) during build (0: off)",
@@ -888,6 +895,8 @@ LocalParameters::LocalParameters() :
 
     // Build: prodigal-gv bins off by default (byte-identical legacy builds)
     gvBins = 0;
+    // Build: final diffIdx encoding defaults to dedup LEB128 (format 2)
+    diffidxFormat = 2;
 
 
     // Classify
@@ -985,6 +994,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&SKIP_PRODIGAL_TAXA);
     build.push_back(&GV_BINS);
     build.push_back(&VIRUS_TAX_ID); // clade root for --gv-bins gating
+    build.push_back(&DIFFIDX_FORMAT);
     build.push_back(&MIN_EUK_CONTIG_LEN);
     build.push_back(&PACK_INFO);
     build.push_back(&SDUST_T);
@@ -1018,6 +1028,7 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&SKIP_PRODIGAL_TAXA);
     updateDB.push_back(&GV_BINS);
     updateDB.push_back(&VIRUS_TAX_ID); // clade root for --gv-bins gating
+    updateDB.push_back(&DIFFIDX_FORMAT);
     updateDB.push_back(&MIN_EUK_CONTIG_LEN);
     updateDB.push_back(&PACK_INFO);
 

@@ -1,4 +1,5 @@
 #include "LocalParameters.h"
+#include "reformatDb.h"
 #include <Command.h>
 #include "FileUtil.h"
 #include "DeltaIdxReader.h"
@@ -396,6 +397,10 @@ static int reformatOne(const string & srcDir, const string & dstDir, int threads
              << (inPlace ? "" : " at " + dstDir) << "." << endl;
     }
     return 0;
+}
+
+int reformatKmerList(const std::string & dir, int threads, bool dedup) {
+    return reformatOne(dir, dir, threads, dedup);
 }
 
 int reformatDb(int argc, const char **argv, const Command &command) {
