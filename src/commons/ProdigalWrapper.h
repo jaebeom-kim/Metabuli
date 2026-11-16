@@ -70,8 +70,11 @@ public:
     void trainSingleGenome(std::string & genomeFileName, int transTable = 11);
     void trainASpecies(unsigned char * genome, size_t seqLength, int transTable = 11);
     void trainASpecies(std::string & genomeFileName, int transTable = 11);
-    void trainMeta(std::string & genomeFileName, int transTable = 11);
-    void trainMeta(unsigned char * genome, size_t seqLength, int transTable = 11);
+    // gvBins: also consider the prodigal-gv giant-virus/gut-phage bins
+    // (meta[NUM_META_STOCK..NUM_META)) during bin selection. Off by default so
+    // non-viral genomes keep the stock Prodigal behavior bit-for-bit.
+    void trainMeta(std::string & genomeFileName, int transTable = 11, bool gvBins = false);
+    void trainMeta(unsigned char * genome, size_t seqLength, int transTable = 11, bool gvBins = false);
     int getNextSeq(unsigned char * seq, int training, size_t length);
     void printGenes();
     ProdigalWrapper();

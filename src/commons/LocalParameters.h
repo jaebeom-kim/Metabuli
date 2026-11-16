@@ -168,6 +168,7 @@ public:
     PARAMETER(REP_GENOME_LIST)
     PARAMETER(NO_MASK_TAXA)
     PARAMETER(SKIP_PRODIGAL_TAXA)
+    PARAMETER(GV_BINS)
     PARAMETER(MIN_EUK_CONTIG_LEN)
     PARAMETER(PACK_INFO)
     PARAMETER(SDUST_T)
@@ -312,6 +313,9 @@ public:
     std::string repGenomeList;
     std::string noMaskTaxa;
     std::string skipProdigalTaxa;
+    // 1: include prodigal-gv giant-virus/gut-phage bins in meta-mode bin
+    // selection for species under the virus clade (--virus-taxid, NCBI 10239).
+    int gvBins;
     int minEukContigLen;
     int packInfo;
     int sdustT;  // --sdust-t: SDUST score threshold (used when --mask 2)

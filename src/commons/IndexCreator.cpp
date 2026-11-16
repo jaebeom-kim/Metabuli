@@ -1608,7 +1608,11 @@ size_t IndexCreator::fillTargetKmerBuffer2(
 {
     std::atomic<int> hasOverflow{0};
     std::atomic<size_t> processedInThisRun{0};
-#pragma omp parallel default(none), shared(kmerBuffer, batchChecker, processedSpCnt, hasOverflow, processedInThisRun, par, cout)
+    // --gv-bins: prodigal-gv bins join meta-mode bin selection, but only for
+    // species under the virus clade root (everything else stays stock-exact).
+    const TaxID virusTaxID = par.gvBins
+        ? std::max(0, taxonomy->getInternalTaxID(par.virusTaxId)) : 0;
+#pragma omp parallel default(none), shared(kmerBuffer, batchChecker, processedSpCnt, hasOverflow, processedInThisRun, par, cout, virusTaxID)
     {
         ProbabilityMatrix probMatrix(*subMat);
         size_t posToWrite;
@@ -1674,7 +1678,8 @@ size_t IndexCreator::fillTargetKmerBuffer2(
                         )) {
                         prodigal->is_meta = 1;
                         prodigal->trainMeta(fastaPaths[spBatches[spIdx].repGenomeFasta],
-                                            taxonomy->getGeneticCode(spBatches[spIdx].speciesID));
+                                            taxonomy->getGeneticCode(spBatches[spIdx].speciesID),
+                                            virusTaxID != 0 && taxonomy->IsAncestor(virusTaxID, spBatches[spIdx].speciesID));
                     } else {
                         prodigal->trainASpecies(fastaPaths[spBatches[spIdx].repGenomeFasta],
                                                 taxonomy->getGeneticCode(spBatches[spIdx].speciesID));
@@ -2011,7 +2016,10 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                           size_t &processedBatchCnt,
                                           const LocalParameters &par) {
     std::atomic<int> hasOverflow{0};
-#pragma omp parallel default(none), shared(kmerBuffer, batchChecker, processedBatchCnt, hasOverflow, par, cout)
+    // --gv-bins: see fillTargetKmerBuffer2.
+    const TaxID virusTaxID = par.gvBins
+        ? std::max(0, taxonomy->getInternalTaxID(par.virusTaxId)) : 0;
+#pragma omp parallel default(none), shared(kmerBuffer, batchChecker, processedBatchCnt, hasOverflow, par, cout, virusTaxID)
     {
         ProbabilityMatrix probMatrix(*subMat);
         SeqIterator seqIterator(par);
@@ -2220,7 +2228,8 @@ size_t IndexCreator::fillTargetKmerBuffer(Buffer<Kmer> &kmerBuffer,
                                     prodigal->is_meta = 1;
                                     prodigal->trainMeta((unsigned char *) training_seq->entry.sequence.s,
                                                         training_seq->entry.sequence.l,
-                                                        taxonomy->getGeneticCode(accessionBatches[batchIdx].speciesID));
+                                                        taxonomy->getGeneticCode(accessionBatches[batchIdx].speciesID),
+                                                        virusTaxID != 0 && taxonomy->IsAncestor(virusTaxID, accessionBatches[batchIdx].speciesID));
                                 } else {
                                     prodigal->trainASpecies((unsigned char *) training_seq->entry.sequence.s,
                                                             training_seq->entry.sequence.l,

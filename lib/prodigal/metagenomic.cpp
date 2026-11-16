@@ -76,6 +76,19 @@ void initialize_metagenomic_bins(struct _metagenomic_bin *meta) {
   initialize_metagenome_47(meta[47].tinf);
   initialize_metagenome_48(meta[48].tinf);
   initialize_metagenome_49(meta[49].tinf);
+  /* prodigal-gv bins (giant viruses, gut phages); see training_gv.cpp */
+  initialize_metagenome_50(meta[50].tinf);
+  initialize_metagenome_51(meta[51].tinf);
+  initialize_metagenome_52(meta[52].tinf);
+  initialize_metagenome_53(meta[53].tinf);
+  initialize_metagenome_54(meta[54].tinf);
+  initialize_metagenome_55(meta[55].tinf);
+  initialize_metagenome_56(meta[56].tinf);
+  initialize_metagenome_57(meta[57].tinf);
+  initialize_metagenome_58(meta[58].tinf);
+  initialize_metagenome_59(meta[59].tinf);
+  initialize_metagenome_60(meta[60].tinf);
+  initialize_metagenome_61(meta[61].tinf);
   sprintf(meta[0].desc, "%d|%s|%s|%.1f|%d|%d", 0,
           "Mycoplasma_bovis_PG45",
           "B", 29.31, meta[0].tinf->trans_table, meta[0].tinf->uses_sd);
@@ -226,6 +239,42 @@ void initialize_metagenomic_bins(struct _metagenomic_bin *meta) {
   sprintf(meta[49].desc, "%d|%s|%s|%.1f|%d|%d", 49,
           "_Nostoc_azollae__0708",
           "B", 38.45, meta[49].tinf->trans_table, meta[49].tinf->uses_sd);
+  sprintf(meta[50].desc, "%d|%s|%s|%.1f|%d|%d", 50,
+          "Acanthamoeba_polyphaga_mimivirus",
+          "V", 27.95, meta[50].tinf->trans_table, meta[50].tinf->uses_sd);
+  sprintf(meta[51].desc, "%d|%s|%s|%.1f|%d|%d", 51,
+          "Paramecium_bursaria_Chlorella_virus_1_PBCV-1",
+          "V", 39.97, meta[51].tinf->trans_table, meta[51].tinf->uses_sd);
+  sprintf(meta[52].desc, "%d|%s|%s|%.1f|%d|%d", 52,
+          "VirSorter2_NCLDV",
+          "V", 31.22, meta[52].tinf->trans_table, meta[52].tinf->uses_sd);
+  sprintf(meta[53].desc, "%d|%s|%s|%.1f|%d|%d", 53,
+          "Acanthocystis_turfacea_Chlorella_virus_1",
+          "V", 49.40, meta[53].tinf->trans_table, meta[53].tinf->uses_sd);
+  sprintf(meta[54].desc, "%d|%s|%s|%.1f|%d|%d", 54,
+          "Agate_code_15",
+          "V", 39.78, meta[54].tinf->trans_table, meta[54].tinf->uses_sd);
+  sprintf(meta[55].desc, "%d|%s|%s|%.1f|%d|%d", 55,
+          "Topaz_code_15",
+          "V", 34.06, meta[55].tinf->trans_table, meta[55].tinf->uses_sd);
+  sprintf(meta[56].desc, "%d|%s|%s|%.1f|%d|%d", 56,
+          "Gut_phage_code_15",
+          "V", 33.17, meta[56].tinf->trans_table, meta[56].tinf->uses_sd);
+  sprintf(meta[57].desc, "%d|%s|%s|%.1f|%d|%d", 57,
+          "Gut_phage_code_11a",
+          "V", 43.26, meta[57].tinf->trans_table, meta[57].tinf->uses_sd);
+  sprintf(meta[58].desc, "%d|%s|%s|%.1f|%d|%d", 58,
+          "Gut_phage_code_11b",
+          "V", 36.92, meta[58].tinf->trans_table, meta[58].tinf->uses_sd);
+  sprintf(meta[59].desc, "%d|%s|%s|%.1f|%d|%d", 59,
+          "Gut_phage_code_11c",
+          "V", 29.95, meta[59].tinf->trans_table, meta[59].tinf->uses_sd);
+  sprintf(meta[60].desc, "%d|%s|%s|%.1f|%d|%d", 60,
+          "Gut_phage_code_11d",
+          "V", 36.40, meta[60].tinf->trans_table, meta[60].tinf->uses_sd);
+  sprintf(meta[61].desc, "%d|%s|%s|%.1f|%d|%d", 61,
+          "Gut_phage_code_11e",
+          "V", 32.35, meta[61].tinf->trans_table, meta[61].tinf->uses_sd);
 
     return;
 }

@@ -103,5 +103,18 @@ void initialize_metagenome_46(struct _training *);
 void initialize_metagenome_47(struct _training *);
 void initialize_metagenome_48(struct _training *);
 void initialize_metagenome_49(struct _training *);
+/* Giant-virus / gut-phage bins ported from prodigal-gv (training_gv.cpp). */
+void initialize_metagenome_50(struct _training *);
+void initialize_metagenome_51(struct _training *);
+void initialize_metagenome_52(struct _training *);
+void initialize_metagenome_53(struct _training *);
+void initialize_metagenome_54(struct _training *);
+void initialize_metagenome_55(struct _training *);
+void initialize_metagenome_56(struct _training *);
+void initialize_metagenome_57(struct _training *);
+void initialize_metagenome_58(struct _training *);
+void initialize_metagenome_59(struct _training *);
+void initialize_metagenome_60(struct _training *);
+void initialize_metagenome_61(struct _training *);
 
 #endif

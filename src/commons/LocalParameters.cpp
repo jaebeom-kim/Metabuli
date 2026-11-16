@@ -637,6 +637,13 @@ LocalParameters::LocalParameters() :
                 typeid(std::string),
                 (void *) &skipProdigalTaxa,
                 "^.*$"),
+        GV_BINS(GV_BINS_ID,
+                "--gv-bins",
+                "Use prodigal-gv giant-virus/gut-phage models for viral genomes (0: off, 1: on)",
+                "1: during build, gene prediction of species under the virus clade (--virus-taxid) also considers the prodigal-gv models (NCLDVs, gut phages with genetic codes 15/11). Non-viral species are unaffected. 0: stock Prodigal models only.",
+                typeid(int),
+                (void *) &gvBins,
+                "^[0-1]{1}$"),
         MIN_EUK_CONTIG_LEN(MIN_EUK_CONTIG_LEN_ID,
                 "--min-euk-contig-len",
                 "Skip eukaryotic scaffolds shorter than this length (bp) during build (0: off)",
@@ -879,6 +886,9 @@ LocalParameters::LocalParameters() :
     bacteriaTaxId = 2;
     archaeaTaxId = 2157;
 
+    // Build: prodigal-gv bins off by default (byte-identical legacy builds)
+    gvBins = 0;
+
 
     // Classify
     seqMode = 2;
@@ -973,6 +983,8 @@ LocalParameters::LocalParameters() :
     build.push_back(&REP_GENOME_LIST);
     build.push_back(&NO_MASK_TAXA);
     build.push_back(&SKIP_PRODIGAL_TAXA);
+    build.push_back(&GV_BINS);
+    build.push_back(&VIRUS_TAX_ID); // clade root for --gv-bins gating
     build.push_back(&MIN_EUK_CONTIG_LEN);
     build.push_back(&PACK_INFO);
     build.push_back(&SDUST_T);
@@ -1004,6 +1016,8 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&VALIDATE_DB);
     updateDB.push_back(&NO_MASK_TAXA);
     updateDB.push_back(&SKIP_PRODIGAL_TAXA);
+    updateDB.push_back(&GV_BINS);
+    updateDB.push_back(&VIRUS_TAX_ID); // clade root for --gv-bins gating
     updateDB.push_back(&MIN_EUK_CONTIG_LEN);
     updateDB.push_back(&PACK_INFO);
 

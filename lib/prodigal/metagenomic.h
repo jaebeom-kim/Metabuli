@@ -29,7 +29,11 @@
 #include "node.h"
 
 #define NUM_BIN 6
-#define NUM_META 50
+/* Stock Prodigal 2.6.3 bins. Bins [NUM_META_STOCK, NUM_META) are the
+   giant-virus / gut-phage models ported from prodigal-gv; callers restrict
+   the search to the stock range unless gv bins are explicitly enabled. */
+#define NUM_META_STOCK 50
+#define NUM_META 62
 #define SAMPLE_LEN 120
 #define MAX_SAMPLE 200
 

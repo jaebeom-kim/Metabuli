@@ -266,13 +266,13 @@ void ProdigalWrapper::trainASpecies(unsigned char * genome, size_t seqLength, in
     if(tinf.uses_sd == 0) train_starts_nonsd(seq, rseq, slen, nodes, nn, &tinf); 
 }
 
-void ProdigalWrapper::trainMeta(std::string & genomeFileName, int transTable) {
+void ProdigalWrapper::trainMeta(std::string & genomeFileName, int transTable, bool gvBins) {
     KSeqWrapper* kseq = KSeqFactory(genomeFileName.c_str());
     std::string concatSeq;
     while (kseq->ReadEntry()) {
         concatSeq += std::string(kseq->entry.sequence.s, kseq->entry.sequence.l);
     }
-    trainMeta((unsigned char *)concatSeq.c_str(), concatSeq.length(), transTable);
+    trainMeta((unsigned char *)concatSeq.c_str(), concatSeq.length(), transTable, gvBins);
     delete kseq;
     // fptr input_ptr = INPUT_OPEN(genomeFileName.c_str(), "r");
     // if(input_ptr == NULL) {
@@ -326,7 +326,7 @@ void ProdigalWrapper::trainMeta(std::string & genomeFileName, int transTable) {
     // }
 }
 
-void ProdigalWrapper::trainMeta(unsigned char *genome, size_t seqLength, int transTable) {
+void ProdigalWrapper::trainMeta(unsigned char *genome, size_t seqLength, int transTable, bool gvBins) {
     // Initialize memories to reuse them
     memset(seq, 0, (slen / 4 + 1) * sizeof(unsigned char));
     memset(rseq, 0, (slen / 4 + 1) * sizeof(unsigned char));
@@ -363,7 +363,10 @@ void ProdigalWrapper::trainMeta(unsigned char *genome, size_t seqLength, int tra
     high = 0.86596*tinf.gc + .1131991;
     if(high < 0.35) high = 0.35;
     max_score = -100.0;
-    for(int i = 0; i < NUM_META; i++) {
+    // gv bins (prodigal-gv giant-virus/gut-phage models) participate in bin
+    // selection only on request; the stock range keeps legacy behavior exact.
+    const int numBins = gvBins ? NUM_META : NUM_META_STOCK;
+    for(int i = 0; i < numBins; i++) {
         if (i == 0 || meta[i].tinf->trans_table !=
                       meta[i - 1].tinf->trans_table) {
             memset(nodes, 0, nn * sizeof(struct _node));
