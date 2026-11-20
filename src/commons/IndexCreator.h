@@ -910,7 +910,7 @@ void IndexCreator::filterKmers(
             break;
         }
     }
-    cout << "Loaded k-mer count  : " << (kmerBuffer.startIndexOfReserve - startIdx) << endl;
+    cout << "Total k-mers    : " << (kmerBuffer.startIndexOfReserve - startIdx) << endl;
     // Make splits
     vector<Split> splits;
     size_t splitWidth = (kmerBuffer.startIndexOfReserve - startIdx) / par.threads;

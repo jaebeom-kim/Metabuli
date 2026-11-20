@@ -412,34 +412,56 @@ void IndexCreator::createIndexWithPos() {
     std::vector<std::atomic<bool>> batchChecker(spBatches.size());
     batchEstimateScale.assign(spBatches.size(), 1.0f);
     size_t processedSpCnt = 0;
+    uint64_t totalBp = 0;
+    for (const SpeciesBatch & b : spBatches) {
+        totalBp += b.spTotalLength;
+    }
 
 #ifdef OPENMP
     omp_set_num_threads(par.threads);
 #endif
 
     while (processedSpCnt < spBatches.size()) {
+        time_t initStart = time(nullptr);
         kmerBuffer.init();
+        cout << "Buffer init     : " << time(nullptr) - initStart << " s" << endl;
 
         // If no species was processed this pass (all deferred because their
         // k-mers overran the reservation), the buffer holds only tombstones;
         // skip the sort/write and retry with the enlarged estimates.
+        time_t extractStart = time(nullptr);
         if (fillTargetKmerBuffer2(kmerBuffer, batchChecker, processedSpCnt, par) == 0) {
             continue;
         }
+        cout << "K-mer extraction: " << time(nullptr) - extractStart << " s" << endl;
 
         // Sort the k-mers
         time_t start = time(nullptr);
         SORT_PARALLEL(kmerBuffer.buffer, kmerBuffer.buffer + kmerBuffer.startIndexOfReserve,
                       Kmer::compareKmer);
         time_t sort = time(nullptr);
-        cout << "Reference k-mer sort : " << sort - start << " s" << endl;
+        cout << "K-mer sort      : " << sort - start << " s" << endl;
 
         // Write database files
+        time_t writeStart = time(nullptr);
         if(processedSpCnt == spBatches.size() && numOfFlush == 0 && !isUpdating) {
             writeTargetFilesAndSplits(kmerBuffer);
         } else {
             writeTargetFiles(kmerBuffer);
         }
+        cout << "Index writing   : " << time(nullptr) - writeStart << " s" << endl;
+        uint64_t processedBp = 0;
+        for (size_t i = 0; i < spBatches.size(); ++i) {
+            if (batchChecker[i].load(std::memory_order_relaxed)) {
+                processedBp += spBatches[i].spTotalLength;
+            }
+        }
+        char progress[16];
+        snprintf(progress, sizeof(progress), "%.1f",
+                 totalBp ? 100.0 * processedBp / totalBp : 100.0);
+        cout << "Progress        : " << progress << " % ("
+             << processedSpCnt << "/" << spBatches.size() << " species)" << endl;
+        cout << "----------------- " << endl;
     }
     writeDbParameters();
 }
@@ -489,42 +511,62 @@ void IndexCreator::createIndex() {
     size_t processedBatchCnt = 0;
 
     vector<pair<size_t, size_t>> uniqKmerIdxRanges;
+    size_t* uniqKmerIdx = new size_t[kmerBuffer.bufferSize + 1];
+    uint64_t totalBp = 0;
+    for (const AccessionBatch & b : accessionBatches) {
+        totalBp += b.totalLength;
+    }
 #ifdef OPENMP
     omp_set_num_threads(par.threads);
 #endif
     while(processedBatchCnt < accessionBatches.size()) {
+        time_t initStart = time(nullptr);
         kmerBuffer.init();
-        cout << "Buffer initialized" << endl;
+        cout << "Buffer init     : " << time(nullptr) - initStart << " s" << endl;
 
         // Extract target k-mers
+        time_t extractStart = time(nullptr);
         fillTargetKmerBuffer(kmerBuffer, batchChecker, processedBatchCnt, par);
+        cout << "K-mer extraction: " << time(nullptr) - extractStart << " s" << endl;
 
         // Sort the k-mers
         time_t start = time(nullptr);
         SORT_PARALLEL(kmerBuffer.buffer, kmerBuffer.buffer + kmerBuffer.startIndexOfReserve,
                       Kmer::compareTargetKmer);
         time_t sort = time(nullptr);
-        cout << kmerBuffer.startIndexOfReserve << " k-mers extracted" << endl;
-        cout << "Reference k-mer sort : " << sort - start << endl;
+        cout << "K-mer sort      : " << sort - start << " s" << endl;
 
         // Reduce redundancy
-        auto * uniqKmerIdx = new size_t[kmerBuffer.startIndexOfReserve + 1];
         size_t uniqKmerCnt = 0;
         uniqKmerIdxRanges.clear();
         filterKmers<FilterMode::DB_CREATION>(kmerBuffer, uniqKmerIdx, uniqKmerCnt, uniqKmerIdxRanges);
         time_t reduction = time(nullptr);
-        cout << "Unique k-mer count   : " << uniqKmerCnt << endl;
-        cout << "Redundancy reduction : " << (double) (reduction - sort) << " s" << endl;
+        cout << "Deduplicating   : " << (double) (reduction - sort) << " s" << endl;
+        cout << "Filtered k-mers : " << uniqKmerCnt << endl;
 
         // Write the target files
+        time_t writeStart = time(nullptr);
         if(processedBatchCnt == accessionBatches.size() && numOfFlush == 0 && !isUpdating) {
             writeTargetFilesAndSplits(kmerBuffer, uniqKmerIdx, uniqKmerCnt, uniqKmerIdxRanges,
                                       /*streamPackTaxIds=*/true);
         } else {
             writeTargetFiles(kmerBuffer, uniqKmerIdx, uniqKmerIdxRanges);
         }
-        delete[] uniqKmerIdx;
+        cout << "Index writing   : " << time(nullptr) - writeStart << " s" << endl;
+        uint64_t processedBp = 0;
+        for (size_t i = 0; i < accessionBatches.size(); ++i) {
+            if (batchChecker[i].load(std::memory_order_relaxed)) {
+                processedBp += accessionBatches[i].totalLength;
+            }
+        }
+        char progress[16];
+        snprintf(progress, sizeof(progress), "%.1f",
+                 totalBp ? 100.0 * processedBp / totalBp : 100.0);
+        cout << "Progress        : " << progress << " % ("
+             << processedBatchCnt << "/" << accessionBatches.size() << " batches)" << endl;
+        cout << "----------------- " << endl;
     }
+    delete[] uniqKmerIdx;
 
     writeDbParameters();
 }
