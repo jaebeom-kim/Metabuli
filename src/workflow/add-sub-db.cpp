@@ -19,6 +19,7 @@
 
 void setDefaults_addSubDb(LocalParameters & par){
     par.dbTotalLength = 0;
+    par.storeKmerPos = 0; // overridden by the DB's Kmer_position (loadDbParameters)
     par.noMaskTaxa = "";
     par.makeLibrary = 0;
     par.gtdb = 0;
@@ -188,15 +189,27 @@ int addSubDb(int argc, const char **argv, const Command &command){
     // index only ever holds this run's writable tax IDs; let it pack to their
     // maximum instead of the taxonomy-wide maxTaxID.
     idxCre.setCapInfoIdsToObserved(true);
-    idxCre.createIndex();
+    // par.storeKmerPos was inherited from the database's Kmer_position by
+    // loadDbParameters above: a position DB gets a position sub-DB and a plain
+    // DB a plain one, so every searched list agrees on having positions.
+    if (par.storeKmerPos == 0) {
+        idxCre.createIndex();
+    } else {
+        idxCre.createIndexWithPos();
+    }
 
     // Finalize the sub-DB's k-mer list from its flushed chunks. Unlike
     // updateDB, the database's existing lists are NOT merged in.
     cout << "Finalize sub-DB files" << endl;
     idxCre.updateTaxId2SpeciesTaxId(subDir + "/taxID_list");
     idxCre.printFilesToMerge();
-    idxCre.setMergedFileNames(subDir + "/diffIdx", subDir + "/info", subDir + "/split");
-    idxCre.mergeTargetFiles<FilterMode::DB_CREATION>();
+    if (par.storeKmerPos == 0) {
+        idxCre.setMergedFileNames(subDir + "/diffIdx", subDir + "/info", subDir + "/split");
+        idxCre.mergeTargetFiles<FilterMode::DB_CREATION>();
+    } else {
+        idxCre.setMergedFileNames(subDir + "/diffIdx", subDir + "/info", subDir + "/split", subDir + "/kmerpos");
+        idxCre.mergeTargetFiles<FilterMode::DB_CREATION_POS>();
+    }
 
     // Re-encode the k-mer index to dedup LEB128 (format 2) in place;
     // auto-keeps format 0 when the re-encoding would not be smaller.
