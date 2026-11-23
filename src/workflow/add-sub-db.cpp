@@ -198,13 +198,12 @@ int addSubDb(int argc, const char **argv, const Command &command){
     idxCre.setMergedFileNames(subDir + "/diffIdx", subDir + "/info", subDir + "/split");
     idxCre.mergeTargetFiles<FilterMode::DB_CREATION>();
 
-    // Final diffIdx encoding (--diffidx-format, default 2 = dedup LEB128).
-    if (par.diffidxFormat != 0) {
-        cout << "Re-encoding k-mer index (--diffidx-format " << par.diffidxFormat << ") ..." << endl;
-        if (reformatKmerList(subDir, par.threads, par.diffidxFormat == 2) != 0) {
-            cerr << "Error: re-encoding the k-mer index failed." << endl;
-            return 1;
-        }
+    // Re-encode the k-mer index to dedup LEB128 (format 2) in place;
+    // auto-keeps format 0 when the re-encoding would not be smaller.
+    cout << "Re-encoding k-mer index ..." << endl;
+    if (reformatKmerList(subDir, par.threads, true) != 0) {
+        cerr << "Error: re-encoding the k-mer index failed." << endl;
+        return 1;
     }
 
     // Persist the (possibly extended) taxonomy. Write-to-temp + rename so a

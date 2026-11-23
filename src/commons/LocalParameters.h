@@ -169,7 +169,6 @@ public:
     PARAMETER(NO_MASK_TAXA)
     PARAMETER(SKIP_PRODIGAL_TAXA)
     PARAMETER(GV_BINS)
-    PARAMETER(DIFFIDX_FORMAT)
     PARAMETER(MIN_EUK_CONTIG_LEN)
     PARAMETER(PACK_INFO)
     PARAMETER(SDUST_T)
@@ -317,10 +316,6 @@ public:
     // 1: include prodigal-gv giant-virus/gut-phage bins in meta-mode bin
     // selection for species under the virus clade (--virus-taxid, NCBI 10239).
     int gvBins;
-    // Final diffIdx encoding after build: 0 = legacy 15-bit fragment varint,
-    // 1 = LEB128, 2 = dedup LEB128 + same-value bitmap (default). 1/2 re-encode
-    // in place after the merge and auto-keep 0 when not smaller.
-    int diffidxFormat;
     int minEukContigLen;
     int packInfo;
     int sdustT;  // --sdust-t: SDUST score threshold (used when --mask 2)
@@ -383,6 +378,11 @@ public:
                          const char* pargv[],
                          const std::vector<MMseqsParameter*> &par);
     
+    // Shadows Parameters::printUsageMessage (called from the local
+    // parseParameters below): same rendering, but Metabuli group titles and
+    // titles printed on the short usage too. Keeps lib/mmseqs untouched.
+    void printUsageMessage(const Command& command, unsigned int outputFlag, const char* extraText = NULL);
+
     void parseParameters(int argc, const char *pargv[], const Command &command, bool printPar, int parseFlags,
                         int outputFlags);
 

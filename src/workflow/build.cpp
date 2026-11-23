@@ -20,7 +20,6 @@ void setDefaults_build(LocalParameters & par) {
     par.ramUsage = LocalParameters::defaultRamUsage();
     par.validateInput = 0;
     par.validateDb = 0;
-    par.taxonomyPath = "";
     par.customMetamer = "";
     par.splitNum = 4096;
     par.maskProb = 0.9;
@@ -40,6 +39,11 @@ int build(int argc, const char **argv, const Command &command){
     setDefaults_build(par);
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
     const string dbDir = par.filenames[0]; // copy; filenames[0] is retargeted below
+    // Positional args: <dbDir> <FASTA list> <taxonomy dir> <acc2taxid>. The
+    // taxonomy dir is consumed here and erased so the rest of the pipeline
+    // (incl. IndexCreator) keeps its legacy layout: [1]=FASTA list, [2]=acc2taxid.
+    const string taxonomyDir = par.filenames[2] + "/";
+    par.filenames.erase(par.filenames.begin() + 2);
     // makeDir is a plain mkdir (no parents); ignoring its failure used to let the
     // build run on until it segfaulted on a NULL FILE* deep in IndexCreator.
     if (!FileUtil::directoryExists(dbDir.c_str())
@@ -81,13 +85,6 @@ int build(int argc, const char **argv, const Command &command){
     #ifdef OPENMP
         omp_set_num_threads(par.threads);
     #endif
-
-    string taxonomyDir;
-    if (par.taxonomyPath.empty()) {
-        taxonomyDir = dbDir + "/taxonomy/";
-    } else {
-        taxonomyDir = par.taxonomyPath + "/";
-    }
 
     if (par.validateInput == 1) {
         const string & fnaListFileName = par.filenames[1];
@@ -179,14 +176,12 @@ int build(int argc, const char **argv, const Command &command){
     appendDbParameter(baseDir, SUBDB_KEY_LINEAGE, lineage);
     appendDbParameter(baseDir, SUBDB_KEY_MAX_TAXID, to_string(taxonomy->getMaxTaxID()));
 
-    // Final diffIdx encoding (--diffidx-format, default 2 = dedup LEB128).
-    // Re-encodes in place; auto-keeps format 0 when not smaller.
-    if (par.diffidxFormat != 0) {
-        cout << "Re-encoding k-mer index (--diffidx-format " << par.diffidxFormat << ") ..." << endl;
-        if (reformatKmerList(baseDir, par.threads, par.diffidxFormat == 2) != 0) {
-            cerr << "Error: re-encoding the k-mer index failed." << endl;
-            return 1;
-        }
+    // Re-encode the k-mer index to dedup LEB128 (format 2) in place;
+    // auto-keeps format 0 when the re-encoding would not be smaller.
+    cout << "Re-encoding k-mer index ..." << endl;
+    if (reformatKmerList(baseDir, par.threads, true) != 0) {
+        cerr << "Error: re-encoding the k-mer index failed." << endl;
+        return 1;
     }
 
     delete taxonomy;

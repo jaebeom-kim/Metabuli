@@ -90,7 +90,8 @@ LocalParameters::LocalParameters() :
                      "NCBI: 10239 \nCUSTOM: Check names.dmp file ",
                      typeid(int),
                      (void *) &virusTaxId,
-                     "^[0-9]+$"),
+                     "^[0-9]+$",
+                MMseqsParameter::COMMAND_ALIGN),
         BACTERIA_TAX_ID(BACTERIA_TAX_ID_ID,
                         "--bacteria-taxid",
                         "Taxonomy ID of bacteria taxon",
@@ -118,21 +119,24 @@ LocalParameters::LocalParameters() :
                      "Validate the database. It checks if all required files are present and if the k-mer count is consistent.",
                      typeid(int),
                      (void *) &validateDb,
-                     "[0-1]"),
+                     "[0-1]",
+                MMseqsParameter::COMMAND_CLUSTLINEAR),
         SYNCMER(SYNCMER_ID,
                 "--syncmer",
                 "Using syncmer",
                 "Using syncmer",
                 typeid(int),
                 (void *) &syncmer,
-                "[0-1]"),
+                "[0-1]",
+                MMseqsParameter::COMMAND_PREFILTER),
         SMER_LEN(SMER_LEN_ID,
                  "--smer-len",
                  "s-mer length for syncmer selection",
                  "s-mer length for syncmer selection",
                  typeid(int),
                  (void *) &smerLen,
-                 "^[0-9]+$"),
+                 "^[0-9]+$",
+                MMseqsParameter::COMMAND_PREFILTER),
         KMER_FORMAT(KMER_FORMAT_ID,
                     "--kmer-format",
                     "K-mer format",
@@ -153,7 +157,8 @@ LocalParameters::LocalParameters() :
                     "Path to custom metamer pattern JSON file",
                     typeid(std::string),
                     (void *) &customMetamer,
-                    "^.*$"),
+                    "^.*$",
+                MMseqsParameter::COMMAND_PREFILTER),
         SEQ_MODE(SEQ_MODE_ID,
                  "--seq-mode",
                  "Sequencing type",
@@ -188,7 +193,8 @@ LocalParameters::LocalParameters() :
                "Mask for spaced k-mer",
                typeid(std::string),
                (void *) &spaceMask,
-               "^.*$"),
+               "^.*$",
+                MMseqsParameter::COMMAND_PREFILTER),
         HAMMING_MARGIN(HAMMING_MARGIN_ID,
                        "--hamming-margin",
                        "Allowed extra Hamming distance", 
@@ -216,7 +222,8 @@ LocalParameters::LocalParameters() :
                   "RAM usage in GiB (default: min(80% of system RAM, 128 GiB))",
                   typeid(int),
                   (void *) &ramUsage,
-                  "^[0-9]+$"),
+                  "^[0-9]+$",
+                MMseqsParameter::COMMAND_COMMON),
         PRINT_LOG(PRINT_LOG_ID,
                   "--print-log",
                   "Print logs to debug",
@@ -552,7 +559,8 @@ LocalParameters::LocalParameters() :
                   "A database is divided to N splits (offsets). During classification, unnecessary splits are skipped",
                   typeid(int),
                   (void *) &splitNum,
-                  "^[0-9]+$"),
+                  "^[0-9]+$",
+                MMseqsParameter::COMMAND_PREFILTER),
         BUFFER_SIZE(BUFFER_SIZE_ID,
                     "--buffer-size",
                     "Buffer size (the number of k-mers)",
@@ -563,101 +571,107 @@ LocalParameters::LocalParameters() :
         DB_NAME(DB_NAME_ID,
                 "--db-name",
                 "Name of the database (a random number as default)",
-                "Name of the database",
+                "Database name",
                 typeid(std::string),
                 (void *) &dbName,
-                "^.*$"),
+                "^.*$",
+                MMseqsParameter::COMMAND_CLUSTLINEAR),
         DB_DATE(DB_DATE_ID,
                 "--db-date",
                 "Date of the database creation (current date as default)",
                 "Date of the database creation",
                 typeid(std::string),
                 (void *) &dbDate,
-                "^.*$"),
+                "^.*$",
+                MMseqsParameter::COMMAND_CLUSTLINEAR),
         CDS_INFO(CDS_INFO_ID,
                  "--cds-info",
                  "List of CDS files. Set 'x' for six-frame translation.",
                  "List of CDS files. Set 'x' for six-frame translation.",
                  typeid(std::string),
                  (void *) &cdsInfo,
-                 "^.*$"),
+                 "^.*$",
+                MMseqsParameter::COMMAND_ALIGN),
         MAKE_LIBRARY(MAKE_LIBRARY_ID,
                      "--make-library",
                      "Make species library. Use it when multiple species are in the same FASTA.",
                      "Make library.",
                      typeid(int),
                      (void *) &makeLibrary,
-                     "[0-1]"),
+                     "[0-1]",
+                MMseqsParameter::COMMAND_CLUSTLINEAR),
         GTDB(GTDB_ID,
                 "--gtdb",
                 "GTDB-based database creation",
                 "GTDB-based database creation",
                 typeid(int),
                 (void *) &gtdb,
-                "[0-1]"),
+                "[0-1]",
+                MMseqsParameter::COMMAND_CLUSTLINEAR),
         VALIDATE_INPUT(VALIDATE_INPUT_ID,
                       "--validate-input",
                       "Validate format of input FASTA/FASTQ file(s)",
                       "Validate format of input FASTA/FASTQ file(s)",
                       typeid(int),
                       (void *) &validateInput,
-                      "[0-1]"),
+                      "[0-1]",
+                MMseqsParameter::COMMAND_CLUSTLINEAR),
         READING_FRAME(READING_FRAME_ID,
                 "--reading-frame",
                 "Use fixed frame (1-6). 0 for Prodigal's frame.",
                 "Use fixed frame (1-6). 0 for Prodigal's frame.",
                 typeid(int),
                 (void *) &readingFrame,
-                "^[0-6]$"),
+                "^[0-6]$",
+                MMseqsParameter::COMMAND_ALIGN),
         STORE_KMER_POS(STORE_KMER_POS_ID,
                 "--kmer-pos",
                 "Store k-mer positions in the index",
                 "Store k-mer positions in the index",
                 typeid(int),
                 (void *) &storeKmerPos,
-                "[0-1]"),
+                "[0-1]",
+                MMseqsParameter::COMMAND_PREFILTER),
         REP_GENOME_LIST(REP_GENOME_LIST_ID,
                 "--rep-genomes",
                 "Species representative genomes.",
                 "Species representative genomes.",
                 typeid(std::string),
                 (void *) &repGenomeList,
-                "^.*$"),
+                "^.*$",
+                MMseqsParameter::COMMAND_ALIGN),
         NO_MASK_TAXA(NO_MASK_TAXA_ID,
                 "--no-mask-taxa",
                 "Comma-separated tax IDs to not mask low-complexity regions",
                 "Comma-separated tax IDs to not mask low-complexity regions",
                 typeid(std::string),
                 (void *) &noMaskTaxa,
-                "^.*$"),
+                "^.*$",
+                MMseqsParameter::COMMAND_CLUST),
         SKIP_PRODIGAL_TAXA(SKIP_PRODIGAL_TAXA_ID,
                 "--skip-prodigal-taxa",
                 "Comma-separated tax IDs (clades); sequences under them skip gene prediction and are k-merized as a single whole-sequence block",
                 "Comma-separated tax IDs (clades); sequences under them skip gene prediction and are k-merized as a single whole-sequence block",
                 typeid(std::string),
                 (void *) &skipProdigalTaxa,
-                "^.*$"),
+                "^.*$",
+                MMseqsParameter::COMMAND_ALIGN),
         GV_BINS(GV_BINS_ID,
                 "--gv-bins",
                 "Use prodigal-gv giant-virus/gut-phage models for viral genomes (0: off, 1: on)",
                 "1: during build, gene prediction of species under the virus clade (--virus-taxid) also considers the prodigal-gv models (NCLDVs, gut phages with genetic codes 15/11). Non-viral species are unaffected. 0: stock Prodigal models only.",
                 typeid(int),
                 (void *) &gvBins,
-                "^[0-1]{1}$"),
-        DIFFIDX_FORMAT(DIFFIDX_FORMAT_ID,
-                "--diffidx-format",
-                "Final k-mer index encoding (0: legacy 15-bit, 1: LEB128, 2: dedup LEB128)",
-                "Encoding of the final diffIdx. 0: legacy 15-bit fragment varint (byte-identical to older versions). 1: LEB128 byte varint. 2: LEB128 of distinct k-mers plus a same-value bitmap (default, smallest). 1/2 re-encode in place after the build and automatically keep 0 when not smaller; classify reads every format.",
-                typeid(int),
-                (void *) &diffidxFormat,
-                "^[0-2]{1}$"),
+                "^[0-1]{1}$",
+                MMseqsParameter::COMMAND_ALIGN),
         MIN_EUK_CONTIG_LEN(MIN_EUK_CONTIG_LEN_ID,
                 "--min-euk-contig-len",
                 "Skip eukaryotic scaffolds shorter than this length (bp) during build (0: off)",
                 "During build, skip scaffolds/contigs shorter than this length (bp) from genomes under Eukaryota (0: off). Small eukaryotic scaffolds are frequently contamination.",
                 typeid(int),
                 (void *) &minEukContigLen,
-                "^[0-9]+$"),
+                "^[0-9]+$",
+                MMseqsParameter::COMMAND_CLUSTLINEAR),
         PACK_INFO(PACK_INFO_ID,
                 "--pack-info",
                 "Pack final info index",
@@ -671,14 +685,16 @@ LocalParameters::LocalParameters() :
                 "SDUST score threshold for low-complexity masking; only used when --mask 2 (SDUST) is set.",
                 typeid(int),
                 (void *) &sdustT,
-                "^[0-9]+$"),
+                "^[0-9]+$",
+                MMseqsParameter::COMMAND_CLUST),
         SDUST_W(SDUST_W_ID,
                 "--sdust-w",
                 "SDUST window length (used with --mask 2)",
                 "SDUST window length for low-complexity masking; only used when --mask 2 (SDUST) is set.",
                 typeid(int),
                 (void *) &sdustW,
-                "^[0-9]+$"),
+                "^[0-9]+$",
+                MMseqsParameter::COMMAND_CLUST),
         NEW_TAXA(NEW_TAXA_ID,
                 "--new-taxa",
                 "TSV file of new taxa to be added",
@@ -883,6 +899,8 @@ LocalParameters::LocalParameters() :
     overrideParameterDescription(PARAM_MASK_RESIDUES,
                                  "Mask low complexity regions: 0: off, 1: tantan, 2: SDUST, 3: tantan for Eukaryota + SDUST for others",
                                  "^[0-3]{1}", 0);
+    PARAM_MASK_RESIDUES.replaceCategory(MMseqsParameter::COMMAND_CLUST);
+    PARAM_MASK_PROBABILTY.replaceCategory(MMseqsParameter::COMMAND_CLUST);
     // Initialize the parameters
     candidateOnly = false;
     minAdjEvenness = 0.5f;
@@ -895,8 +913,6 @@ LocalParameters::LocalParameters() :
 
     // Build: prodigal-gv bins off by default (byte-identical legacy builds)
     gvBins = 0;
-    // Build: final diffIdx encoding defaults to dedup LEB128 (format 2)
-    diffidxFormat = 2;
 
 
     // Classify
@@ -971,8 +987,6 @@ LocalParameters::LocalParameters() :
 
     // build
     build.push_back(&PARAM_THREADS);
-    build.push_back(&TAXONOMY_PATH);
-    build.push_back(&SPLIT_NUM);
     build.push_back(&PARAM_MASK_PROBABILTY);
     build.push_back(&PARAM_MASK_RESIDUES);
     build.push_back(&DB_NAME);
@@ -994,9 +1008,7 @@ LocalParameters::LocalParameters() :
     build.push_back(&SKIP_PRODIGAL_TAXA);
     build.push_back(&GV_BINS);
     build.push_back(&VIRUS_TAX_ID); // clade root for --gv-bins gating
-    build.push_back(&DIFFIDX_FORMAT);
     build.push_back(&MIN_EUK_CONTIG_LEN);
-    build.push_back(&PACK_INFO);
     build.push_back(&SDUST_T);
     build.push_back(&SDUST_W);
 
@@ -1012,7 +1024,6 @@ LocalParameters::LocalParameters() :
 
     // updateDB
     updateDB.push_back(&PARAM_THREADS);
-    updateDB.push_back(&SPLIT_NUM);
     updateDB.push_back(&PARAM_MASK_PROBABILTY);
     updateDB.push_back(&PARAM_MASK_RESIDUES);
     updateDB.push_back(&DB_NAME);
@@ -1028,9 +1039,7 @@ LocalParameters::LocalParameters() :
     updateDB.push_back(&SKIP_PRODIGAL_TAXA);
     updateDB.push_back(&GV_BINS);
     updateDB.push_back(&VIRUS_TAX_ID); // clade root for --gv-bins gating
-    updateDB.push_back(&DIFFIDX_FORMAT);
     updateDB.push_back(&MIN_EUK_CONTIG_LEN);
-    updateDB.push_back(&PACK_INFO);
 
     // add-sub-db (same build options as updateDB)
     addSubDb = updateDB;
@@ -1362,6 +1371,149 @@ void LocalParameters::printParameters(const std::string &module, int argc, const
     }
 
     Debug(Debug::INFO) << ss.str() << "\n";
+}
+
+
+void LocalParameters::printUsageMessage(const Command& command, const unsigned int outputFlag, const char* extraText) {
+    const std::vector<MMseqsParameter*>& parameters = *command.params;
+    std::ostringstream ss;
+    ss << "usage: " << binary_name << " " << command.cmd << " " << command.usage << (parameters.size() > 0 ? " [options]" : "") << "\n";
+    if (extraText != NULL) {
+        ss << extraText;
+    }
+    if (outputFlag == 0xFFFFFFFF) {
+        ss << " By " << command.author << "\n";
+    }
+    ss << "options:\n";
+
+    // Metabuli group titles; the bits reuse mmseqs category constants that
+    // Metabuli does not use otherwise. Parameters without an explicit group
+    // keep the default COMMAND_MISC and appear under "misc".
+    struct {
+        const char* title;
+        unsigned int category;
+    } categories[] = {
+            {"k-mer/index",     MMseqsParameter::COMMAND_PREFILTER},
+            {"gene prediction", MMseqsParameter::COMMAND_ALIGN},
+            {"masking",         MMseqsParameter::COMMAND_CLUST},
+            {"input/output",    MMseqsParameter::COMMAND_CLUSTLINEAR},
+            {"misc",            MMseqsParameter::COMMAND_MISC},
+            {"common",          MMseqsParameter::COMMAND_COMMON},
+            {"expert",          MMseqsParameter::COMMAND_EXPERT}
+    };
+    const size_t categoryCount = sizeof(categories) / sizeof(categories[0]);
+
+    const bool printExpert = MMseqsParameter::COMMAND_EXPERT & outputFlag;
+    size_t maxParamWidth = 0;
+    for (size_t i = 0; i < categoryCount; ++i) {
+        for (size_t j = 0; j < parameters.size(); j++) {
+            const MMseqsParameter *par = parameters[j];
+            bool isExpert = (par->category & MMseqsParameter::COMMAND_EXPERT);
+            if (par->category & categories[i].category && (printExpert || isExpert == false)) {
+                maxParamWidth = std::max(strlen(parameters[j]->name), maxParamWidth);
+            }
+        }
+    }
+    maxParamWidth += 6;
+    std::map<int, bool> alreadyPrintMap;
+    ss << std::setprecision(3) << std::fixed;
+    std::string paramString;
+    paramString.reserve(100);
+    bool hasExpert = false;
+    for (size_t i = 0; i < categoryCount; ++i) {
+        bool categoryFound = false;
+        for (size_t j = 0; j < parameters.size(); j++) {
+            const MMseqsParameter * par = parameters[j];
+            bool isExpert = (par->category & MMseqsParameter::COMMAND_EXPERT);
+            bool alreadyPrint = alreadyPrintMap[par->uniqid];
+            if (par->category & categories[i].category && (printExpert || isExpert == false ) && alreadyPrint == false ) {
+                categoryFound = true;
+                break;
+            }
+        }
+        if (categoryFound) {
+            // Group title on every usage print, not only the full help.
+            paramString.clear();
+            paramString.append(categories[i].title).append(":");
+            ss << paramString << std::string(maxParamWidth < paramString.size()? 1 : maxParamWidth - paramString.size(), ' ');
+            ss << std::endl;
+            for (size_t j = 0; j < parameters.size(); j++) {
+                paramString.clear();
+                const MMseqsParameter * par = parameters[j];
+                bool isExpert = (par->category & MMseqsParameter::COMMAND_EXPERT);
+                hasExpert |= isExpert;
+                bool alreadyPrint = alreadyPrintMap[par->uniqid];
+                if (par->category & categories[i].category && (printExpert || isExpert == false) && alreadyPrint == false ) {
+                    paramString.append(par->name);
+                    std::string valueString;
+                    if (par->type == typeid(int)) {
+                        paramString.append(" INT");
+                        valueString = SSTR(*(int *) par->value);
+                    } else if (par->type == typeid(size_t)) {
+                        paramString.append(" INT");
+                        valueString = SSTR(*(size_t *) par->value);
+                    } else if (par->type == typeid(float)) {
+                        paramString.append(" FLOAT");
+                        valueString = SSTR(*(float *) par->value);
+                    } else if (par->type == typeid(double)) {
+                        paramString.append(" DOUBLE");
+                        valueString = SSTR(*(double *) par->value);
+                    } else if (par->type == typeid(ByteParser)) {
+                        paramString.append(" BYTE");
+                        valueString = ByteParser::format(*((size_t *) par->value), 'a', 'h');
+                    } else if (par->type == typeid(bool)) {
+                        paramString.append(" BOOL");
+                        valueString = SSTR(*(bool *)par->value);
+                    } else if (par->type == typeid(std::string)) {
+                        paramString.append(" STR");
+                        valueString = *((std::string *) par->value);
+                    }
+                    ss << " " << paramString << std::string(maxParamWidth < paramString.size()? 1 : maxParamWidth - paramString.size(), ' ');
+                    ss << " ";
+                    const char* description = par->description;
+                    while (description != NULL && *description != '\0') {
+                        ss.put(*description);
+                        if (*description == '\n') {
+                            ss << std::string(maxParamWidth + 2, ' ');
+                        }
+                        description++;
+                    }
+                    ss << " [" << valueString << "]";
+                    ss << std::endl;
+                    alreadyPrintMap[par->uniqid] = true;
+                }
+            }
+            ss << std::endl; // blank line between groups
+        }
+    }
+
+    if (command.examples) {
+        ss << "\nexamples:\n ";
+        const char *data = command.examples;
+        while (*data != '\0') {
+            ss.put(*data);
+            if (*data == '\n') {
+                ss.put(' ');
+            }
+            data++;
+        }
+        if (*(data - 1) != '\n') {
+            ss.put('\n');
+        }
+    }
+    if (command.citations > 0) {
+        ss << "\nreferences:\n";
+        for (unsigned int pos = 0; pos != sizeof(command.citations) * CHAR_BIT; ++pos) {
+            unsigned int citation = 1U << pos;
+            if (command.citations & citation && citations.find(citation) != citations.end()) {
+                ss << " - " << citations.at(citation) << "\n";
+            }
+        }
+    }
+    if (printExpert == false && hasExpert) {
+        ss << "\n" << "Show an extended list of options by calling '" << binary_name << " " << command.cmd << " -h'.\n";
+    }
+    Debug(Debug::INFO) << ss.str();
 }
 
 void LocalParameters::parseParameters(int argc, const char *pargv[], const Command &command, bool printPar, int parseFlags,
