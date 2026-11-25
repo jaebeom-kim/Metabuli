@@ -11,6 +11,9 @@
 
 struct CandidateDBEntry {
     uint32_t queryId = 0;
+    // --seq-mode the candidates were generated with (record format v3+);
+    // 0 when the record predates v3 and the mode is unknown.
+    uint32_t seqMode = 0;
     uint32_t queryLength = 0;
     std::string queryName;
     std::vector<SpeciesCandidate> candidates;

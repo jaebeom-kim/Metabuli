@@ -24,6 +24,9 @@ struct TaxonScore {
     int hammingDist;
     bool LCA;
     std::pair<size_t, size_t> matchPathRange;
+    // Total query length covered by the combined match paths of the selected
+    // species (0 when unclassified or an LCA of ties).
+    int coveredSpan = 0;
     TaxonScore(TaxID taxId, MatchScore score, int hammingDist, bool LCA) :
             taxId(taxId), score(score), hammingDist(hammingDist), LCA(LCA) {}
     TaxonScore() : taxId(0), score(), hammingDist(0), LCA(false) {}
@@ -34,15 +37,19 @@ struct SpeciesScoreCandidate {
     MatchScore score;
     std::pair<size_t, size_t> speciesRange;
     std::pair<size_t, size_t> matchPathRange;
+    // Total query length covered by this species' combined match paths.
+    int coveredSpan;
 
     SpeciesScoreCandidate(TaxID taxId,
                           MatchScore score,
                           std::pair<size_t, size_t> speciesRange,
-                          std::pair<size_t, size_t> matchPathRange)
+                          std::pair<size_t, size_t> matchPathRange,
+                          int coveredSpan)
         : taxId(taxId),
           score(score),
           speciesRange(speciesRange),
-          matchPathRange(matchPathRange) {}
+          matchPathRange(matchPathRange),
+          coveredSpan(coveredSpan) {}
 };
 
 template <typename MatchType>
@@ -68,6 +75,10 @@ private:
 
     // Internal
     int denominator;
+    // --seq-mode 3: confidence gates (--min-sp-score) use the span-normalized
+    // score (identity within matched regions) instead of the read-coverage-
+    // normalized idScore, which partial database coverage depresses on long reads.
+    bool longReadMode;
     int maxCodonShift;
     int dnaShift;
     // int smerLength;
@@ -174,7 +185,8 @@ private:
         size_t matchPathStart,
         vector<MatchPath<MatchType>> & combMatchPaths,
         size_t combMatchPathStart,
-        int queryLength);
+        int queryLength,
+        int & coveredSpan);
         
     bool isMatchPathOverlapped(const MatchPath<MatchType> & matchPath1, const MatchPath<MatchType> & matchPath2);
 

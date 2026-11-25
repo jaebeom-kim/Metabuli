@@ -9,6 +9,9 @@ void setClassifyDefaults(LocalParameters &par);
 int classifyCandidates(int argc, const char **argv, const Command& command) {
     LocalParameters &par = LocalParameters::getLocalInstance();
     setClassifyDefaults(par);
+    // Fallback only: the candidate DB records the --seq-mode it was created with
+    // (format v3+) and assignTaxonomyFromCandidateDB adopts it. This default is
+    // used for pre-v3 candidate DBs, and an explicit --seq-mode overrides both.
     par.seqMode = 1;
     par.storeKmerPos = 0;
     par.topSpecies = 0;

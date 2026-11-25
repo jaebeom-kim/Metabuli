@@ -6,7 +6,11 @@ namespace {
 constexpr uint32_t CANDIDATE_RECORD_MAGIC = 0x444e4143; // CAND
 // v1: speciesId/idScore/subScore/logE/taxCnt per candidate.
 // v2: adds a per-candidate list of unique k-mer positions (posId bins).
-constexpr uint32_t CANDIDATE_RECORD_VERSION = 2;
+// v3: adds the --seq-mode the candidates were generated with (0 = unknown),
+//     so classify-candidates can apply the matching subspecies threshold.
+// v4: adds the per-candidate covered span (query length under the combined
+//     match paths; 0 = unknown), enabling span-normalized scores on long reads.
+constexpr uint32_t CANDIDATE_RECORD_VERSION = 4;
 
 template <typename T>
 void appendPod(std::string &buffer, const T &value) {
@@ -58,14 +62,15 @@ bool CandidateDBWriter::isClosed() const {
 void CandidateDBWriter::writeQuery(
     uint32_t queryId,
     const Query &query,
-    unsigned int threadIdx)
+    unsigned int threadIdx,
+    uint32_t seqMode)
 {
     if (!writer || writer->isClosed()) {
         return;
     }
 
     std::string payload;
-    serializeQuery(query, payload);
+    serializeQuery(query, seqMode, payload);
     writer->writeData(
         payload.data(),
         payload.size(),
@@ -79,7 +84,7 @@ std::string CandidateDBWriter::defaultIndexFileName(const std::string &dataFileN
     return dataFileName + ".index";
 }
 
-void CandidateDBWriter::serializeQuery(const Query &query, std::string &buffer) {
+void CandidateDBWriter::serializeQuery(const Query &query, uint32_t seqMode, std::string &buffer) {
     buffer.clear();
 
     const uint32_t queryLength = static_cast<uint32_t>(query.queryLength + query.queryLength2);
@@ -88,6 +93,7 @@ void CandidateDBWriter::serializeQuery(const Query &query, std::string &buffer) 
 
     appendPod(buffer, CANDIDATE_RECORD_MAGIC);
     appendPod(buffer, CANDIDATE_RECORD_VERSION);
+    appendPod(buffer, seqMode);
     appendPod(buffer, queryLength);
     appendPod(buffer, nameLength);
     appendPod(buffer, candidateCount);
@@ -98,6 +104,7 @@ void CandidateDBWriter::serializeQuery(const Query &query, std::string &buffer) 
         appendPod(buffer, candidate.idScore);
         appendPod(buffer, candidate.subScore);
         appendPod(buffer, candidate.logE);
+        appendPod(buffer, candidate.coveredSpan);
 
         const uint32_t taxCountSize = static_cast<uint32_t>(candidate.taxCnt.size());
         appendPod(buffer, taxCountSize);

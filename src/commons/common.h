@@ -65,6 +65,11 @@ struct SpeciesCandidate {
     float idScore = 0.0f;
     float subScore = 0.0f;
     float logE = 0.0f;
+    // Total query length covered by this species' combined match paths
+    // (record format v4+; 0 = unknown). Lets downstream recover the
+    // span-normalized score (see spanNormalizedScore) on long reads, where
+    // idScore is depressed by read regions the database cannot cover.
+    uint32_t coveredSpan = 0;
     std::vector<std::pair<TaxID, uint32_t>> taxCnt;
     // Unique genome bins (k-mer positions, posId) this read touched for this
     // species. Populated only when the DB stores k-mer positions. Used later to
@@ -81,6 +86,20 @@ struct SpeciesCandidate {
 inline float tieMarginFactor(float bestIdScore, float tieRatio) {
     const float diff = 0.09f;
     return (tieRatio - diff) + (bestIdScore * diff);
+}
+
+// Identity within the matched regions of a read. idScore is normalized by the
+// full read length, so on long reads it conflates "low identity everywhere"
+// with "part of the read has no database counterpart". Re-normalizing by the
+// covered span (total query length under the species' combined match paths)
+// recovers how well the matched regions themselves match. Falls back to
+// idScore when the span is unknown (0: pre-v4 record, or no selected species).
+inline float spanNormalizedScore(float idScore, int queryLength, int coveredSpan) {
+    if (coveredSpan <= 0) {
+        return idScore;
+    }
+    const float score = idScore * static_cast<float>(queryLength) / static_cast<float>(coveredSpan);
+    return score > 1.0f ? 1.0f : score;
 }
 
 struct Assembly {

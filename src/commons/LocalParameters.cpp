@@ -1093,6 +1093,9 @@ LocalParameters::LocalParameters() :
     //classify-candidates
     classifyCandidates.push_back(&PARAM_THREADS);
     classifyCandidates.push_back(&PRECISION_MODE);
+    // Normally inherited from the candidate DB (recorded by create-candidates);
+    // exposed to override it or to set it for pre-v3 candidate DBs.
+    classifyCandidates.push_back(&SEQ_MODE);
     classifyCandidates.push_back(&MIN_AVG_SCORE);
     classifyCandidates.push_back(&MIN_SCORE);
     classifyCandidates.push_back(&MIN_SP_SCORE);

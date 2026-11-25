@@ -8,7 +8,11 @@ namespace {
 constexpr uint32_t CANDIDATE_RECORD_MAGIC = 0x444e4143; // CAND
 // v1: speciesId/idScore/subScore/logE/taxCnt per candidate.
 // v2: adds a per-candidate list of unique k-mer positions (posId bins).
-constexpr uint32_t CANDIDATE_RECORD_VERSION = 2;
+// v3: adds the --seq-mode the candidates were generated with (0 = unknown),
+//     so classify-candidates can apply the matching subspecies threshold.
+// v4: adds the per-candidate covered span (query length under the combined
+//     match paths; 0 = unknown), enabling span-normalized scores on long reads.
+constexpr uint32_t CANDIDATE_RECORD_VERSION = 4;
 
 template <typename T>
 bool readPod(const char *data, size_t dataSize, size_t &offset, T &value) {
@@ -95,19 +99,28 @@ bool CandidateDBReader::deserializeEntry(
     size_t offset = 0;
     uint32_t magic = 0;
     uint32_t version = 0;
+    uint32_t seqMode = 0;
     uint32_t queryLength = 0;
     uint32_t nameLength = 0;
     uint32_t candidateCount = 0;
 
     if (!readPod(data, dataSize, offset, magic)
-        || !readPod(data, dataSize, offset, version)
-        || !readPod(data, dataSize, offset, queryLength)
-        || !readPod(data, dataSize, offset, nameLength)
-        || !readPod(data, dataSize, offset, candidateCount)) {
+        || !readPod(data, dataSize, offset, version)) {
         return false;
     }
 
     if (magic != CANDIDATE_RECORD_MAGIC || version < 1 || version > CANDIDATE_RECORD_VERSION) {
+        return false;
+    }
+
+    // v3+ records the --seq-mode used at creation; older records leave it 0.
+    if (version >= 3 && !readPod(data, dataSize, offset, seqMode)) {
+        return false;
+    }
+
+    if (!readPod(data, dataSize, offset, queryLength)
+        || !readPod(data, dataSize, offset, nameLength)
+        || !readPod(data, dataSize, offset, candidateCount)) {
         return false;
     }
 
@@ -117,6 +130,7 @@ bool CandidateDBReader::deserializeEntry(
 
     CandidateDBEntry parsed;
     parsed.queryId = queryId;
+    parsed.seqMode = seqMode;
     parsed.queryLength = queryLength;
     parsed.queryName.assign(data + offset, nameLength);
     offset += nameLength;
@@ -128,8 +142,16 @@ bool CandidateDBReader::deserializeEntry(
         if (!readPod(data, dataSize, offset, candidate.speciesId)
             || !readPod(data, dataSize, offset, candidate.idScore)
             || !readPod(data, dataSize, offset, candidate.subScore)
-            || !readPod(data, dataSize, offset, candidate.logE)
-            || !readPod(data, dataSize, offset, taxCountSize)) {
+            || !readPod(data, dataSize, offset, candidate.logE)) {
+            return false;
+        }
+
+        // v4+ stores the covered span; older records leave it 0 (unknown).
+        if (version >= 4 && !readPod(data, dataSize, offset, candidate.coveredSpan)) {
+            return false;
+        }
+
+        if (!readPod(data, dataSize, offset, taxCountSize)) {
             return false;
         }
 

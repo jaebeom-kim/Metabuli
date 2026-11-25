@@ -197,7 +197,8 @@ void Reporter::writeSpeciesCandidates(const vector<Query> & queryList, uint32_t 
             break;
         }
 
-        speciesCandidateWriter->writeQuery(offset + static_cast<uint32_t>(i), query, 0);
+        speciesCandidateWriter->writeQuery(offset + static_cast<uint32_t>(i), query, 0,
+                                           static_cast<uint32_t>(par.seqMode));
     }
 }
 

@@ -141,7 +141,7 @@ int extractUniqueCandidates(int argc, const char **argv, const Command &command)
         query.queryLength = static_cast<int>(entry.queryLength);
         query.queryLength2 = 0;
         query.speciesCandidates = std::move(entry.candidates);
-        writer.writeQuery(entry.queryId, query, 0);
+        writer.writeQuery(entry.queryId, query, 0, entry.seqMode);
         ++extractedCnt;
     }
 

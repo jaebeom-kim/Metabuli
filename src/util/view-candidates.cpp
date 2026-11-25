@@ -63,7 +63,7 @@ int viewCandidates(int argc, const char **argv, const Command &command) {
     const size_t entryCount = reader.size();
 
     out << "queryId\tqueryName\tqueryLength\tnumCandidates\tcandRank\tspeciesId"
-           "\tidScore\tsubScore\tlogE\ttaxCnt\tnumPositions\tpositions\n";
+           "\tidScore\tcoveredSpan\tspanScore\tsubScore\tlogE\ttaxCnt\tnumPositions\tpositions\n";
 
     size_t candidateRows = 0;
     CandidateDBEntry entry;
@@ -76,7 +76,7 @@ int viewCandidates(int argc, const char **argv, const Command &command) {
         const size_t numCandidates = entry.candidates.size();
         if (numCandidates == 0) {
             out << entry.queryId << '\t' << entry.queryName << '\t' << entry.queryLength
-                << '\t' << 0 << "\t-\t-\t-\t-\t-\t-\t0\t\n";
+                << '\t' << 0 << "\t-\t-\t-\t-\t-\t-\t-\t-\t0\t\n";
             continue;
         }
 
@@ -97,7 +97,10 @@ int viewCandidates(int argc, const char **argv, const Command &command) {
 
             out << entry.queryId << '\t' << entry.queryName << '\t' << entry.queryLength
                 << '\t' << numCandidates << '\t' << c << '\t' << taxonomy->getOriginalTaxID(cand.speciesId)
-                << '\t' << cand.idScore << '\t' << cand.subScore << '\t' << cand.logE
+                << '\t' << cand.idScore << '\t' << cand.coveredSpan << '\t'
+                << spanNormalizedScore(cand.idScore, static_cast<int>(entry.queryLength),
+                                       static_cast<int>(cand.coveredSpan))
+                << '\t' << cand.subScore << '\t' << cand.logE
                 << '\t' << taxCntStr.str()
                 << '\t' << cand.kmerPositions.size() << '\t' << posStr.str() << '\n';
             ++candidateRows;

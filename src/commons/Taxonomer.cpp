@@ -135,6 +135,7 @@ Taxonomer<MatchType>::Taxonomer(
     } else {
         denominator = 1000;
     }
+    longReadMode = (par.seqMode == 3);
 
     // chooseBestTaxon
     taxCnt.reserve(4096);
@@ -326,7 +327,15 @@ void Taxonomer<MatchType>::chooseBestTaxonFromCandidates(
         query.taxCnt[taxCount.first] = static_cast<int>(taxCount.second);
     }
 
-    if (selectedCandidate.idScore < par.minSpScore) {
+    // Same species-confidence gate as chooseBestTaxon: long reads (--seq-mode 3,
+    // recorded in the candidate DB) use the span-normalized score. Pre-v4 records
+    // have coveredSpan 0 and fall back to idScore.
+    const float spConfidence = longReadMode
+        ? spanNormalizedScore(selectedCandidate.idScore,
+                              static_cast<int>(candidateEntry.queryLength),
+                              static_cast<int>(selectedCandidate.coveredSpan))
+        : selectedCandidate.idScore;
+    if (spConfidence < par.minSpScore) {
         query.classification = taxonomy->taxonNode(
             taxonomy->getTaxIdAtRank(selectedCandidate.speciesId, "species"))->parentTaxId;
         return;
@@ -433,8 +442,16 @@ void Taxonomer<MatchType>::chooseBestTaxon(
     // }
 
 
-    // If score is not enough, classify to the parent of the selected species
-    if (speciesScore.score.idScore < par.minSpScore) {
+    // If score is not enough, classify to the parent of the selected species.
+    // Long reads (--seq-mode 3) gate on the span-normalized score: idScore is
+    // normalized by the full read length, so read regions the database cannot
+    // cover would otherwise demote confident partial matches.
+    const float spConfidence = longReadMode
+        ? spanNormalizedScore(speciesScore.score.idScore,
+                              queryList[currentQuery].queryLength + queryList[currentQuery].queryLength2,
+                              speciesScore.coveredSpan)
+        : speciesScore.score.idScore;
+    if (spConfidence < par.minSpScore) {
       queryList[currentQuery].classification = taxonomy->taxonNode(
               taxonomy->getTaxIdAtRank(speciesScore.taxId, "species"))->parentTaxId;
       queryList[currentQuery].idScore = speciesScore.score.idScore;
@@ -518,6 +535,8 @@ void Taxonomer<MatchType>::buildSpeciesCandidates(
         storedCandidate.idScore = candidate.score.idScore;
         storedCandidate.subScore = candidate.score.subScore;
         storedCandidate.logE = candidate.score.logE;
+        storedCandidate.coveredSpan = candidate.coveredSpan > 0
+            ? static_cast<uint32_t>(candidate.coveredSpan) : 0;
 
         taxCnt.clear();
         filterRedundantMatches(matchList, candidate.speciesRange, taxCnt, queryLength);
@@ -737,9 +756,10 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(
         }
         if (pathSize > previousPathSize) {
             size_t spStart = combinedMatchPaths.size();
-            MatchScore score = combineMatchPaths(matchPaths, previousPathSize, combinedMatchPaths, combinedMatchPaths.size(), queryLength);
+            int coveredSpan = 0;
+            MatchScore score = combineMatchPaths(matchPaths, previousPathSize, combinedMatchPaths, combinedMatchPaths.size(), queryLength, coveredSpan);
             size_t spEnd = combinedMatchPaths.size();
-            // if (par.printLog==1) {   
+            // if (par.printLog==1) {
             //     cout << "Combined score: " << score.idScore << " " << score.subScore << endl;
             // }
             score.idScore = score.idScore / queryLength;
@@ -751,7 +771,8 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(
             sp2score.emplace_back(currentSpecies,
                                   score,
                                   make_pair(speciesStart, i),
-                                  make_pair(spStart, spEnd));
+                                  make_pair(spStart, spEnd),
+                                  coveredSpan);
             if (score.idScore > 0.f) {
                 meaningfulSpecies++;
             }
@@ -835,6 +856,7 @@ TaxonScore Taxonomer<MatchType>::getBestSpeciesMatches(
         bestSpeciesRange = selectedCandidate.speciesRange;
         bestMatchPathRange = selectedCandidate.matchPathRange;
         bestScore.matchPathRange = bestMatchPathRange;
+        bestScore.coveredSpan = selectedCandidate.coveredSpan;
     }
     
     bestScore.score.logE = bestSpScore.logE;
@@ -887,8 +909,9 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
     size_t matchPathStart,
     vector<MatchPath<MatchType>> & combinedMatchPaths,
     size_t combMatchPathStart,
-    int queryLength) 
-{   
+    int queryLength,
+    int & coveredSpan)
+{
     // Combine matchPaths
     // 1. Add the matchPath with the highest score to combinedMatchPaths
     // 2. Add the matchPath with the highest score that is not overlapped with the matchPath in combinedMatchPaths
@@ -945,8 +968,8 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
                 } 
             }
             if (!isOverlapped && ((matchPaths[i].end - matchPaths[i].start + 1) > 14)) {
-                score += matchPaths[i].score;     
-                spanLength += matchPaths[i].end - matchPaths[i].start + 1;      
+                score += matchPaths[i].score;
+                spanLength += matchPaths[i].end - matchPaths[i].start + 1;
                 combinedMatchPaths.push_back(std::move(matchPaths[i]));
                 if (par.printLog) {
                     cout << combinedMatchPaths.size() << ": ";
@@ -956,6 +979,7 @@ MatchScore Taxonomer<MatchType>::combineMatchPaths(
         }
     }
 
+    coveredSpan = spanLength;
     return score;
 }
 

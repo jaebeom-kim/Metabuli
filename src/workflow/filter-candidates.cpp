@@ -653,7 +653,7 @@ int filterCandidates(int argc, const char **argv, const Command &command) {
                     }
                 }
 
-                writer.writeQuery(entry.queryId, query, threadIdx);
+                writer.writeQuery(entry.queryId, query, threadIdx, entry.seqMode);
             }
 
             keptCandidateCnt += keptLocal;

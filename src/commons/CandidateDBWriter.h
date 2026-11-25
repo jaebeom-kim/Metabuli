@@ -26,10 +26,13 @@ public:
     void open(size_t bufferSize = SIZE_MAX);
     void close(bool merge = true, bool needsSort = true);
 
+    // seqMode is the --seq-mode the candidates were generated with (1/2/3);
+    // pass 0 when unknown (e.g. rewriting records from a pre-v3 DB).
     void writeQuery(
         uint32_t queryId,
         const Query &query,
-        unsigned int threadIdx = 0);
+        unsigned int threadIdx,
+        uint32_t seqMode);
 
     bool isClosed() const;
 
@@ -49,7 +52,7 @@ private:
     std::unique_ptr<DBWriter> writer;
 
     static std::string defaultIndexFileName(const std::string &dataFileName);
-    static void serializeQuery(const Query &query, std::string &buffer);
+    static void serializeQuery(const Query &query, uint32_t seqMode, std::string &buffer);
 };
 
 #endif

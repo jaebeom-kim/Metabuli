@@ -1159,18 +1159,35 @@ template <typename MatchType>
 bool Classifier::assignTaxonomyFromCandidateDB(
     const std::string &candidateDb,
     std::vector<Query> &queryList,
-    const LocalParameters &par)
+    LocalParameters &par)
 {
-    time_t beforeAnalyze = time(nullptr);
-    std::cout << "Candidate DB analysis : " << std::flush;
-
     CandidateDBReader candidateReader(candidateDb, par.threads);
     if (!candidateReader.open(DBReader<unsigned int>::SORT_BY_ID)) {
-        std::cout << "failed" << std::endl;
+        std::cout << "Error: failed to open candidate DB " << candidateDb << std::endl;
         return false;
     }
 
     const size_t entryCount = candidateReader.size();
+
+    // The candidate DB records the --seq-mode it was created with (format v3+).
+    // The mode decides Taxonomer's subspecies-threshold denominator (1000 for
+    // long reads, 100 otherwise), so adopt it before constructing the Taxonomers
+    // unless the user passed --seq-mode explicitly. Pre-v3 records carry no mode
+    // (0) and keep the current default.
+    if (entryCount > 0 && !par.SEQ_MODE.wasSet) {
+        CandidateDBEntry firstEntry;
+        if (candidateReader.getByIndex(0, firstEntry, 0)
+            && firstEntry.seqMode >= 1 && firstEntry.seqMode <= 3) {
+            if (par.seqMode != static_cast<int>(firstEntry.seqMode)) {
+                std::cout << "Using --seq-mode " << firstEntry.seqMode
+                          << " recorded in the candidate DB." << std::endl;
+            }
+            par.seqMode = static_cast<int>(firstEntry.seqMode);
+        }
+    }
+
+    time_t beforeAnalyze = time(nullptr);
+    std::cout << "Candidate DB analysis : " << std::flush;
     queryList.clear();
     queryList.resize(entryCount);
 
@@ -1719,9 +1736,9 @@ void Classifier::rollUpCoverageMetrics(
 template bool Classifier::assignTaxonomyFromCandidateDB<Match>(
     const std::string &candidateDb,
     std::vector<Query> &queryList,
-    const LocalParameters &par);
+    LocalParameters &par);
 
 template bool Classifier::assignTaxonomyFromCandidateDB<MatchWithPos>(
     const std::string &candidateDb,
     std::vector<Query> &queryList,
-    const LocalParameters &par);
+    LocalParameters &par);

@@ -176,11 +176,14 @@ public:
                            std::vector<Query> & queryList,
                            const LocalParameters &par);
 
+    // par is mutable: the candidate DB records the --seq-mode it was created
+    // with, and this function adopts it (unless --seq-mode was given explicitly)
+    // before constructing the Taxonomers.
     template <typename MatchType>
     bool assignTaxonomyFromCandidateDB(
         const std::string &candidateDb,
         std::vector<Query> &queryList,
-        const LocalParameters &par);
+        LocalParameters &par);
 
     explicit Classifier(LocalParameters & par);
 
