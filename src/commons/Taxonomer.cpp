@@ -526,7 +526,14 @@ void Taxonomer<MatchType>::buildSpeciesCandidates(
                   return sp2score[lhs].taxId < sp2score[rhs].taxId;
               });
 
-    const size_t candidateLimit = std::min(candidateIndices.size(), static_cast<size_t>(par.topSpecies));
+    const MatchScore &topScore = sp2score[candidateIndices[0]].score;
+    const MatchScore tieThreshold = topScore * tieMarginFactor(topScore.idScore, par.tieRatio);
+    size_t tieCnt = 1; // candidates are sorted best-first, so ties form a prefix
+    while (tieCnt < candidateIndices.size()
+           && sp2score[candidateIndices[tieCnt]].score.isLargerThan(tieThreshold, par.scoreMode)) {
+        ++tieCnt;
+    }
+    const size_t candidateLimit = std::min(candidateIndices.size(), tieCnt + static_cast<size_t>(par.topSpecies));
     query.speciesCandidates.reserve(candidateLimit);
     for (size_t candidateIdx = 0; candidateIdx < candidateLimit; ++candidateIdx) {
         const SpeciesScoreCandidate &candidate = sp2score[candidateIndices[candidateIdx]];

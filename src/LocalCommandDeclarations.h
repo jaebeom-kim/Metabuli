@@ -10,6 +10,7 @@ extern int classifyCandidates(int argc, const char **argv, const Command& comman
 extern int createCandidates(int argc, const char **argv, const Command& command);
 extern int filterCandidates(int argc, const char **argv, const Command& command);
 extern int viewCandidates(int argc, const char **argv, const Command& command);
+extern int inspectCandidates(int argc, const char **argv, const Command& command);
 extern int extractUniqueCandidates(int argc, const char **argv, const Command& command);
 extern int grade(int argc, const char **argv, const Command& command);
 extern int evaluateCandidates(int argc, const char **argv, const Command& command);

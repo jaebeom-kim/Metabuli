@@ -19,7 +19,7 @@ int createCandidates(int argc, const char **argv, const Command &command) {
     par.candidateOnly = true;
     par.storeKmerPos = 0;
     par.em = false;
-    par.topSpecies = 5; // default number of candidate species per read; overridable
+    par.topSpecies = 5; // default candidates stored per read below the top tie set (ties are always stored); overridable
     setCpuThreadDefault(par); // default threads = available CPUs (pre-parse so --threads overrides)
     par.parseParameters(argc, argv, command, true, Parameters::PARSE_ALLOW_EMPTY, 0);
 

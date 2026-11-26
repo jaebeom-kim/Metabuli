@@ -32,6 +32,7 @@ public:
     std::vector<MMseqsParameter*> createCandidates;
     std::vector<MMseqsParameter*> filterCandidates;
     std::vector<MMseqsParameter*> viewCandidates;
+    std::vector<MMseqsParameter*> inspectCandidates;
     std::vector<MMseqsParameter*> extractUniqueCandidates;
     std::vector<MMseqsParameter*> groupGeneration;
     std::vector<MMseqsParameter*> extract;
@@ -134,6 +135,10 @@ public:
     PARAMETER(MIN_STRONG_SCORE)
     PARAMETER(MIN_STRONG_READS)
     PARAMETER(MIN_UNIQUE_READS)
+    // inspect-candidates: metric selection
+    PARAMETER(MACRO_COV)
+    PARAMETER(AVG_SCORE)
+    PARAMETER(UNIQUE_RATIO)
     PARAMETER(MIN_CLADE_COUNT)
     PARAMETER(MIN_CLADE_PROPORTION)
     PARAMETER(PRINT_FILTERED_RESULTS)
@@ -286,6 +291,9 @@ public:
     float minStrongScore;  // filter-candidates (method 1): per-read idScore counted as strong evidence
     int minStrongReads;    // filter-candidates (method 1): min strong reads to keep a species
     int minUniqueReads;    // filter-candidates (method 1): min unique-top reads to keep a species
+    int inspectMacroCov;   // inspect-candidates: 1 = report genome-window occupancy (macroCov, k/E ratio, log10P)
+    int inspectAvgScore;   // inspect-candidates: 1 = report mean idScore over credited reads
+    int inspectUniqueRatio;// inspect-candidates: 1 = report unique-top counts and fraction
     int minCladeCount;
     float minCladeProportion;
     std::string outFilteredResults;

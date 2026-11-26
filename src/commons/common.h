@@ -102,6 +102,20 @@ inline float spanNormalizedScore(float idScore, int queryLength, int coveredSpan
     return score > 1.0f ? 1.0f : score;
 }
 
+// Number of coverage windows a genome actually has. K-mer position bins
+// (1..65535; 0 = no position) are grouped into windows of 256 bins
+// (window = locus >> 8): a genome of 65,535 bp or more has 256 windows,
+// smaller genomes proportionally fewer. Shared by computeCoverageMetric's
+// macro-bin coverage and per-species breadth statistics; windows deliberately
+// stay this coarse (256 max) because regions shared between related genomes
+// are much longer than a fine bin.
+int genomeWindowCount(uint64_t genomeSize);
+
+// One representative genome locus for a read's candidate: the median of its
+// (sorted, deduplicated) k-mer position bins, ignoring 0 ("no position").
+// Returns 0 when the candidate carries no position information.
+uint16_t coverageLocus(const std::vector<uint16_t> &positions);
+
 struct Assembly {
     std::string name;
     TaxID taxid;

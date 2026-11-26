@@ -359,8 +359,8 @@ LocalParameters::LocalParameters() :
                  "^.*$"),
         TOP_SPECIES(TOP_SPECIES_ID,
                  "--top-species",
-                 "Write top N species candidates per query to binary mapping output",
-                 "Write top N species candidates per query to binary mapping output",
+                 "Keep top N species candidates",
+                 "Keep top N species candidates",
                  typeid(int),
                  (void *) &topSpecies,
                  "^[0-9]+$"),
@@ -462,6 +462,27 @@ LocalParameters::LocalParameters() :
                 typeid(int),
                 (void *) &minUniqueReads,
                 "^[0-9]+$"),
+        MACRO_COV(MACRO_COV_ID,
+                "--macro-cov",
+                "inspect-candidates: report genome-window occupancy of credited reads (0/1)",
+                "inspect-candidates: 1 = report per species the genome-window occupancy of one locus per credited read -- macroCov (windows/genomeWindows), ratio (windows/expected under uniform placement), and log10 of the uniform-placement tail probability. Needs a candidate DB with k-mer positions and genome sizes.",
+                typeid(int),
+                (void *) &inspectMacroCov,
+                "^[0-1]$"),
+        AVG_SCORE(AVG_SCORE_ID,
+                "--avg-score",
+                "inspect-candidates: report mean idScore over credited reads (0/1)",
+                "inspect-candidates: 1 = report per species the number of credited reads (top hit + within-margin ties) and their mean idScore.",
+                typeid(int),
+                (void *) &inspectAvgScore,
+                "^[0-1]$"),
+        UNIQUE_RATIO(UNIQUE_RATIO_ID,
+                "--unique-ratio",
+                "inspect-candidates: report unique-top counts and fraction (0/1)",
+                "inspect-candidates: 1 = report per species the reads where it is the sole top candidate (no tie within the --tie-ratio margin) and their fraction of its credited reads.",
+                typeid(int),
+                (void *) &inspectUniqueRatio,
+                "^[0-1]$"),
         MIN_CLADE_COUNT(MIN_CLADE_COUNT_ID,
                 "--min-clade-count",
                 "Min. read count for a clade",
@@ -906,6 +927,9 @@ LocalParameters::LocalParameters() :
     minAdjEvenness = 0.5f;
     minEukContigLen = 0;
     covUseAllHits = 1;
+    inspectMacroCov = 0;
+    inspectAvgScore = 0;
+    inspectUniqueRatio = 0;
     // Superkingdom taxonomy id
     virusTaxId = 10239;
     bacteriaTaxId = 2;
@@ -1160,6 +1184,16 @@ LocalParameters::LocalParameters() :
     // view-candidates (dump a species-candidate DB to human-readable TSV)
     viewCandidates.push_back(&PARAM_THREADS);
     viewCandidates.push_back(&TAXONOMY_PATH);
+
+    // inspect-candidates (per-species metrics from a candidate DB)
+    inspectCandidates.push_back(&PARAM_THREADS);
+    inspectCandidates.push_back(&TAXONOMY_PATH);
+    // same tie margin as classify-candidates / filter-candidates so credited
+    // read sets match what those commands would compute
+    inspectCandidates.push_back(&TIE_RATIO);
+    inspectCandidates.push_back(&MACRO_COV);
+    inspectCandidates.push_back(&AVG_SCORE);
+    inspectCandidates.push_back(&UNIQUE_RATIO);
 
     // extract-unique-candidates (subset uniquely mapped to a species)
     extractUniqueCandidates.push_back(&PARAM_THREADS);

@@ -89,8 +89,7 @@ CovMetric computeCoverageMetric(
     }
 
     // Macro-bin Coverage
-    double max_macro_bins = std::ceil(effective_bins / 256.0);
-    max_macro_bins = std::min(max_macro_bins, 256.0);
+    const double max_macro_bins = static_cast<double>(genomeWindowCount(genomeSize));
     double macro_coverage = static_cast<double>(occupiedMacroBins) / max_macro_bins;
     macro_coverage = std::min(1.0, macro_coverage);
 
@@ -124,6 +123,25 @@ CovMetric computeCoverageMetric(
     double unified_score = std::pow(2.0, H_obs) / effective_bins;
 
     return {evenness, coverage, adjustedEvenness, unified_score, macro_coverage};
+}
+
+int genomeWindowCount(uint64_t genomeSize) {
+    const double effectiveBins = std::min(65535.0, static_cast<double>(genomeSize));
+    const double windows = std::ceil(effectiveBins / 256.0);
+    return static_cast<int>(std::min(windows, 256.0));
+}
+
+uint16_t coverageLocus(const std::vector<uint16_t> &positions) {
+    // Positions are stored sorted and deduplicated, so any 0 ("no position")
+    // entries sit at the front.
+    size_t first = 0;
+    while (first < positions.size() && positions[first] == 0) {
+        ++first;
+    }
+    if (first == positions.size()) {
+        return 0;
+    }
+    return positions[first + (positions.size() - first) / 2];
 }
 
 
